@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% set active_page = "graphs" %}
+
+{% block title %}Graphs - Power Master{% endblock %}
+
+{% block content %}
+<h1>Graphs</h1>
+
+<div class="tabs">
+    <button class="tab active" data-tab="energy">Energy Flow</button>
+    <button class="tab" data-tab="financial">Financial</button>
+    <button class="tab" data-tab="battery">Battery</button>
+    <button class="tab" data-tab="prices">Prices</button>
+    <button class="tab" data-tab="solar">Solar</button>
+    <button class="tab" data-tab="load">Load</button>
+    <button class="tab" data-tab="custom">Custom</button>
+</div>
+
+<section id="tab-energy" class="tab-content active">
+    <div class="time-range">
+        <button class="time-range-btn active" data-hours="24">24h</button>
+        <button class="time-range-btn" data-hours="168">7d</button>
+        <button class="time-range-btn" data-hours="720">30d</button>
+    </div>
+    <div class="chart-wrapper"><canvas id="energy-chart" height="350"></canvas></div>
+</section>
+
+<section id="tab-financial" class="tab-content">
+    <div class="time-range">
+        <button class="time-range-btn active" data-days="7">7d</button>
+        <button class="time-range-btn" data-days="30">30d</button>
+        <button class="time-range-btn" data-days="90">90d</button>
+    </div>
+    <div class="chart-wrapper"><canvas id="financial-chart" height="350"></canvas></div>
+</section>
+
+<section id="tab-battery" class="tab-content">
+    <div class="time-range">
+        <button class="time-range-btn active" data-hours="24">24h</button>
+        <button class="time-range-btn" data-hours="168">7d</button>
+        <button class="time-range-btn" data-hours="720">30d</button>
+    </div>
+    <div class="chart-wrapper"><canvas id="battery-chart" height="350"></canvas></div>
+</section>
+
+<section id="tab-prices" class="tab-content">
+    <div class="time-range">
+        <button class="time-range-btn active" data-hours="24">24h</button>
+        <button class="time-range-btn" data-hours="168">7d</button>
+        <button class="time-range-btn" data-hours="720">30d</button>
+    </div>
+    <div class="chart-wrapper"><canvas id="prices-chart" height="350"></canvas></div>
+</section>
+
+<section id="tab-solar" class="tab-content">
+    <div class="time-range">
+        <button class="time-range-btn active" data-hours="48">48h</button>
+        <button class="time-range-btn" data-hours="168">7d</button>
+        <button class="time-range-btn" data-hours="720">30d</button>
+    </div>
+    <div class="chart-wrapper"><canvas id="solar-chart" height="350"></canvas></div>
+</section>
+
+<section id="tab-load" class="tab-content">
+    <div class="time-range">
+        <button class="time-range-btn active" data-hours="24">24h</button>
+        <button class="time-range-btn" data-hours="168">7d</button>
+        <button class="time-range-btn" data-hours="720">30d</button>
+    </div>
+    <div class="chart-wrapper"><canvas id="load-chart" height="350"></canvas></div>
+</section>
+
+<section id="tab-custom" class="tab-content">
+    <p class="coming-soon">Custom graph builder &mdash; coming soon. Select parameters, time range, and aggregation.</p>
+</section>
+{% endblock %}

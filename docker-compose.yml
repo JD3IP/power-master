@@ -1,0 +1,30 @@
+services:
+  power-master:
+    image: power-master:2026-02-24-1
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CACHE_BUST: "2026-02-24-1"
+    container_name: power-master
+    restart: unless-stopped
+
+    # Host networking gives direct access to:
+    #   - Inverter on LAN (Modbus TCP, default 192.168.1.100:502)
+    #   - MQTT broker (default localhost:1883)
+    # If you prefer bridge networking, comment out network_mode and
+    # uncomment the ports section below.
+    network_mode: host
+
+    # ports:
+    #   - "8080:8080"    # Dashboard
+    #   - "1883:1883"    # MQTT (only if broker runs in this container)
+
+    volumes:
+      - power-master-data:/data
+
+    environment:
+      - TZ=Australia/Brisbane
+
+volumes:
+  power-master-data:

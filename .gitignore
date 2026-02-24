@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+
+# User config (contains API keys, passwords)
+config.yaml
+
+# IDE
+.vscode/
+.idea/
+
+# Testing / linting
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Examples (contains working hardware control scripts)
+examples/
+
+# Claude context vault and instructions
+.claude/
+CLAUDE.md
+
+# Internal docs
+Functional Description.txt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# TODO (project-internal tracking)
+TODO.txt

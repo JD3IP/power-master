@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Power Master</title>
+    <link rel="stylesheet" href="/static/app.css?v=39">
+    <style>
+        .login-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: var(--bg-primary);
+        }
+        .login-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 32px;
+            width: 100%;
+            max-width: 380px;
+            margin: 16px;
+        }
+        .login-logo {
+            text-align: center;
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--accent-green);
+            margin-bottom: 24px;
+        }
+        .login-card .form-group { margin-bottom: 16px; }
+        .login-card .form-group input { max-width: 100%; }
+        .login-card .btn-primary {
+            width: 100%;
+            justify-content: center;
+            padding: 10px 16px;
+            font-size: 14px;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body class="app">
+    <div class="login-container">
+        <div class="login-card">
+            <div class="login-logo">&#9889; Power Master</div>
+            {% if error %}
+            <div class="alert alert-error" style="margin-bottom: 16px;">{{ error }}</div>
+            {% endif %}
+            <form method="post" action="/login">
+                <input type="hidden" name="next" value="{{ next }}">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username"
+                           required autocomplete="username" autofocus>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password"
+                           required autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn btn-primary">Sign In</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

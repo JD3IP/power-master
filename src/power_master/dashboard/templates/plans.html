@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% set active_page = "plans" %}
+
+{% block title %}Plans - Power Master{% endblock %}
+
+{% block content %}
+<h1>Optimisation Plans</h1>
+
+{% if active_plan %}
+<section class="card">
+    <h2>Active Plan (v{{ active_plan.version }})</h2>
+    <p>Trigger: {{ active_plan.trigger_reason }} | Score: {{ "%.2f"|format(active_plan.objective_score) }}</p>
+    <div class="table-scroll">
+    <table class="plan-table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Time</th>
+                <th>Mode</th>
+                <th>Battery</th>
+                <th>SOC</th>
+                <th>Solar</th>
+                <th>Load</th>
+                <th>Buy</th>
+                <th>Sell</th>
+                <th>Devices</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for slot in active_slots %}
+            <tr class="mode-{{ slot.operating_mode }}">
+                <td>{{ slot.slot_index }}</td>
+                <td>{{ slot.slot_start_local|default(slot.slot_start) }}</td>
+                <td><span class="mode-badge mode-badge-{{ slot.operating_mode }}">{{ slot.mode_name }}</span></td>
+                <td class="{% if slot.signed_power_w < 0 %}text-red{% elif slot.signed_power_w > 0 %}text-green{% endif %}">
+                    {{ slot.signed_power_w }}W
+                </td>
+                <td>{{ (slot.expected_soc * 100)|round(1) }}%</td>
+                <td>{{ slot.solar_forecast_w|default(0) }}W</td>
+                <td>{{ slot.load_forecast_w|default(0) }}W</td>
+                <td>{{ slot.import_rate_cents_fmt }}c</td>
+                <td>{{ slot.export_rate_cents_fmt }}c</td>
+                <td>{% if slot.scheduled_loads %}{{ slot.scheduled_loads|join(', ') }}{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+{% endif %}
+
+<section class="card">
+    <h2>Plan History</h2>
+    <div class="table-scroll">
+    <table class="plan-table">
+        <thead>
+            <tr><th>Version</th><th>Created</th><th>Trigger</th><th>Score</th><th>Time</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+            {% for plan in plans %}
+            <tr>
+                <td>v{{ plan.version }}</td>
+                <td>{{ plan.created_at }}</td>
+                <td>{{ plan.trigger_reason }}</td>
+                <td>{{ "%.2f"|format(plan.objective_score) }}</td>
+                <td>{{ plan.solver_time_ms }}ms</td>
+                <td><span class="mode-badge mode-badge-{% if plan.status == 'active' %}3{% else %}1{% endif %}">{{ plan.status }}</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+{% endblock %}

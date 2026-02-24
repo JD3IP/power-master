@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% set active_page = "accounting" %}
+
+{% block title %}Accounting - Power Master{% endblock %}
+
+{% block content %}
+<h1>Financial Accounting</h1>
+
+<div class="tabs">
+    <button class="tab active" data-tab="current">Current Cycle</button>
+    <button class="tab" data-tab="history">History</button>
+    <button class="tab" data-tab="events">Events</button>
+</div>
+
+<section id="tab-current" class="tab-content active">
+{% if billing_cycle %}
+<div class="card">
+    <h2>Current Billing Cycle</h2>
+    <div class="grid">
+        <div class="stat">
+            <span class="label">Import Cost</span>
+            <span class="value">${{ (billing_cycle.total_import_cost_cents / 100)|round(2) }}</span>
+        </div>
+        <div class="stat">
+            <span class="label">Export Revenue</span>
+            <span class="value">${{ (billing_cycle.total_export_revenue_cents / 100)|round(2) }}</span>
+        </div>
+        <div class="stat">
+            <span class="label">Self-Consumption</span>
+            <span class="value">${{ (billing_cycle.total_self_consumption_value_cents / 100)|round(2) }}</span>
+        </div>
+        <div class="stat">
+            <span class="label">Arbitrage Profit</span>
+            <span class="value">${{ (billing_cycle.total_arbitrage_profit_cents / 100)|round(2) }}</span>
+        </div>
+        <div class="stat">
+            <span class="label">Fixed Costs</span>
+            <span class="value">${{ (billing_cycle.total_fixed_costs_cents / 100)|round(2) }}</span>
+        </div>
+        <div class="stat highlight">
+            <span class="label">Net Cost</span>
+            <span class="value">${{ (billing_cycle.net_cost_cents / 100)|round(2) }}</span>
+        </div>
+    </div>
+</div>
+{% else %}
+<p>No active billing cycle.</p>
+{% endif %}
+</section>
+
+<section id="tab-history" class="tab-content">
+    <h2>Billing Cycle History</h2>
+    <div id="billing-history-table">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Period</th>
+                    <th>Import</th>
+                    <th>Export</th>
+                    <th>Self-Use</th>
+                    <th>Arbitrage</th>
+                    <th>Fixed</th>
+                    <th>Net</th>
+                </tr>
+            </thead>
+            <tbody id="billing-history-body">
+                <tr><td colspan="7">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section id="tab-events" class="tab-content">
+    <h2>Recent Accounting Events</h2>
+    <div class="time-range">
+        <button class="time-range-btn active" data-days="1" onclick="loadAccountingEvents(1)">24h</button>
+        <button class="time-range-btn" data-days="7" onclick="loadAccountingEvents(7)">7d</button>
+        <button class="time-range-btn" data-days="30" onclick="loadAccountingEvents(30)">30d</button>
+    </div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Type</th>
+                <th>Energy (kWh)</th>
+                <th>Price (c/kWh)</th>
+                <th>Amount ($)</th>
+            </tr>
+        </thead>
+        <tbody id="accounting-events-body">
+            <tr><td colspan="5">Loading...</td></tr>
+        </tbody>
+    </table>
+</section>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.tab').forEach(function(tab) {
+        tab.addEventListener('click', function() {
+            if (this.dataset.tab === 'history') loadBillingHistory();
+            if (this.dataset.tab === 'events') loadAccountingEvents(1);
+        });
+    });
+});
+
+function loadBillingHistory() {
+    fetch('/api/billing/history')
+    .then(function(r) { return r.json(); })
+    .then(function(rows) {
+        var body = document.getElementById('billing-history-body');
+        if (!rows.length) { body.innerHTML = '<tr><td colspan="7">No history available.</td></tr>'; return; }
+        body.innerHTML = rows.map(function(r) {
+            return '<tr><td>' + (r.start_date || '--') + ' to ' + (r.end_date || '--') +
+                '</td><td>$' + ((r.total_import_cost_cents || 0) / 100).toFixed(2) +
+                '</td><td>$' + ((r.total_export_revenue_cents || 0) / 100).toFixed(2) +
+                '</td><td>$' + ((r.total_self_consumption_value_cents || 0) / 100).toFixed(2) +
+                '</td><td>$' + ((r.total_arbitrage_profit_cents || 0) / 100).toFixed(2) +
+                '</td><td>$' + ((r.total_fixed_costs_cents || 0) / 100).toFixed(2) +
+                '</td><td><strong>$' + ((r.net_cost_cents || 0) / 100).toFixed(2) +
+                '</strong></td></tr>';
+        }).join('');
+    }).catch(function() {
+        document.getElementById('billing-history-body').innerHTML =
+            '<tr><td colspan="7">Failed to load history.</td></tr>';
+    });
+}
+
+function loadAccountingEvents(days) {
+    fetch('/api/billing/events?days=' + days)
+    .then(function(r) { return r.json(); })
+    .then(function(rows) {
+        var body = document.getElementById('accounting-events-body');
+        if (!rows.length) { body.innerHTML = '<tr><td colspan="5">No events in this period.</td></tr>'; return; }
+        body.innerHTML = rows.map(function(r) {
+            var time = r.timestamp || r.created_at || '--';
+            if (time.length > 16) time = time.substring(0, 16).replace('T', ' ');
+            return '<tr><td>' + time +
+                '</td><td>' + (r.event_type || '--') +
+                '</td><td>' + ((r.energy_kwh || 0)).toFixed(3) +
+                '</td><td>' + ((r.price_cents || 0)).toFixed(1) +
+                '</td><td>$' + ((r.amount_cents || 0) / 100).toFixed(2) +
+                '</td></tr>';
+        }).join('');
+    }).catch(function() {
+        document.getElementById('accounting-events-body').innerHTML =
+            '<tr><td colspan="5">Failed to load events.</td></tr>';
+    });
+}
+</script>
+{% endblock %}

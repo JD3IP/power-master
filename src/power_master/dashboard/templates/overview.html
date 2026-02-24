@@ -1,0 +1,472 @@
+{% extends "base.html" %}
+{% set active_page = "overview" %}
+
+{% block title %}Power Master - Overview{% endblock %}
+
+{% block content %}
+<div class="overview-page"
+     data-max-power-w="{{ config.battery.max_discharge_rate_w }}"
+     data-rolling-power-max-kw="{{ config.dashboard.rolling_chart_power_max_kw }}"
+     data-rolling-window-hours="{{ config.dashboard.rolling_chart_window_hours }}"
+     data-price-spike-threshold-cents="{{ config.arbitrage.spike_threshold_cents }}"
+     data-buy-band-low="{% if buy_price_bands %}{{ buy_price_bands.low }}{% endif %}"
+     data-buy-band-high="{% if buy_price_bands %}{{ buy_price_bands.high }}{% endif %}"
+     data-sell-band-low="{% if sell_price_bands %}{{ sell_price_bands.low }}{% endif %}"
+     data-sell-band-high="{% if sell_price_bands %}{{ sell_price_bands.high }}{% endif %}">
+
+    <!-- ── Operating Status Bar ─────────────────────── -->
+    <div class="status-bar">
+        <div class="status-bar-item">
+            <span class="status-bar-label">Inverter</span>
+            <span class="status-bar-value" id="status-inverter">
+                {% if telemetry and telemetry.inverter_mode %}{{ telemetry.inverter_mode }}{% else %}--{% endif %}
+            </span>
+        </div>
+        <div class="status-bar-item">
+            <span class="status-bar-label">Optimiser</span>
+            <span class="status-bar-value" id="status-optimiser">--</span>
+        </div>
+        <div class="status-bar-item">
+            <span class="status-bar-label">Override</span>
+            <span class="status-bar-value" id="status-override">None</span>
+        </div>
+    </div>
+
+    <!-- ── Mode Selector ───────────────────────────── -->
+    <div class="mode-selector">
+        <div class="mode-header">
+            <div class="mode-label">Manual Control</div>
+        </div>
+        <div class="mode-power-input" id="mode-power-group" style="display: none; margin-bottom: 8px;">
+            <label for="mode-power" style="font-size: 12px; color: var(--text-muted);">Power (W):</label>
+            <input type="number" id="mode-power" value="{{ config.battery.max_discharge_rate_w }}"
+                   min="0" max="{{ config.battery.max_discharge_rate_w }}"
+                   style="width: 80px; padding: 4px 8px; background: var(--bg-primary); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px;">
+        </div>
+        <div class="mode-buttons">
+            <button class="mode-btn" data-mode="0">Auto</button>
+            <button class="mode-btn" data-mode="1">Self-Use</button>
+            <button class="mode-btn" data-mode="2">Zero Export</button>
+            <button class="mode-btn" data-mode="3">Force Charge</button>
+            <button class="mode-btn" data-mode="4">Force Discharge</button>
+            <button class="mode-btn" data-mode="5">Battery Hold</button>
+        </div>
+    </div>
+
+    <!-- ── Spike Alert ──────────────────────────────── -->
+    <div class="spike-alert" id="spike-alert" {% if not spike %}style="display:none"{% endif %}>
+        {% if spike %}
+        &#9888; SPIKE: {{ spike.peak_price_cents }}c/kWh - {{ spike.response_mode|upper }}
+        {% else %}
+        &#9888; PRICE SPIKE ACTIVE
+        {% endif %}
+    </div>
+
+    <!-- ── INVERTER Panel ──────────────────────────── -->
+    <div class="dash-panel">
+        <div class="dash-panel-title">Inverter</div>
+        <div class="dash-panel-body">
+            <table class="inverter-panel-table">
+                <tr>
+                    <td class="inverter-values-cell">
+                        <div class="dash-row">
+                            <span class="dash-label">Work Mode</span>
+                            <span class="dash-value" id="work-mode-value">
+                                {% if telemetry and telemetry.inverter_mode %}
+                                    {{ telemetry.inverter_mode }}
+                                {% else %}
+                                    --
+                                {% endif %}
+                            </span>
+                        </div>
+                        <div class="dash-row">
+                            <span class="dash-label">PV</span>
+                            <span class="dash-value dash-solar" id="solar-value">
+                                {% if telemetry %}
+                                    {{ "%.1f"|format((telemetry.solar_power_w or 0) / 1000) }} kW
+                                {% else %}
+                                    -- kW
+                                {% endif %}
+                            </span>
+                        </div>
+                        <div class="dash-row">
+                            <span class="dash-label">Grid</span>
+                            <span class="dash-value" id="grid-value">
+                                {% if telemetry %}
+                                    {% set gw = telemetry.grid_power_w or 0 %}
+                                    {% if gw > 0 %}
+                                        <span class="importing">&#8595; {{ "%.1f"|format(gw / 1000) }} kW</span>
+                                    {% elif gw < 0 %}
+                                        <span class="exporting">&#8593; {{ "%.1f"|format((-gw) / 1000) }} kW</span>
+                                    {% else %}
+                                        0.0 kW
+                                    {% endif %}
+                                {% else %}
+                                    -- kW
+                                {% endif %}
+                            </span>
+                        </div>
+                        <div class="dash-row">
+                            <span class="dash-label">Load</span>
+                            <span class="dash-value" id="load-value">
+                                {% if telemetry %}
+                                    {% set load_w = telemetry.load_power_w or 0 %}
+                                    {% if load_w <= 0 and telemetry.solar_power_w is not none and telemetry.grid_power_w is not none and telemetry.battery_power_w is not none %}
+                                        {% set derived = (telemetry.solar_power_w or 0) + (telemetry.grid_power_w or 0) - (telemetry.battery_power_w or 0) %}
+                                        {% if derived > 0 %}
+                                            {{ "%.1f"|format(derived / 1000) }} kW
+                                        {% else %}
+                                            0.0 kW
+                                        {% endif %}
+                                    {% else %}
+                                        {{ "%.1f"|format(load_w / 1000) }} kW
+                                    {% endif %}
+                                {% else %}
+                                    -- kW
+                                {% endif %}
+                            </span>
+                        </div>
+                    </td>
+                    <td class="inverter-graphic-cell">
+                        {% set inverter_soc_pct = "%.0f"|format((telemetry.soc or 0) * 100) %}
+                        <div class="hub-flow-3d" id="inverter-flow-graphic">
+                            <div class="hub-link hub-link-pv"></div>
+                            <div class="hub-link hub-link-grid"></div>
+                            <div class="hub-link hub-link-load"></div>
+                            <div class="hub-link hub-link-batt"></div>
+
+                            <div class="hub-arrow hub-arrow-pv" id="flow-arrow-pv">&#8600;</div>
+                            <div class="hub-flow-value hub-flow-value-pv" id="flow-pv-value">{{ "%.1f"|format((telemetry.solar_power_w or 0) / 1000) if telemetry else "--" }}kW</div>
+                            <div class="hub-arrow hub-arrow-grid" id="flow-arrow-grid">&#8601;</div>
+                            <div class="hub-flow-value hub-flow-value-grid" id="flow-grid-value">
+                                {% if telemetry %}
+                                    {% set gw2 = telemetry.grid_power_w or 0 %}
+                                    {% if gw2 > 0 %}{{ "%.1f"|format(gw2 / 1000) }}kW
+                                    {% elif gw2 < 0 %}{{ "%.1f"|format((-gw2) / 1000) }}kW
+                                    {% else %}0.0kW{% endif %}
+                                {% else %}--{% endif %}
+                            </div>
+                            <div class="hub-arrow hub-arrow-load" id="flow-arrow-load">&#8600;</div>
+                            <div class="hub-flow-value hub-flow-value-load" id="flow-load-value">{{ "%.1f"|format((telemetry.load_power_w or 0) / 1000) if telemetry else "--" }}kW</div>
+                            <div class="hub-arrow hub-arrow-batt" id="flow-arrow-batt">&#8599;</div>
+                            <div class="hub-flow-value hub-flow-value-batt" id="flow-batt-value">
+                                {% if telemetry %}
+                                    {% set bw = telemetry.battery_power_w or 0 %}
+                                    {% if bw > 0 %}{{ "%.1f"|format(bw / 1000) }}kW
+                                    {% elif bw < 0 %}{{ "%.1f"|format((-bw) / 1000) }}kW
+                                    {% else %}0.0kW{% endif %}
+                                {% else %}--{% endif %}
+                            </div>
+
+                            <div class="hub-node hub-center">
+                                <span class="hub-icon">&#9889;</span>
+                            </div>
+
+                            <div class="hub-node hub-pv">
+                                <img class="hub-icon-img" src="/static/solar-panel.png" alt="Solar panel">
+                            </div>
+
+                            <div class="hub-node hub-grid">
+                                <img class="hub-icon-img" src="/static/power-grid.png" alt="Power grid">
+                            </div>
+
+                            <div class="hub-node hub-load">
+                                <img class="hub-icon-img" src="/static/home.png" alt="House load">
+                            </div>
+
+                            <div class="hub-node hub-batt">
+                                <div class="hub-mini-battery-wrap">
+                                    <div class="hub-mini-battery">
+                                        <div class="hub-mini-battery-fill" id="flow-batt-soc-fill" style="width: {{ inverter_soc_pct }}%"></div>
+                                    </div>
+                                    <div class="hub-mini-battery-cap"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <!-- ── BATTERY Panel ───────────────────────────── -->
+    <div class="dash-panel">
+        <div class="dash-panel-title">Battery</div>
+        <div class="dash-panel-body">
+            {% set soc_pct = "%.0f"|format((telemetry.soc or 0) * 100) %}
+            <table class="battery-panel-table">
+                <tr>
+                    <td class="battery-values-cell">
+                        <div class="dash-row">
+                            <span class="dash-label">Status</span>
+                            <span class="dash-value" id="battery-flow-value">
+                                {% if telemetry %}
+                                    {% set bp = telemetry.battery_power_w or 0 %}
+                                    {% if bp > 0 %}
+                                        <span class="charging">Charging {{ "%.1f"|format(bp / 1000) }} kW</span>
+                                    {% elif bp < 0 %}
+                                        <span class="discharging">Discharging {{ "%.1f"|format((-bp) / 1000) }} kW</span>
+                                    {% else %}
+                                        Idle
+                                    {% endif %}
+                                {% endif %}
+                            </span>
+                        </div>
+                        <div class="dash-row">
+                            <span class="dash-label">Cost Basis</span>
+                            <span class="dash-value" id="wacb-value">--c/kWh avg</span>
+                        </div>
+                        <div class="dash-row">
+                            <span class="dash-label">Stored Value</span>
+                            <span class="dash-value" id="wacb-total">$--</span>
+                        </div>
+                    </td>
+                    <td class="battery-graphic-cell">
+                        <div class="battery-3d-row">
+                            <div class="battery-3d-wrap">
+                                <div class="battery-3d battery-high" id="battery-3d">
+                                    <div class="battery-3d-level" id="battery-level-fill" style="width: {{ soc_pct }}%"></div>
+                                    <div class="battery-3d-gloss"></div>
+                                </div>
+                                <div class="battery-3d-cap"></div>
+                            </div>
+                            <span class="dash-soc-pct" id="soc-value">{{ soc_pct }}%</span>
+                        </div>
+                    </td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <!-- ── ENERGY COST Panel ───────────────────────── -->
+    <div class="dash-panel">
+        <div class="dash-panel-title">Energy Cost</div>
+        <div class="dash-panel-body">
+            <table class="energy-cost-table">
+                <tr>
+                    <td class="energy-cost-left">
+                        <div class="dash-row">
+                            <span class="dash-label">Current Price</span>
+                            <span class="dash-value" id="price-display">
+                                <span class="price-inline">
+                                    <span id="price-buy-inline" class="{% if current_import_price_cents is not none and buy_price_bands %}{% if current_import_price_cents <= buy_price_bands.low %}price-good{% elif current_import_price_cents >= buy_price_bands.high %}price-bad{% else %}price-average{% endif %}{% endif %}">
+                                        {% if current_import_price_cents is not none %}
+                                            Buy {{ "%.1f"|format(current_import_price_cents) }}c
+                                        {% else %}
+                                            Buy --c
+                                        {% endif %}
+                                    </span>
+                                    <span class="price-sep">/</span>
+                                    <span class="exporting" id="price-sell-inline">
+                                        {% if current_export_price_cents is not none %}
+                                            {% set _sell_low = sell_price_bands.low if sell_price_bands else none %}
+                                            {% set _sell_high = sell_price_bands.high if sell_price_bands else none %}
+                                            <span class="{% if _sell_low is not none and _sell_high is not none %}{% if current_export_price_cents <= _sell_low %}price-bad{% elif current_export_price_cents >= _sell_high %}price-good{% else %}price-average{% endif %}{% endif %}">Sell {{ "%.1f"|format(current_export_price_cents) }}c</span>
+                                        {% else %}
+                                            Sell --c
+                                        {% endif %}
+                                    </span>
+                                </span>
+                            </span>
+                        </div>
+                        <div class="upcoming-prices">
+                            <div class="upcoming-prices-title">Next 3 Hours</div>
+                            <div class="upcoming-prices-list">
+                                {% if upcoming_prices %}
+                                    <table class="upcoming-prices-table">
+                                        <tbody>
+                                            <tr>
+                                                <th>Buy</th>
+                                                {% for p in upcoming_prices %}
+                                                <td class="chip-buy {% if buy_price_bands %}{% if p.import_cents <= buy_price_bands.low %}price-good{% elif p.import_cents >= buy_price_bands.high %}price-bad{% else %}price-average{% endif %}{% endif %}">{{ "%.1f"|format(p.import_cents) }}c</td>
+                                                {% endfor %}
+                                            </tr>
+                                            <tr>
+                                                <th>Sell</th>
+                                                {% for p in upcoming_prices %}
+                                                <td class="chip-sell {% if sell_price_bands %}{% if p.export_cents <= sell_price_bands.low %}price-bad{% elif p.export_cents >= sell_price_bands.high %}price-good{% else %}price-average{% endif %}{% endif %}">{{ "%.1f"|format(p.export_cents) }}c</td>
+                                                {% endfor %}
+                                            </tr>
+                                            <tr>
+                                                <th>Time</th>
+                                                {% for p in upcoming_prices %}
+                                                <td class="chip-time">{{ p.time_label }}</td>
+                                                {% endfor %}
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                {% else %}
+                                    <div class="upcoming-price-empty">No upcoming price slots</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="upcoming-spike {% if upcoming_spike %}active{% endif %}" id="upcoming-spike-indicator">
+                            {% if upcoming_spike %}
+                                &#9888; Upcoming spike at {{ upcoming_spike.time_label }} ({{ "%.1f"|format(upcoming_spike.import_cents) }}c)
+                            {% else %}
+                                No upcoming spike in next 3h
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td class="energy-cost-right">
+                        <div class="dash-row">
+                            <span class="dash-label">Today</span>
+                            <span class="dash-value" id="today-net">$--</span>
+                        </div>
+                        <div class="dash-row">
+                            <span class="dash-label">This Week</span>
+                            <span class="dash-value" id="week-net">$--</span>
+                        </div>
+                        <div class="dash-row">
+                            <span class="dash-label">Billing Cycle</span>
+                            <span class="dash-value" id="cycle-net">
+                                {% if billing_cycle %}
+                                    ${{ "%.2f"|format(billing_cycle.net_cost_cents / 100) }}
+                                {% else %}
+                                    $--
+                                {% endif %}
+                            </span>
+                        </div>
+                        <div class="dash-row">
+                            <span class="dash-label">Expected Bill</span>
+                            <span class="dash-value" id="expected-bill">
+                                {% if billing_cycle and billing_cycle.days_elapsed > 0 %}
+                                    {% set daily_avg = billing_cycle.net_cost_cents / billing_cycle.days_elapsed %}
+                                    {% set total_days = billing_cycle.days_elapsed + billing_cycle.days_remaining %}
+                                    ${{ "%.2f"|format((daily_avg * total_days) / 100) }}
+                                {% else %}
+                                    $--
+                                {% endif %}
+                            </span>
+                        </div>
+                    </td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <!-- ── Weather & Storm ─────────────────────────── -->
+    <div class="dash-panel dash-panel--compact">
+        <div class="dash-panel-body">
+            <div class="weather-forecast-grid">
+                {% if weather_forecast_days %}
+                    {% for day in weather_forecast_days %}
+                    <div class="weather-day-card">
+                        <div class="weather-day-text">
+                            <div class="weather-day-head">{{ day.label }}</div>
+                            <div class="weather-day-main">{{ "%.0f"|format(day.temp_min_c) }}&deg; / {{ "%.0f"|format(day.temp_max_c) }}&deg;</div>
+                            <div class="weather-day-meta">{{ day.cloud_avg_pct|int }}% cloud &middot; {{ "%.1f"|format(day.precip_mm) }}mm</div>
+                        </div>
+                        <div class="weather-day-icon">
+                            {% if day.icon == "sun" %}&#9728;
+                            {% elif day.icon == "partly" %}&#9925;
+                            {% elif day.icon == "cloud" %}&#9729;
+                            {% elif day.icon == "rain" %}&#127783;
+                            {% elif day.icon == "wind" %}&#127788;
+                            {% else %}&#9729;{% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="weather-day-empty">No weather forecast data</div>
+                {% endif %}
+            </div>
+            <div class="dash-row">
+                <span class="dash-label">Storm</span>
+                <span class="dash-value" id="storm-status">
+                    {% if storm_active %}
+                        <span style="color: var(--accent-red);">&#9888; Warning active</span>
+                    {% else %}
+                        None
+                    {% endif %}
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Devices ─────────────────────────────────── -->
+    {% if devices %}
+    <div class="dash-panel dash-panel--compact">
+        <div class="dash-panel-title">Devices</div>
+        <div class="dash-panel-body">
+            <div class="table-scroll">
+                <table class="plan-table load-table">
+                    <thead>
+                        <tr>
+                            <th>Device</th>
+                            <th>Power</th>
+                            <th>State</th>
+                            <th>Next</th>
+                            <th>Enabled</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for dev in devices %}
+                        {% set st = dev.current_state|upper %}
+                        <tr>
+                            <td>{{ dev.name }}</td>
+                            <td>{{ dev.power_w }}W</td>
+                            <td>
+                                <span class="load-state-badge
+                                    {% if st == 'ON' %}load-state-on
+                                    {% elif st == 'OFF' %}load-state-off
+                                    {% elif st == 'ERROR' %}load-state-error
+                                    {% else %}load-state-unknown{% endif %}">
+                                    <span class="load-state-dot"></span>
+                                    {{ st }}
+                                    {% if dev.current_power_w and dev.current_power_w > 0 %}
+                                        {{ (dev.current_power_w|string) + 'W' }}
+                                    {% endif %}
+                                </span>
+                            </td>
+                            <td>{{ dev.next_run }}</td>
+                            <td>
+                                <label class="load-toggle-label">
+                                    <input type="checkbox"
+                                           class="load-enabled-toggle"
+                                           data-device-name="{{ dev.name }}"
+                                           data-device-type="{{ dev.type }}"
+                                           {% if dev.enabled %}checked{% endif %}>
+                                    <span>{{ "On" if dev.enabled else "Off" }}</span>
+                                </label>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 24h Rolling Chart -->
+    <div class="chart-container">
+        <div class="chart-header">
+            <h3>{{ config.dashboard.rolling_chart_window_hours * 2 }}-Hour View</h3>
+            <span class="chart-subtitle">{{ config.dashboard.rolling_chart_window_hours }}h history | {{ config.dashboard.rolling_chart_window_hours }}h forecast</span>
+        </div>
+        <canvas id="rolling-chart" height="300"></canvas>
+    </div>
+
+    <!-- Plan Summary -->
+    <div class="plan-summary">
+        <h3>Current Plan</h3>
+        {% if plan %}
+        <div class="plan-meta">
+            Version {{ plan.version }} | {{ plan.trigger_reason }} |
+            Score: {{ "%.2f"|format(plan.objective_score) }}
+        </div>
+        <div class="plan-meta">
+            Prev: {% if prev_plan_event %}{{ prev_plan_event.time_label }} - {{ prev_plan_event.summary }}{% else %}No previous significant events{% endif %}
+        </div>
+        <div class="plan-meta">
+            Next: {% if next_plan_event %}{{ next_plan_event.time_label }} - {{ next_plan_event.summary }}{% else %}No significant events{% endif %}
+        </div>
+        {% else %}
+        <div class="plan-meta">No active plan</div>
+        {% endif %}
+    </div>
+
+</div>
+{% endblock %}
+

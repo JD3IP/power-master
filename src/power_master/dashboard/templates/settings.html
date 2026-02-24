@@ -1,0 +1,802 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Power Master{% endblock %}
+
+{% block content %}
+<h1>Settings</h1>
+
+{% if saved %}
+<div class="alert alert-success">Settings saved successfully.</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-error">Error: {{ error }}</div>
+{% endif %}
+
+<form method="post" action="/settings">
+
+<div class="tabs">
+    <button type="button" class="tab active" data-tab="inverter" onclick="switchTab('inverter', this)">Inverter</button>
+    <button type="button" class="tab" data-tab="battery" onclick="switchTab('battery', this)">Battery</button>
+    <button type="button" class="tab" data-tab="planning" onclick="switchTab('planning', this)">Planning</button>
+    <button type="button" class="tab" data-tab="arbitrage" onclick="switchTab('arbitrage', this)">Arbitrage</button>
+    <button type="button" class="tab" data-tab="load_profile" onclick="switchTab('load_profile', this)">Load Profile</button>
+    <button type="button" class="tab" data-tab="providers" onclick="switchTab('providers', this)">Providers</button>
+    <button type="button" class="tab" data-tab="loads" onclick="switchTab('loads', this)">Loads</button>
+    <button type="button" class="tab" data-tab="mqtt" onclick="switchTab('mqtt', this)">MQTT</button>
+    <button type="button" class="tab" data-tab="oscillation" onclick="switchTab('oscillation', this)">Anti-Oscillation</button>
+    <button type="button" class="tab" data-tab="storm" onclick="switchTab('storm', this)">Storm</button>
+    <button type="button" class="tab" data-tab="resilience" onclick="switchTab('resilience', this)">Resilience</button>
+</div>
+
+<!-- ═══ INVERTER TAB ═══ -->
+<section id="tab-inverter" class="tab-content active">
+    <h2>Connection</h2>
+    <div class="form-group">
+        <label for="hardware.foxess.host">Inverter IP Address</label>
+        <input type="text" id="hardware.foxess.host" name="hardware.foxess.host" value="{{ config.hardware.foxess.host }}">
+    </div>
+    <div class="form-group">
+        <label for="hardware.foxess.port">Modbus Port</label>
+        <input type="number" id="hardware.foxess.port" name="hardware.foxess.port" value="{{ config.hardware.foxess.port }}">
+    </div>
+    <div class="form-group">
+        <label for="hardware.foxess.unit_id">Unit ID (KH default: 247)</label>
+        <input type="number" id="hardware.foxess.unit_id" name="hardware.foxess.unit_id" value="{{ config.hardware.foxess.unit_id }}">
+    </div>
+    <div class="form-group">
+        <label for="hardware.foxess.poll_interval_seconds">Poll Interval (s)</label>
+        <input type="number" id="hardware.foxess.poll_interval_seconds" name="hardware.foxess.poll_interval_seconds" value="{{ config.hardware.foxess.poll_interval_seconds }}">
+    </div>
+    <div class="form-group">
+        <label for="hardware.foxess.watchdog_refresh_seconds">Watchdog Refresh (s)</label>
+        <input type="number" id="hardware.foxess.watchdog_refresh_seconds" name="hardware.foxess.watchdog_refresh_seconds" value="{{ config.hardware.foxess.watchdog_refresh_seconds }}">
+    </div>
+    <div class="form-group">
+        <label for="hardware.foxess.watchdog_timeout_seconds">Watchdog Timeout (s)</label>
+        <input type="number" id="hardware.foxess.watchdog_timeout_seconds" name="hardware.foxess.watchdog_timeout_seconds" value="{{ config.hardware.foxess.watchdog_timeout_seconds }}">
+    </div>
+
+    <h2>Live Diagnostics
+        <button type="button" class="btn btn-sm" id="diag-refresh-btn" onclick="refreshDiagnostics()" style="margin-left: 12px;">Refresh Now</button>
+        <label style="margin-left: 12px; font-size: 0.8em; font-weight: normal;">
+            <input type="checkbox" id="diag-auto-poll" checked> Auto-refresh (5s)
+        </label>
+    </h2>
+
+    <div id="diag-status" class="diag-status">Loading...</div>
+
+    <table class="data-table diag-table" id="diag-table">
+        <thead>
+            <tr>
+                <th>Register</th>
+                <th>Address</th>
+                <th>Type</th>
+                <th>Raw</th>
+                <th>Value</th>
+                <th>Unit</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody id="diag-tbody">
+            <tr><td colspan="7" style="text-align: center; color: #6e7681;">Waiting for first read...</td></tr>
+        </tbody>
+    </table>
+
+    <div id="diag-timestamp" class="diag-timestamp"></div>
+</section>
+
+<!-- ═══ BATTERY TAB ═══ -->
+<section id="tab-battery" class="tab-content">
+    <h2>Battery Specifications</h2>
+    <div class="form-group">
+        <label for="battery.capacity_wh">Capacity (Wh)</label>
+        <input type="number" id="battery.capacity_wh" name="battery.capacity_wh" value="{{ config.battery.capacity_wh }}" min="0">
+    </div>
+    <div class="form-group">
+        <label for="battery.max_charge_rate_w">Max Charge Rate (W)</label>
+        <input type="number" id="battery.max_charge_rate_w" name="battery.max_charge_rate_w" value="{{ config.battery.max_charge_rate_w }}" min="0">
+    </div>
+    <div class="form-group">
+        <label for="battery.max_discharge_rate_w">Max Discharge Rate (W)</label>
+        <input type="number" id="battery.max_discharge_rate_w" name="battery.max_discharge_rate_w" value="{{ config.battery.max_discharge_rate_w }}" min="0">
+    </div>
+    <div class="form-group">
+        <label for="battery.max_grid_import_w">Max Grid Import (W)</label>
+        <input type="number" id="battery.max_grid_import_w" name="battery.max_grid_import_w" value="{{ config.battery.max_grid_import_w }}" min="0">
+        <small class="form-hint">Maximum watts imported from grid before load shedding. 0 = no limit.</small>
+    </div>
+    <div class="form-group">
+        <label for="battery.soc_min_hard">SOC Min Hard</label>
+        <input type="number" id="battery.soc_min_hard" name="battery.soc_min_hard" step="0.01" value="{{ config.battery.soc_min_hard }}" min="0" max="1">
+    </div>
+    <div class="form-group">
+        <label for="battery.soc_max_hard">SOC Max Hard</label>
+        <input type="number" id="battery.soc_max_hard" name="battery.soc_max_hard" step="0.01" value="{{ config.battery.soc_max_hard }}" min="0" max="1">
+    </div>
+    <div class="form-group">
+        <label for="battery.soc_min_soft">SOC Min Soft</label>
+        <input type="number" id="battery.soc_min_soft" name="battery.soc_min_soft" step="0.01" value="{{ config.battery.soc_min_soft }}" min="0" max="1">
+    </div>
+    <div class="form-group">
+        <label for="battery.soc_max_soft">SOC Max Soft</label>
+        <input type="number" id="battery.soc_max_soft" name="battery.soc_max_soft" step="0.01" value="{{ config.battery.soc_max_soft }}" min="0" max="1">
+    </div>
+    <div class="form-group">
+        <label for="battery.round_trip_efficiency">Round Trip Efficiency</label>
+        <input type="number" id="battery.round_trip_efficiency" name="battery.round_trip_efficiency" step="0.01" value="{{ config.battery.round_trip_efficiency }}" min="0" max="1">
+    </div>
+
+    <h2>Battery Targets</h2>
+    <div class="form-group">
+        <label for="battery_targets.evening_soc_target">Evening SOC Target</label>
+        <input type="number" id="battery_targets.evening_soc_target" name="battery_targets.evening_soc_target" step="0.01" value="{{ config.battery_targets.evening_soc_target }}" min="0" max="1">
+    </div>
+    <div class="form-group">
+        <label for="battery_targets.evening_target_hour">Evening Target Hour (0-23)</label>
+        <input type="number" id="battery_targets.evening_target_hour" name="battery_targets.evening_target_hour" value="{{ config.battery_targets.evening_target_hour }}" min="0" max="23">
+    </div>
+    <div class="form-group">
+        <label for="battery_targets.morning_soc_minimum">Morning SOC Minimum</label>
+        <input type="number" id="battery_targets.morning_soc_minimum" name="battery_targets.morning_soc_minimum" step="0.01" value="{{ config.battery_targets.morning_soc_minimum }}" min="0" max="1">
+    </div>
+    <div class="form-group">
+        <label for="battery_targets.morning_minimum_hour">Morning Minimum Hour (0-23)</label>
+        <input type="number" id="battery_targets.morning_minimum_hour" name="battery_targets.morning_minimum_hour" value="{{ config.battery_targets.morning_minimum_hour }}" min="0" max="23">
+    </div>
+    <div class="form-group">
+        <label for="battery_targets.overnight_charge_threshold_cents">Overnight Charge Threshold (c/kWh)</label>
+        <input type="number" id="battery_targets.overnight_charge_threshold_cents" name="battery_targets.overnight_charge_threshold_cents" value="{{ config.battery_targets.overnight_charge_threshold_cents }}">
+    </div>
+</section>
+
+<!-- ═══ PLANNING TAB ═══ -->
+<section id="tab-planning" class="tab-content">
+    <h2>Planning</h2>
+    <div class="form-group">
+        <label for="planning.horizon_hours">Horizon (hours)</label>
+        <input type="number" id="planning.horizon_hours" name="planning.horizon_hours" value="{{ config.planning.horizon_hours }}">
+    </div>
+    <div class="form-group">
+        <label for="planning.slot_duration_minutes">Slot Duration (min)</label>
+        <input type="number" id="planning.slot_duration_minutes" name="planning.slot_duration_minutes" value="{{ config.planning.slot_duration_minutes }}">
+    </div>
+    <div class="form-group">
+        <label for="planning.evaluation_interval_seconds">Evaluation Interval (s)</label>
+        <input type="number" id="planning.evaluation_interval_seconds" name="planning.evaluation_interval_seconds" value="{{ config.planning.evaluation_interval_seconds }}">
+    </div>
+    <div class="form-group">
+        <label for="planning.periodic_rebuild_interval_seconds">Periodic Rebuild Interval (s)</label>
+        <input type="number" id="planning.periodic_rebuild_interval_seconds" name="planning.periodic_rebuild_interval_seconds" value="{{ config.planning.periodic_rebuild_interval_seconds }}">
+    </div>
+    <div class="form-group">
+        <label for="planning.forecast_delta_threshold_pct">Forecast Delta Threshold (%)</label>
+        <input type="number" id="planning.forecast_delta_threshold_pct" name="planning.forecast_delta_threshold_pct" step="0.1" value="{{ config.planning.forecast_delta_threshold_pct }}">
+    </div>
+    <div class="form-group">
+        <label for="planning.soc_deviation_tolerance">SOC Deviation Tolerance</label>
+        <input type="number" id="planning.soc_deviation_tolerance" name="planning.soc_deviation_tolerance" step="0.01" value="{{ config.planning.soc_deviation_tolerance }}" min="0" max="1">
+    </div>
+    <div class="form-group">
+        <label for="planning.solver_timeout_seconds">Solver Timeout (s)</label>
+        <input type="number" id="planning.solver_timeout_seconds" name="planning.solver_timeout_seconds" value="{{ config.planning.solver_timeout_seconds }}">
+    </div>
+    <div class="form-group">
+        <label for="dashboard.rolling_chart_window_hours">Rolling Chart Window (h each side)</label>
+        <input type="number" id="dashboard.rolling_chart_window_hours" name="dashboard.rolling_chart_window_hours" min="1" value="{{ config.dashboard.rolling_chart_window_hours }}">
+    </div>
+    <div class="form-group">
+        <label for="dashboard.rolling_chart_power_max_kw">Rolling Chart Power Axis Max (kW)</label>
+        <input type="number" id="dashboard.rolling_chart_power_max_kw" name="dashboard.rolling_chart_power_max_kw" min="1" step="0.5" value="{{ config.dashboard.rolling_chart_power_max_kw }}">
+    </div>
+</section>
+
+<!-- ═══ ARBITRAGE TAB ═══ -->
+<section id="tab-arbitrage" class="tab-content">
+    <h2>Arbitrage</h2>
+    <div class="form-group">
+        <label for="arbitrage.break_even_delta_cents">Break-Even Delta (c/kWh)</label>
+        <input type="number" id="arbitrage.break_even_delta_cents" name="arbitrage.break_even_delta_cents" value="{{ config.arbitrage.break_even_delta_cents }}">
+    </div>
+    <div class="form-group">
+        <label for="arbitrage.spike_threshold_cents">Spike Threshold (c/kWh)</label>
+        <input type="number" id="arbitrage.spike_threshold_cents" name="arbitrage.spike_threshold_cents" value="{{ config.arbitrage.spike_threshold_cents }}">
+    </div>
+    <div class="form-group">
+        <label for="arbitrage.spike_response_mode">Spike Response Mode</label>
+        <select id="arbitrage.spike_response_mode" name="arbitrage.spike_response_mode">
+            <option value="aggressive" {% if config.arbitrage.spike_response_mode == 'aggressive' %}selected{% endif %}>Aggressive</option>
+            <option value="conservative" {% if config.arbitrage.spike_response_mode == 'conservative' %}selected{% endif %}>Conservative</option>
+        </select>
+    </div>
+
+    <h2>Price Dampening</h2>
+    <div class="form-group">
+        <label for="arbitrage.price_dampen_threshold_cents">Dampen Threshold (c/kWh)</label>
+        <input type="number" id="arbitrage.price_dampen_threshold_cents" name="arbitrage.price_dampen_threshold_cents" value="{{ config.arbitrage.price_dampen_threshold_cents }}">
+        <small class="form-hint">Import prices above this are dampened to reduce solver overreaction.</small>
+    </div>
+    <div class="form-group">
+        <label for="arbitrage.price_dampen_factor">Dampen Factor (0-1)</label>
+        <input type="number" id="arbitrage.price_dampen_factor" name="arbitrage.price_dampen_factor" step="0.1" min="0" max="1" value="{{ config.arbitrage.price_dampen_factor }}">
+        <small class="form-hint">Fraction of excess above threshold to keep. 0 = full clamp, 1 = no dampening.</small>
+    </div>
+
+    <h2>Fixed Costs</h2>
+    <div class="form-group">
+        <label for="fixed_costs.monthly_supply_charge_cents">Monthly Supply Charge (cents)</label>
+        <input type="number" id="fixed_costs.monthly_supply_charge_cents" name="fixed_costs.monthly_supply_charge_cents" value="{{ config.fixed_costs.monthly_supply_charge_cents }}">
+    </div>
+    <div class="form-group">
+        <label for="fixed_costs.daily_access_fee_cents">Daily Access Fee (cents)</label>
+        <input type="number" id="fixed_costs.daily_access_fee_cents" name="fixed_costs.daily_access_fee_cents" value="{{ config.fixed_costs.daily_access_fee_cents }}">
+    </div>
+    <div class="form-group">
+        <label for="fixed_costs.hedging_per_kwh_cents">Hedging Per kWh (cents)</label>
+        <input type="number" id="fixed_costs.hedging_per_kwh_cents" name="fixed_costs.hedging_per_kwh_cents" value="{{ config.fixed_costs.hedging_per_kwh_cents }}">
+    </div>
+
+    <h2>Billing Cycle</h2>
+    <div class="form-group">
+        <label for="accounting.billing_cycle_day">Billing Cycle Day (1-28)</label>
+        <input type="number" id="accounting.billing_cycle_day" name="accounting.billing_cycle_day" value="{{ config.accounting.billing_cycle_day }}" min="1" max="28">
+        <small class="form-hint">Day of the month when your billing cycle starts.</small>
+    </div>
+    <div class="form-group">
+        <label for="accounting.currency_code">Currency Code</label>
+        <input type="text" id="accounting.currency_code" name="accounting.currency_code" value="{{ config.accounting.currency_code }}">
+    </div>
+</section>
+
+<!-- ═══ LOAD PROFILE TAB ═══ -->
+<section id="tab-load_profile" class="tab-content">
+    <h2>Default Load Profile</h2>
+    <p class="hint">Average household consumption in 4-hour blocks. Used when insufficient historic data is available for prediction. The system will automatically learn from actual usage once enough data is collected (approx. 1 day).</p>
+    <div class="form-group">
+        <label for="load_profile.block_00_04_w">00:00 &ndash; 04:00 Overnight (W)</label>
+        <input type="number" id="load_profile.block_00_04_w" name="load_profile.block_00_04_w" value="{{ config.load_profile.block_00_04_w }}" min="0">
+    </div>
+    <div class="form-group">
+        <label for="load_profile.block_04_08_w">04:00 &ndash; 08:00 Morning (W)</label>
+        <input type="number" id="load_profile.block_04_08_w" name="load_profile.block_04_08_w" value="{{ config.load_profile.block_04_08_w }}" min="0">
+    </div>
+    <div class="form-group">
+        <label for="load_profile.block_08_12_w">08:00 &ndash; 12:00 Mid-Morning (W)</label>
+        <input type="number" id="load_profile.block_08_12_w" name="load_profile.block_08_12_w" value="{{ config.load_profile.block_08_12_w }}" min="0">
+    </div>
+    <div class="form-group">
+        <label for="load_profile.block_12_16_w">12:00 &ndash; 16:00 Afternoon (W)</label>
+        <input type="number" id="load_profile.block_12_16_w" name="load_profile.block_12_16_w" value="{{ config.load_profile.block_12_16_w }}" min="0">
+    </div>
+    <div class="form-group">
+        <label for="load_profile.block_16_20_w">16:00 &ndash; 20:00 Evening Peak (W)</label>
+        <input type="number" id="load_profile.block_16_20_w" name="load_profile.block_16_20_w" value="{{ config.load_profile.block_16_20_w }}" min="0">
+    </div>
+    <div class="form-group">
+        <label for="load_profile.block_20_24_w">20:00 &ndash; 24:00 Night (W)</label>
+        <input type="number" id="load_profile.block_20_24_w" name="load_profile.block_20_24_w" value="{{ config.load_profile.block_20_24_w }}" min="0">
+    </div>
+    <div class="form-group">
+        <label for="load_profile.min_history_records">Min History Records for Prediction</label>
+        <input type="number" id="load_profile.min_history_records" name="load_profile.min_history_records" value="{{ config.load_profile.min_history_records }}" min="0">
+        <small class="form-hint">Minimum 30-minute data points needed before using historic prediction (48 = 1 day).</small>
+    </div>
+</section>
+
+<!-- ═══ PROVIDERS TAB ═══ -->
+<section id="tab-providers" class="tab-content">
+    <p class="hint">Provider changes apply immediately &mdash; no restart required.</p>
+
+    <h2>Solar Forecast (Forecast.Solar)</h2>
+    <div class="provider-status" id="provider-status-solar_forecast">
+        <span class="provider-status-dot"></span>
+        <span class="provider-status-text">Loading...</span>
+    </div>
+    <div class="form-group">
+        <label for="providers.solar.latitude">Latitude</label>
+        <input type="number" id="providers.solar.latitude" name="providers.solar.latitude" step="0.000001" value="{{ config.providers.solar.latitude }}">
+    </div>
+    <div class="form-group">
+        <label for="providers.solar.longitude">Longitude</label>
+        <input type="number" id="providers.solar.longitude" name="providers.solar.longitude" step="0.000001" value="{{ config.providers.solar.longitude }}">
+    </div>
+    <div class="form-group">
+        <label for="providers.solar.declination">Declination (degrees)</label>
+        <input type="number" id="providers.solar.declination" name="providers.solar.declination" step="0.1" value="{{ config.providers.solar.declination }}">
+    </div>
+    <div class="form-group">
+        <label for="providers.solar.azimuth">Azimuth (degrees)</label>
+        <input type="number" id="providers.solar.azimuth" name="providers.solar.azimuth" step="0.1" value="{{ config.providers.solar.azimuth if config.providers.solar.azimuth is not none else '' }}">
+    </div>
+    <div class="form-group">
+        <label for="providers.solar.kwp">PV Size (kWp)</label>
+        <input type="number" id="providers.solar.kwp" name="providers.solar.kwp" step="0.1" min="0.1" value="{{ config.providers.solar.kwp }}">
+    </div>
+    <div class="form-group">
+        <label for="providers.solar.timezone">Timezone</label>
+        <input type="text" id="providers.solar.timezone" name="providers.solar.timezone" value="{{ config.providers.solar.timezone }}" placeholder="Australia/Brisbane">
+    </div>
+    <div class="form-group">
+        <label for="providers.solar.update_interval_seconds">Update Interval (s)</label>
+        <input type="number" id="providers.solar.update_interval_seconds" name="providers.solar.update_interval_seconds" value="{{ config.providers.solar.update_interval_seconds }}">
+    </div>
+    <div class="form-group">
+        <label for="providers.solar.validity_seconds">Forecast Validity (s)</label>
+        <input type="number" id="providers.solar.validity_seconds" name="providers.solar.validity_seconds" value="{{ config.providers.solar.validity_seconds }}">
+    </div>
+    <h2>Weather (Open-Meteo)</h2>
+    <div class="provider-status" id="provider-status-weather_forecast">
+        <span class="provider-status-dot"></span>
+        <span class="provider-status-text">Loading...</span>
+    </div>
+    <div class="form-group">
+        <label for="providers.weather.latitude">Latitude</label>
+        <input type="number" id="providers.weather.latitude" name="providers.weather.latitude" step="0.0001" value="{{ config.providers.weather.latitude }}">
+    </div>
+    <div class="form-group">
+        <label for="providers.weather.longitude">Longitude</label>
+        <input type="number" id="providers.weather.longitude" name="providers.weather.longitude" step="0.0001" value="{{ config.providers.weather.longitude }}">
+    </div>
+    <div class="form-group">
+        <label for="providers.weather.update_interval_seconds">Update Interval (s)</label>
+        <input type="number" id="providers.weather.update_interval_seconds" name="providers.weather.update_interval_seconds" value="{{ config.providers.weather.update_interval_seconds }}">
+    </div>
+    <div class="form-group">
+        <label for="providers.weather.validity_seconds">Forecast Validity (s)</label>
+        <input type="number" id="providers.weather.validity_seconds" name="providers.weather.validity_seconds" value="{{ config.providers.weather.validity_seconds }}">
+    </div>
+
+    <h2>Storm Alerts (BOM)</h2>
+    <div class="provider-status" id="provider-status-storm">
+        <span class="provider-status-dot"></span>
+        <span class="provider-status-text">Loading...</span>
+    </div>
+    <div class="form-group">
+        <label for="providers.storm.state_code">State Code</label>
+        <input type="text" id="providers.storm.state_code" name="providers.storm.state_code" value="{{ config.providers.storm.state_code }}" placeholder="e.g. IDQ11295">
+    </div>
+    <div class="form-group">
+        <label for="providers.storm.location_aac">Location AAC</label>
+        <input type="text" id="providers.storm.location_aac" name="providers.storm.location_aac" value="{{ config.providers.storm.location_aac }}" placeholder="e.g. QLD_PT001">
+    </div>
+    <div class="form-group">
+        <label for="providers.storm.warning_product_ids">Warning Product IDs</label>
+        <input type="text" id="providers.storm.warning_product_ids" name="providers.storm.warning_product_ids" value="{{ config.providers.storm.warning_product_ids|join(', ') }}" placeholder="e.g. IDQ21033, IDQ21035, IDQ21037, IDQ21038">
+        <small class="form-hint">Comma-separated BOM warning product IDs to monitor for active alerts.</small>
+    </div>
+    <div class="form-group">
+        <label for="providers.storm.update_interval_seconds">Update Interval (s)</label>
+        <input type="number" id="providers.storm.update_interval_seconds" name="providers.storm.update_interval_seconds" value="{{ config.providers.storm.update_interval_seconds }}">
+    </div>
+    <div class="form-group">
+        <label for="providers.storm.validity_seconds">Alert Validity (s)</label>
+        <input type="number" id="providers.storm.validity_seconds" name="providers.storm.validity_seconds" value="{{ config.providers.storm.validity_seconds }}">
+    </div>
+
+    <h2>Tariff (Amber Electric)</h2>
+    <div class="provider-status" id="provider-status-tariff">
+        <span class="provider-status-dot"></span>
+        <span class="provider-status-text">Loading...</span>
+    </div>
+    <div class="form-group">
+        <label for="providers.tariff.api_key">API Key</label>
+        <input type="password" id="providers.tariff.api_key" name="providers.tariff.api_key" value="{{ config.providers.tariff.api_key }}" placeholder="Enter Amber API key">
+    </div>
+    <div class="form-group">
+        <label for="providers.tariff.site_id">Site ID</label>
+        <input type="text" id="providers.tariff.site_id" name="providers.tariff.site_id" value="{{ config.providers.tariff.site_id }}" placeholder="Amber site ID">
+    </div>
+    <div class="form-group">
+        <label for="providers.tariff.update_interval_seconds">Update Interval (s)</label>
+        <input type="number" id="providers.tariff.update_interval_seconds" name="providers.tariff.update_interval_seconds" value="{{ config.providers.tariff.update_interval_seconds }}">
+    </div>
+    <div class="form-group">
+        <label for="providers.tariff.validity_seconds">Price Validity (s)</label>
+        <input type="number" id="providers.tariff.validity_seconds" name="providers.tariff.validity_seconds" value="{{ config.providers.tariff.validity_seconds }}">
+    </div>
+    <div class="form-group">
+        <label for="providers.tariff.max_requests_per_5min">Max Requests/5min</label>
+        <input type="number" id="providers.tariff.max_requests_per_5min" name="providers.tariff.max_requests_per_5min" value="{{ config.providers.tariff.max_requests_per_5min }}">
+    </div>
+</section>
+
+<!-- ═══ LOADS TAB ═══ -->
+<section id="tab-loads" class="tab-content">
+    <h2>Shelly Devices</h2>
+    {% if config.loads.shelly_devices %}
+    <table class="settings-table">
+        <thead>
+            <tr><th>Name</th><th>Host</th><th>Power (W)</th><th>Priority</th><th>Enabled</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for device in config.loads.shelly_devices %}
+            <tr id="shelly-row-{{ loop.index0 }}">
+                <td>{{ device.name }}</td>
+                <td>{{ device.host }}</td>
+                <td>{{ device.power_w }}</td>
+                <td>{{ device.priority_class }}</td>
+                <td>{{ "Yes" if device.enabled else "No" }}</td>
+                <td>
+                    <button type="button" class="btn btn-sm" onclick="editShellyDevice('{{ device.name }}', {{ loop.index0 }})">Edit</button>
+                    <button type="button" class="btn btn-sm btn-danger" onclick="deleteShellyDevice('{{ device.name }}')">Delete</button>
+                </td>
+            </tr>
+            <tr id="shelly-edit-{{ loop.index0 }}" class="edit-row" style="display: none;">
+                <td colspan="6">
+                    <div class="edit-grid" data-device-name="{{ device.name }}">
+                        <div class="form-group"><label>Host</label><input type="text" name="host" value="{{ device.host }}"></div>
+                        <div class="form-group"><label>Power (W)</label><input type="number" name="power_w" value="{{ device.power_w }}"></div>
+                        <div class="form-group"><label>Priority (1-10)</label><input type="number" name="priority_class" value="{{ device.priority_class }}" min="1" max="10"></div>
+                        <div class="form-group"><label>Relay ID (0-based)</label><input type="number" name="relay_id" value="{{ device.relay_id }}" min="0"></div>
+                        <div class="form-group"><label><input type="checkbox" name="enabled" {% if device.enabled %}checked{% endif %}> Enabled</label></div>
+                        <div class="form-group"><label>Earliest Start</label><input type="text" name="earliest_start" value="{{ device.earliest_start }}" placeholder="HH:MM"></div>
+                        <div class="form-group"><label>Latest End</label><input type="text" name="latest_end" value="{{ device.latest_end }}" placeholder="HH:MM"></div>
+                        <div class="form-group"><label><input type="checkbox" name="prefer_solar" {% if device.prefer_solar %}checked{% endif %}> Prefer Solar</label></div>
+                        <div class="form-group"><label>Days (0=Mon..6=Sun)</label><input type="text" name="days_of_week" value="{{ device.days_of_week|join(',') }}"></div>
+                        <div class="form-group"><label>Min Runtime (min)</label><input type="number" name="min_runtime_minutes" value="{{ device.min_runtime_minutes }}"></div>
+                        <div class="form-group"><label>Ideal Runtime (min)</label><input type="number" name="ideal_runtime_minutes" value="{{ device.ideal_runtime_minutes }}"></div>
+                        <div class="form-group"><label>Max Runtime (min)</label><input type="number" name="max_runtime_minutes" value="{{ device.max_runtime_minutes }}"></div>
+                        <div class="form-group"><label><input type="checkbox" name="allow_split_shifts" {% if device.allow_split_shifts %}checked{% endif %}> Allow Split Shifts</label></div>
+                        <div class="form-group"><label>Completion Deadline</label><input type="text" name="completion_deadline" value="{{ device.completion_deadline }}" placeholder="HH:MM"></div>
+                        <div class="edit-actions">
+                            <button type="button" class="btn btn-primary btn-sm" onclick="saveShellyEdit({{ loop.index0 }})">Save</button>
+                            <button type="button" class="btn btn-sm" onclick="cancelShellyEdit({{ loop.index0 }})">Cancel</button>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No Shelly devices configured.</p>
+    {% endif %}
+
+    <details class="add-form-toggle">
+        <summary class="btn btn-secondary">+ Add Shelly Device</summary>
+        <div id="shelly-add-form" class="add-form">
+            <div class="form-group">
+                <label>Name</label>
+                <input type="text" name="name" placeholder="e.g. Pool Pump">
+            </div>
+            <div class="form-group">
+                <label>Host / IP</label>
+                <input type="text" name="host" placeholder="e.g. 192.168.1.50">
+            </div>
+            <div class="form-group">
+                <label>Power (W)</label>
+                <input type="number" name="power_w" placeholder="e.g. 1500">
+            </div>
+            <div class="form-group">
+                <label>Priority (1-10)</label>
+                <input type="number" name="priority_class" value="5" min="1" max="10">
+            </div>
+            <div class="form-group">
+                <label>Relay ID (0-based)</label>
+                <input type="number" name="relay_id" value="0" min="0">
+            </div>
+            <button type="button" class="btn btn-primary" onclick="addShellyDevice()">Add Device</button>
+        </div>
+    </details>
+
+    <h2>MQTT Load Endpoints</h2>
+    {% if config.loads.mqtt_load_endpoints %}
+    <table class="settings-table">
+        <thead>
+            <tr><th>Name</th><th>Command Topic</th><th>Power (W)</th><th>Priority</th><th>Enabled</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for ep in config.loads.mqtt_load_endpoints %}
+            <tr id="mqtt-row-{{ loop.index0 }}">
+                <td>{{ ep.name }}</td>
+                <td>{{ ep.command_topic }}</td>
+                <td>{{ ep.power_w }}</td>
+                <td>{{ ep.priority_class }}</td>
+                <td>{{ "Yes" if ep.enabled else "No" }}</td>
+                <td>
+                    <button type="button" class="btn btn-sm" onclick="editMqttEndpoint('{{ ep.name }}', {{ loop.index0 }})">Edit</button>
+                    <button type="button" class="btn btn-sm btn-danger" onclick="deleteMqttEndpoint('{{ ep.name }}')">Delete</button>
+                </td>
+            </tr>
+            <tr id="mqtt-edit-{{ loop.index0 }}" class="edit-row" style="display: none;">
+                <td colspan="6">
+                    <div class="edit-grid" data-endpoint-name="{{ ep.name }}">
+                        <div class="form-group"><label>Command Topic</label><input type="text" name="command_topic" value="{{ ep.command_topic }}"></div>
+                        <div class="form-group"><label>State Topic</label><input type="text" name="state_topic" value="{{ ep.state_topic }}"></div>
+                        <div class="form-group"><label>Power (W)</label><input type="number" name="power_w" value="{{ ep.power_w }}"></div>
+                        <div class="form-group"><label>Priority (1-10)</label><input type="number" name="priority_class" value="{{ ep.priority_class }}" min="1" max="10"></div>
+                        <div class="form-group"><label><input type="checkbox" name="enabled" {% if ep.enabled %}checked{% endif %}> Enabled</label></div>
+                        <div class="form-group"><label>Earliest Start</label><input type="text" name="earliest_start" value="{{ ep.earliest_start }}" placeholder="HH:MM"></div>
+                        <div class="form-group"><label>Latest End</label><input type="text" name="latest_end" value="{{ ep.latest_end }}" placeholder="HH:MM"></div>
+                        <div class="form-group"><label><input type="checkbox" name="prefer_solar" {% if ep.prefer_solar %}checked{% endif %}> Prefer Solar</label></div>
+                        <div class="form-group"><label>Days (0=Mon..6=Sun)</label><input type="text" name="days_of_week" value="{{ ep.days_of_week|join(',') }}"></div>
+                        <div class="form-group"><label>Min Runtime (min)</label><input type="number" name="min_runtime_minutes" value="{{ ep.min_runtime_minutes }}"></div>
+                        <div class="form-group"><label>Ideal Runtime (min)</label><input type="number" name="ideal_runtime_minutes" value="{{ ep.ideal_runtime_minutes }}"></div>
+                        <div class="form-group"><label>Max Runtime (min)</label><input type="number" name="max_runtime_minutes" value="{{ ep.max_runtime_minutes }}"></div>
+                        <div class="form-group"><label><input type="checkbox" name="allow_split_shifts" {% if ep.allow_split_shifts %}checked{% endif %}> Allow Split Shifts</label></div>
+                        <div class="form-group"><label>Completion Deadline</label><input type="text" name="completion_deadline" value="{{ ep.completion_deadline }}" placeholder="HH:MM"></div>
+                        <div class="edit-actions">
+                            <button type="button" class="btn btn-primary btn-sm" onclick="saveMqttEdit({{ loop.index0 }})">Save</button>
+                            <button type="button" class="btn btn-sm" onclick="cancelMqttEdit({{ loop.index0 }})">Cancel</button>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No MQTT load endpoints configured.</p>
+    {% endif %}
+
+    <details class="add-form-toggle">
+        <summary class="btn btn-secondary">+ Add MQTT Endpoint</summary>
+        <div id="mqtt-add-form" class="add-form">
+            <div class="form-group">
+                <label>Name</label>
+                <input type="text" name="name" placeholder="e.g. Hot Water">
+            </div>
+            <div class="form-group">
+                <label>Command Topic</label>
+                <input type="text" name="command_topic" placeholder="e.g. power_master/loads/hotwater/command">
+            </div>
+            <div class="form-group">
+                <label>State Topic</label>
+                <input type="text" name="state_topic" placeholder="e.g. power_master/loads/hotwater/state">
+            </div>
+            <div class="form-group">
+                <label>Power (W)</label>
+                <input type="number" name="power_w" placeholder="e.g. 3600">
+            </div>
+            <div class="form-group">
+                <label>Priority (1-10)</label>
+                <input type="number" name="priority_class" value="5" min="1" max="10">
+            </div>
+            <button type="button" class="btn btn-primary" onclick="addMqttEndpoint()">Add Endpoint</button>
+        </div>
+    </details>
+</section>
+
+<!-- ═══ MQTT TAB ═══ -->
+<section id="tab-mqtt" class="tab-content">
+    <h2>MQTT</h2>
+    <div class="form-group">
+        <label for="mqtt.enabled">
+            <input type="checkbox" id="mqtt.enabled" name="mqtt.enabled" {% if config.mqtt.enabled %}checked{% endif %}>
+            Enable MQTT
+        </label>
+    </div>
+    <div class="form-group">
+        <label for="mqtt.broker_host">Broker Host</label>
+        <input type="text" id="mqtt.broker_host" name="mqtt.broker_host" value="{{ config.mqtt.broker_host }}">
+    </div>
+    <div class="form-group">
+        <label for="mqtt.broker_port">Broker Port</label>
+        <input type="number" id="mqtt.broker_port" name="mqtt.broker_port" value="{{ config.mqtt.broker_port }}">
+    </div>
+    <div class="form-group">
+        <label for="mqtt.username">Username</label>
+        <input type="text" id="mqtt.username" name="mqtt.username" value="{{ config.mqtt.username }}">
+    </div>
+    <div class="form-group">
+        <label for="mqtt.password">Password</label>
+        <input type="password" id="mqtt.password" name="mqtt.password" value="{{ config.mqtt.password }}">
+    </div>
+    <div class="form-group">
+        <label for="mqtt.topic_prefix">Topic Prefix</label>
+        <input type="text" id="mqtt.topic_prefix" name="mqtt.topic_prefix" value="{{ config.mqtt.topic_prefix }}">
+    </div>
+    <div class="form-group">
+        <label for="mqtt.publish_interval_seconds">Publish Interval (s)</label>
+        <input type="number" id="mqtt.publish_interval_seconds" name="mqtt.publish_interval_seconds" value="{{ config.mqtt.publish_interval_seconds }}">
+    </div>
+    <div class="form-group">
+        <label for="mqtt.ha_discovery_enabled">
+            <input type="checkbox" id="mqtt.ha_discovery_enabled" name="mqtt.ha_discovery_enabled" {% if config.mqtt.ha_discovery_enabled %}checked{% endif %}>
+            Enable Home Assistant Discovery
+        </label>
+    </div>
+    <div class="form-group">
+        <label for="mqtt.ha_discovery_prefix">HA Discovery Prefix</label>
+        <input type="text" id="mqtt.ha_discovery_prefix" name="mqtt.ha_discovery_prefix" value="{{ config.mqtt.ha_discovery_prefix }}">
+    </div>
+</section>
+
+<!-- ═══ ANTI-OSCILLATION TAB ═══ -->
+<section id="tab-oscillation" class="tab-content">
+    <h2>Anti-Oscillation</h2>
+    <div class="form-group">
+        <label for="anti_oscillation.min_command_duration_seconds">Min Command Duration (s)</label>
+        <input type="number" id="anti_oscillation.min_command_duration_seconds" name="anti_oscillation.min_command_duration_seconds" value="{{ config.anti_oscillation.min_command_duration_seconds }}">
+    </div>
+    <div class="form-group">
+        <label for="anti_oscillation.hysteresis_band">Hysteresis Band</label>
+        <input type="number" id="anti_oscillation.hysteresis_band" name="anti_oscillation.hysteresis_band" step="0.01" value="{{ config.anti_oscillation.hysteresis_band }}" min="0" max="0.5">
+    </div>
+    <div class="form-group">
+        <label for="anti_oscillation.rate_limit_window_seconds">Rate Limit Window (s)</label>
+        <input type="number" id="anti_oscillation.rate_limit_window_seconds" name="anti_oscillation.rate_limit_window_seconds" value="{{ config.anti_oscillation.rate_limit_window_seconds }}">
+    </div>
+    <div class="form-group">
+        <label for="anti_oscillation.max_commands_per_window">Max Commands Per Window</label>
+        <input type="number" id="anti_oscillation.max_commands_per_window" name="anti_oscillation.max_commands_per_window" value="{{ config.anti_oscillation.max_commands_per_window }}">
+    </div>
+</section>
+
+<!-- ═══ STORM TAB ═══ -->
+<section id="tab-storm" class="tab-content">
+    <h2>Storm Protection</h2>
+    <div class="form-group">
+        <label for="storm.enabled">
+            <input type="checkbox" id="storm.enabled" name="storm.enabled" {% if config.storm.enabled %}checked{% endif %}>
+            Enable Storm Protection
+        </label>
+    </div>
+    <div class="form-group">
+        <label for="storm.reserve_soc_target">Reserve SOC Target</label>
+        <input type="number" id="storm.reserve_soc_target" name="storm.reserve_soc_target" step="0.01" value="{{ config.storm.reserve_soc_target }}" min="0" max="1">
+    </div>
+    <div class="form-group">
+        <label for="storm.probability_threshold">Probability Threshold</label>
+        <input type="number" id="storm.probability_threshold" name="storm.probability_threshold" step="0.01" value="{{ config.storm.probability_threshold }}" min="0" max="1">
+    </div>
+    <div class="form-group">
+        <label for="storm.horizon_hours">Horizon (hours)</label>
+        <input type="number" id="storm.horizon_hours" name="storm.horizon_hours" value="{{ config.storm.horizon_hours }}">
+    </div>
+</section>
+
+<!-- ═══ RESILIENCE TAB ═══ -->
+<section id="tab-resilience" class="tab-content">
+    <h2>Resilience</h2>
+    <div class="form-group">
+        <label for="resilience.health_check_interval_seconds">Health Check Interval (s)</label>
+        <input type="number" id="resilience.health_check_interval_seconds" name="resilience.health_check_interval_seconds" value="{{ config.resilience.health_check_interval_seconds }}">
+    </div>
+    <div class="form-group">
+        <label for="resilience.max_consecutive_failures">Max Consecutive Failures</label>
+        <input type="number" id="resilience.max_consecutive_failures" name="resilience.max_consecutive_failures" value="{{ config.resilience.max_consecutive_failures }}">
+    </div>
+    <div class="form-group">
+        <label for="resilience.stale_forecast_max_age_seconds">Stale Forecast Max Age (s)</label>
+        <input type="number" id="resilience.stale_forecast_max_age_seconds" name="resilience.stale_forecast_max_age_seconds" value="{{ config.resilience.stale_forecast_max_age_seconds }}">
+    </div>
+    <div class="form-group">
+        <label for="resilience.degraded_safety_margin">Degraded Safety Margin</label>
+        <input type="number" id="resilience.degraded_safety_margin" name="resilience.degraded_safety_margin" step="0.01" value="{{ config.resilience.degraded_safety_margin }}" min="0" max="1">
+    </div>
+    <div class="form-group">
+        <label for="resilience.stale_telemetry_max_age_seconds">Stale Telemetry Max Age (s)</label>
+        <input type="number" id="resilience.stale_telemetry_max_age_seconds" name="resilience.stale_telemetry_max_age_seconds" value="{{ config.resilience.stale_telemetry_max_age_seconds }}">
+    </div>
+</section>
+
+<!-- ═══ SUBMIT ═══ -->
+<div class="form-actions">
+    <button type="submit" class="btn btn-primary">Save Settings</button>
+</div>
+
+</form>
+
+<style>
+.diag-status { padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; font-weight: 600; }
+.diag-status.connected { background: rgba(63, 185, 80, 0.15); color: #3fb950; }
+.diag-status.disconnected { background: rgba(248, 81, 73, 0.15); color: #f85149; }
+.diag-status.loading { background: rgba(139, 148, 158, 0.15); color: #8b949e; }
+.diag-timestamp { margin-top: 8px; font-size: 0.8em; color: #6e7681; }
+.diag-table { font-size: 0.85em; }
+.diag-table td, .diag-table th { padding: 4px 8px; }
+.diag-table .reg-ok { color: #3fb950; }
+.diag-table .reg-error { color: #f85149; }
+.diag-table .reg-value { font-family: monospace; font-weight: 600; }
+</style>
+
+<script>
+function switchTab(tabId, btn) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-' + tabId).classList.add('active');
+    btn.classList.add('active');
+
+    // Start/stop diagnostics polling based on active tab
+    if (tabId === 'inverter') { startDiagPoll(); }
+    else { stopDiagPoll(); }
+}
+
+var diagTimer = null;
+
+function startDiagPoll() {
+    if (diagTimer) return;
+    refreshDiagnostics();
+    diagTimer = setInterval(function() {
+        var autoPoll = document.getElementById('diag-auto-poll');
+        if (autoPoll && autoPoll.checked) { refreshDiagnostics(); }
+    }, 5000);
+}
+
+function stopDiagPoll() {
+    if (diagTimer) { clearInterval(diagTimer); diagTimer = null; }
+}
+
+function refreshDiagnostics() {
+    var statusEl = document.getElementById('diag-status');
+    var tbody = document.getElementById('diag-tbody');
+    var tsEl = document.getElementById('diag-timestamp');
+    var btn = document.getElementById('diag-refresh-btn');
+
+    if (btn) btn.disabled = true;
+    if (statusEl) { statusEl.textContent = 'Reading registers...'; statusEl.className = 'diag-status loading'; }
+
+    fetch('/api/inverter/diagnostics')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (btn) btn.disabled = false;
+
+        // Connection status
+        if (data.connected) {
+            var extra = '';
+            if (data.work_mode_name) extra += '  |  Work Mode: ' + data.work_mode_name;
+            if (data.inverter_state_name) extra += '  |  State: ' + data.inverter_state_name;
+            statusEl.textContent = 'Connected to ' + (data.config ? data.config.host + ':' + data.config.port : 'inverter') + extra;
+            statusEl.className = 'diag-status connected';
+        } else {
+            var msg = 'Disconnected';
+            if (data.error) msg += ' — ' + data.error;
+            if (data.config) msg += ' (' + data.config.host + ':' + data.config.port + ' unit ' + data.config.unit_id + ')';
+            statusEl.textContent = msg;
+            statusEl.className = 'diag-status disconnected';
+        }
+
+        // Timestamp
+        if (data.timestamp && tsEl) {
+            var d = new Date(data.timestamp);
+            tsEl.textContent = 'Last read: ' + d.toLocaleTimeString() + ' (' + d.toLocaleDateString() + ')';
+        }
+
+        // Register table
+        if (data.registers && tbody) {
+            var html = '';
+            var order = [
+                'PV1 Power', 'PV2 Power', 'Grid / Meter', 'Load Power',
+                'Battery Power', 'Battery SOC', 'Battery Voltage', 'Battery Current', 'Battery Temp',
+                'Inverter State', 'Work Mode', 'Min SOC', 'Max SOC', 'Export Limit',
+                'Remote Enable', 'Remote Timeout', 'Active Power Cmd'
+            ];
+            for (var i = 0; i < order.length; i++) {
+                var name = order[i];
+                var reg = data.registers[name];
+                if (!reg) continue;
+                var statusClass = reg.status === 'ok' ? 'reg-ok' : 'reg-error';
+                var rawStr = reg.raw !== null && reg.raw !== undefined ? String(reg.raw) : '—';
+                var valStr = reg.value !== null && reg.value !== undefined ? String(reg.value) : '—';
+                var errStr = reg.error ? ' title="' + reg.error.replace(/"/g, '&quot;') + '"' : '';
+                html += '<tr>';
+                html += '<td><strong>' + name + '</strong></td>';
+                html += '<td>' + reg.address + '</td>';
+                html += '<td>' + (reg.type || '') + '</td>';
+                html += '<td class="reg-value">' + rawStr + '</td>';
+                html += '<td class="reg-value">' + valStr + '</td>';
+                html += '<td>' + (reg.unit || '') + '</td>';
+                html += '<td class="' + statusClass + '"' + errStr + '>' + reg.status + '</td>';
+                html += '</tr>';
+            }
+            tbody.innerHTML = html || '<tr><td colspan="7">No register data</td></tr>';
+        }
+    })
+    .catch(function(err) {
+        if (btn) btn.disabled = false;
+        if (statusEl) {
+            statusEl.textContent = 'Fetch failed: ' + err;
+            statusEl.className = 'diag-status disconnected';
+        }
+    });
+}
+
+// Auto-start polling if Inverter tab is active on page load
+document.addEventListener('DOMContentLoaded', function() {
+    var inverterTab = document.getElementById('tab-inverter');
+    if (inverterTab && inverterTab.classList.contains('active')) {
+        startDiagPoll();
+    }
+});
+</script>
+{% endblock %}

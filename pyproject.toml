@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "power-master"
+version = "0.1.0"
+description = "Solar optimisation and control system for battery management, PV self-consumption, and grid arbitrage"
+#readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+
+dependencies = [
+    # Core
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "jinja2>=3.1",
+    "aiosqlite>=0.21",
+    "pulp>=2.9",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+    "pyyaml>=6.0",
+    # Providers
+    "httpx>=0.28",
+    "amberelectric>=2.0",
+    # Hardware
+    "pymodbus>=3.7",
+    # MQTT
+    "aiomqtt>=2.3",
+    # Dashboard / Logging
+    "structlog>=25.1",
+    "sse-starlette>=2.2",
+    "python-multipart>=0.0.20",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.25",
+    "pytest-cov>=6.0",
+    "ruff>=0.9",
+    "mypy>=1.14",
+    "time-machine>=2.16",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/power_master"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true

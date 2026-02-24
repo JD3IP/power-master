@@ -1,0 +1,161 @@
+# Power Master - Default Configuration
+# Override in config.yaml (gitignored)
+
+battery:
+  capacity_wh: 10000
+  max_charge_rate_w: 5000
+  max_discharge_rate_w: 5000
+  soc_min_hard: 0.05          # Absolute minimum (safety cutoff)
+  soc_max_hard: 0.95          # Absolute maximum (safety cutoff)
+  soc_min_soft: 0.10          # Preferred operating minimum
+  soc_max_soft: 0.90          # Preferred operating maximum
+  round_trip_efficiency: 0.90
+
+load_profile:
+  block_00_04_w: 500
+  block_04_08_w: 800
+  block_08_12_w: 1200
+  block_12_16_w: 1500
+  block_16_20_w: 2500
+  block_20_24_w: 1500
+  min_history_records: 48
+  timezone: "Australia/Brisbane"
+
+planning:
+  horizon_hours: 48
+  slot_duration_minutes: 30
+  evaluation_interval_seconds: 300      # 5 minutes
+  periodic_rebuild_interval_seconds: 3600  # 1 hour
+  forecast_delta_threshold_pct: 15.0
+  soc_deviation_tolerance: 0.10         # 10% SOC deviation triggers rebuild
+  solver_timeout_seconds: 25
+
+battery_targets:
+  evening_soc_target: 0.90              # Target SOC before peak (soft)
+  evening_target_hour: 16               # Hour to check evening target (4pm)
+  morning_soc_minimum: 0.20             # Minimum SOC to hold overnight
+  morning_minimum_hour: 6               # Hour to check morning minimum (6am)
+  overnight_charge_threshold_cents: 10  # Charge from grid if price < this (c/kWh)
+
+arbitrage:
+  break_even_delta_cents: 5             # Minimum sell-buy spread to arbitrage (c/kWh)
+  spike_threshold_cents: 100            # Price spike detection threshold (c/kWh)
+  spike_response_mode: "aggressive"     # aggressive: max discharge. conservative: reduce load only
+
+fixed_costs:
+  monthly_supply_charge_cents: 9000     # Monthly supply charge ($90)
+  daily_access_fee_cents: 100           # Daily access fee ($1)
+  hedging_per_kwh_cents: 2              # Per-kWh hedging offset (2c)
+
+anti_oscillation:
+  min_command_duration_seconds: 300     # 5 minutes minimum between mode changes
+  hysteresis_band: 0.05                 # 5% SOC hysteresis band
+  rate_limit_window_seconds: 900        # 15 minute window
+  max_commands_per_window: 3
+
+storm:
+  enabled: true
+  reserve_soc_target: 0.80             # Min SOC when storm active
+  probability_threshold: 0.70          # Trigger reserve when probability > this
+  horizon_hours: 24
+
+providers:
+  weather:
+    type: "openmeteo"
+    update_interval_seconds: 3600       # 1 hour
+    latitude: -27.4698                  # Brisbane default
+    longitude: 153.0251
+
+  solar:
+    latitude: -27.4698
+    longitude: 153.0251
+    declination: 20.0                  # Panel tilt / inclination angle
+    azimuth: 0.0                       # 0=south (N hemisphere), 180=north (S hemisphere)
+    kwp: 5.0                           # Installed PV size in kWp
+    timezone: "Australia/Brisbane"
+    update_interval_seconds: 21600      # 6 hours
+
+  storm:
+    type: "bom"
+    state_code: "IDQ11295"              # Queensland
+    location_aac: ""                    # Set via settings UI
+    update_interval_seconds: 21600      # 6 hours
+
+  tariff:
+    type: "amber"
+    api_key: ""
+    site_id: ""
+    update_interval_seconds: 300        # 5 minutes
+
+hardware:
+  adapter: "foxess"
+  foxess:
+    host: "192.168.1.100"
+    port: 502
+    unit_id: 247
+    poll_interval_seconds: 15
+    watchdog_refresh_seconds: 20
+    watchdog_timeout_seconds: 35
+
+loads:
+  shelly_devices: []
+  # Example:
+  # - name: "Pool Pump"
+  #   host: "192.168.1.50"
+  #   relay_id: 0                   # Shelly relay/output index is zero-based (0=first relay)
+  #   power_w: 1500
+  #   priority_class: 5
+  #   enabled: true
+  #   earliest_start: "08:00"
+  #   latest_end: "16:00"
+  #   duration_minutes: 120
+  #   prefer_solar: true
+  mqtt_load_endpoints: []
+  # Example:
+  # - name: "Hot Water"
+  #   command_topic: "power_master/load/hot_water/command"
+  #   state_topic: "power_master/load/hot_water/state"
+  #   power_w: 3600
+  #   priority_class: 3
+
+mqtt:
+  enabled: true
+  broker_host: "localhost"
+  broker_port: 1883
+  username: ""
+  password: ""
+  topic_prefix: "power_master"
+  publish_interval_seconds: 5
+  ha_discovery_enabled: true
+  ha_discovery_prefix: "homeassistant"
+
+dashboard:
+  host: "0.0.0.0"
+  port: 8080
+  sse_interval_seconds: 5
+  rolling_chart_power_max_kw: 20.0
+  rolling_chart_window_hours: 12
+  auth:
+    username: "admin"
+    password_hash: ""                      # Empty = auth disabled; run: python -m power_master.dashboard.auth --set-password
+    session_secret: ""                     # Auto-generated on first authenticated startup
+    session_max_age_seconds: 86400         # 24 hours
+
+resilience:
+  health_check_interval_seconds: 60
+  max_consecutive_failures: 3
+  stale_forecast_max_age_seconds: 7200  # 2 hours
+  degraded_safety_margin: 0.05          # Extra SOC margin in degraded mode
+  stale_telemetry_max_age_seconds: 120  # 2 minutes
+
+accounting:
+  billing_cycle_day: 1                  # Day of month billing cycle starts
+  currency_code: "AUD"
+
+logging:
+  level: "INFO"
+  format: "json"                        # json or console
+  file: ""                              # Empty = stdout only
+
+db:
+  path: "power_master.db"
