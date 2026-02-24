@@ -210,9 +210,15 @@ class MQTTConfig(BaseModel):
     ha_discovery_prefix: str = "homeassistant"
 
 
+class UserConfig(BaseModel):
+    username: str
+    password_hash: str  # format: "salt_hex:sha256_hex"
+    role: str = "viewer"  # "admin" or "viewer"
+    enabled: bool = True
+
+
 class AuthConfig(BaseModel):
-    username: str = "admin"
-    password_hash: str = ""  # Empty = auth disabled; format: "salt_hex:sha256_hex"
+    users: list[UserConfig] = Field(default_factory=list)  # Empty = auth disabled
     session_secret: str = ""  # Auto-generated on first authenticated startup
     session_max_age_seconds: int = 86400  # 24 hours
 

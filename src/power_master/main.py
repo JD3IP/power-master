@@ -57,7 +57,7 @@ class Application:
 
         # ── 0. Ensure auth session secret exists ──────────────
         auth_cfg = self.config.dashboard.auth
-        if auth_cfg.password_hash and not auth_cfg.session_secret:
+        if auth_cfg.users and not auth_cfg.session_secret:
             import secrets as _secrets
 
             generated = _secrets.token_hex(32)

@@ -7,7 +7,10 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+
+from power_master.dashboard.auth import require_admin
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -121,6 +124,10 @@ async def get_mode(request: Request) -> dict:
 @router.post("/mode")
 async def set_mode(request: Request, body: ModeRequest) -> dict:
     """Set manual mode override."""
+    denied = require_admin(request)
+    if denied:
+        return denied
+
     from power_master.hardware.base import OperatingMode
 
     manual_override = getattr(request.app.state, "manual_override", None)
@@ -398,6 +405,10 @@ async def list_loads(request: Request) -> dict:
 @router.post("/loads/shelly")
 async def add_shelly_load(request: Request) -> dict:
     """Add a new Shelly load device."""
+    denied = require_admin(request)
+    if denied:
+        return denied
+
     from power_master.config.schema import ShellyDeviceConfig
 
     body = await request.json()
@@ -422,6 +433,10 @@ async def add_shelly_load(request: Request) -> dict:
 @router.put("/loads/shelly/{name}")
 async def update_shelly_load(request: Request, name: str) -> dict:
     """Update an existing Shelly load device by name."""
+    denied = require_admin(request)
+    if denied:
+        return denied
+
     from power_master.config.schema import ShellyDeviceConfig
 
     application = getattr(request.app.state, "application", None)
@@ -461,6 +476,10 @@ async def update_shelly_load(request: Request, name: str) -> dict:
 @router.delete("/loads/shelly/{name}")
 async def delete_shelly_load(request: Request, name: str) -> dict:
     """Delete a Shelly load device by name."""
+    denied = require_admin(request)
+    if denied:
+        return denied
+
     application = getattr(request.app.state, "application", None)
     if application is None:
         return {"status": "error", "message": "Application not available"}
@@ -476,6 +495,10 @@ async def delete_shelly_load(request: Request, name: str) -> dict:
 @router.post("/loads/mqtt")
 async def add_mqtt_load(request: Request) -> dict:
     """Add a new MQTT load endpoint."""
+    denied = require_admin(request)
+    if denied:
+        return denied
+
     from power_master.config.schema import MQTTLoadEndpointConfig
 
     body = await request.json()
@@ -500,6 +523,10 @@ async def add_mqtt_load(request: Request) -> dict:
 @router.put("/loads/mqtt/{name}")
 async def update_mqtt_load(request: Request, name: str) -> dict:
     """Update an existing MQTT load endpoint by name."""
+    denied = require_admin(request)
+    if denied:
+        return denied
+
     from power_master.config.schema import MQTTLoadEndpointConfig
 
     application = getattr(request.app.state, "application", None)
@@ -539,6 +566,10 @@ async def update_mqtt_load(request: Request, name: str) -> dict:
 @router.delete("/loads/mqtt/{name}")
 async def delete_mqtt_load(request: Request, name: str) -> dict:
     """Delete an MQTT load endpoint by name."""
+    denied = require_admin(request)
+    if denied:
+        return denied
+
     application = getattr(request.app.state, "application", None)
     if application is None:
         return {"status": "error", "message": "Application not available"}

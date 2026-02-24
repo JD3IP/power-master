@@ -26,6 +26,29 @@
     <button type="button" class="tab" data-tab="oscillation" onclick="switchTab('oscillation', this)">Anti-Oscillation</button>
     <button type="button" class="tab" data-tab="storm" onclick="switchTab('storm', this)">Storm</button>
     <button type="button" class="tab" data-tab="resilience" onclick="switchTab('resilience', this)">Resilience</button>
+    {% if not auth_enabled or user_role == 'admin' %}
+    <button type="button" class="tab" data-tab="users" onclick="switchTab('users', this)">Users</button>
+    {% endif %}
+</div>
+
+<div class="tab-select-wrap">
+    <label for="settings-tab-select" class="tab-select-label">Section</label>
+    <select id="settings-tab-select" class="tab-select" onchange="switchTab(this.value, null)">
+        <option value="inverter">Inverter</option>
+        <option value="battery">Battery</option>
+        <option value="planning">Planning</option>
+        <option value="arbitrage">Arbitrage</option>
+        <option value="load_profile">Load Profile</option>
+        <option value="providers">Providers</option>
+        <option value="loads">Loads</option>
+        <option value="mqtt">MQTT</option>
+        <option value="oscillation">Anti-Oscillation</option>
+        <option value="storm">Storm</option>
+        <option value="resilience">Resilience</option>
+        {% if not auth_enabled or user_role == 'admin' %}
+        <option value="users">Users</option>
+        {% endif %}
+    </select>
 </div>
 
 <!-- ═══ INVERTER TAB ═══ -->
@@ -670,6 +693,46 @@
     </div>
 </section>
 
+<!-- ═══ USERS TAB ═══ -->
+{% if not auth_enabled or user_role == 'admin' %}
+<section id="tab-users" class="tab-content">
+    <h2>User Management</h2>
+    <table class="settings-table" id="users-table">
+        <thead>
+            <tr><th>Username</th><th>Role</th><th>Enabled</th><th></th></tr>
+        </thead>
+        <tbody id="users-tbody">
+            <tr><td colspan="4" style="text-align: center; color: #6e7681;">Loading...</td></tr>
+        </tbody>
+    </table>
+
+    <h3 style="margin-top: 24px;">Add User</h3>
+    <div id="user-add-form" class="add-form" style="display: block;">
+        <div class="form-group">
+            <label>Username</label>
+            <input type="text" id="new-user-username" placeholder="e.g. viewer1">
+        </div>
+        <div class="form-group">
+            <label>Password (min 8 characters)</label>
+            <input type="password" id="new-user-password" placeholder="Password">
+        </div>
+        <div class="form-group">
+            <label>Confirm Password</label>
+            <input type="password" id="new-user-confirm" placeholder="Confirm password">
+        </div>
+        <div class="form-group">
+            <label>Role</label>
+            <select id="new-user-role">
+                <option value="viewer">Viewer</option>
+                <option value="admin">Admin</option>
+            </select>
+        </div>
+        <button type="button" class="btn btn-primary" onclick="addUser()">Add User</button>
+        <span id="user-add-error" style="color: #f85149; margin-left: 12px;"></span>
+    </div>
+</section>
+{% endif %}
+
 <!-- ═══ SUBMIT ═══ -->
 <div class="form-actions">
     <button type="submit" class="btn btn-primary">Save Settings</button>
@@ -692,15 +755,31 @@
 
 <script>
 function switchTab(tabId, btn) {
+    var targetSection = document.getElementById('tab-' + tabId);
+    if (!targetSection) return;
+
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
-    document.getElementById('tab-' + tabId).classList.add('active');
-    btn.classList.add('active');
+    targetSection.classList.add('active');
+
+    var targetBtn = btn || document.querySelector('.tab[data-tab="' + tabId + '"]');
+    if (targetBtn) targetBtn.classList.add('active');
+
+    var select = document.getElementById('settings-tab-select');
+    if (select) select.value = tabId;
 
     // Start/stop diagnostics polling based on active tab
     if (tabId === 'inverter') { startDiagPoll(); }
     else { stopDiagPoll(); }
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    var active = document.querySelector('.tab-content.active');
+    var select = document.getElementById('settings-tab-select');
+    if (active && select) {
+        select.value = active.id.replace('tab-', '');
+    }
+});
 
 var diagTimer = null;
 

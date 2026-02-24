@@ -1,13 +1,113 @@
 /* Power Master - Dashboard JavaScript */
 
 // ── Sidebar Toggle ──────────────────────────────────
+function isMobileViewport() {
+    return window.matchMedia('(max-width: 768px)').matches;
+}
+
+function initMobileHeaderAutoHide() {
+    var body = document.body;
+    var sidebar = document.getElementById('sidebar');
+    var lastY = 0;
+    var ticking = false;
+
+    function getY() {
+        var content = document.querySelector('.content');
+        var contentY = content ? Math.max(content.scrollTop || 0, 0) : 0;
+        var windowY = Math.max(window.scrollY || 0, 0);
+        return Math.max(contentY, windowY);
+    }
+
+    function showHeader() {
+        body.classList.remove('mobile-header-hidden');
+    }
+
+    function hideHeader() {
+        body.classList.add('mobile-header-hidden');
+    }
+
+    function onScroll() {
+        ticking = false;
+        if (!isMobileViewport()) {
+            showHeader();
+            lastY = 0;
+            return;
+        }
+        if (sidebar && sidebar.classList.contains('open')) {
+            showHeader();
+            return;
+        }
+
+        var y = getY();
+        if (y <= 12) {
+            showHeader();
+            lastY = y;
+            return;
+        }
+
+        // Behavior: hide on scroll down (swipe up), show on scroll up (swipe down).
+        if (y > lastY + 8) hideHeader();
+        else if (y < lastY - 6) showHeader();
+
+        lastY = y;
+    }
+
+    function schedule() {
+        if (ticking) return;
+        ticking = true;
+        requestAnimationFrame(onScroll);
+    }
+
+    var content = document.querySelector('.content');
+    if (content && content.addEventListener) {
+        content.addEventListener('scroll', schedule, { passive: true });
+    }
+    window.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule);
+    window.addEventListener('orientationchange', schedule);
+    onScroll();
+}
+
+function resizeFlowDiagrams() {
+    var panels = document.querySelectorAll('.inverter-graphic-cell .hub-flow-3d');
+    panels.forEach(function(panel) {
+        // Let CSS control responsive sizing; clear any stale inline dimensions.
+        panel.style.removeProperty('width');
+        panel.style.removeProperty('height');
+    });
+}
+
+function initFlowDiagramResizeObserver() {
+    resizeFlowDiagrams();
+}
+
+function normalizeSidebarState() {
+    var sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    if (isMobileViewport()) {
+        // Mobile must not use desktop collapsed-rail state.
+        sidebar.classList.remove('collapsed');
+        return;
+    }
+    try {
+        if (localStorage.getItem('sidebar_collapsed') === '1') {
+            sidebar.classList.add('collapsed');
+        } else {
+            sidebar.classList.remove('collapsed');
+        }
+    } catch (e) {}
+}
+
 function toggleSidebar() {
     var sidebar = document.getElementById('sidebar');
     if (!sidebar) return;
 
     // Mobile: slide-in drawer. Desktop: collapsed rail.
-    if (window.matchMedia('(max-width: 768px)').matches) {
+    if (isMobileViewport()) {
+        sidebar.classList.remove('collapsed');
         sidebar.classList.toggle('open');
+        requestAnimationFrame(resizeFlowDiagrams);
+        setTimeout(resizeFlowDiagrams, 260);
         return;
     }
 
@@ -15,6 +115,8 @@ function toggleSidebar() {
     try {
         localStorage.setItem('sidebar_collapsed', sidebar.classList.contains('collapsed') ? '1' : '0');
     } catch (e) {}
+    requestAnimationFrame(resizeFlowDiagrams);
+    setTimeout(resizeFlowDiagrams, 260);
 }
 
 // Close sidebar on mobile when clicking outside
@@ -28,14 +130,14 @@ document.addEventListener('click', function(e) {
 });
 
 document.addEventListener('DOMContentLoaded', function() {
-    var sidebar = document.getElementById('sidebar');
-    if (!sidebar) return;
-    try {
-        if (!window.matchMedia('(max-width: 768px)').matches && localStorage.getItem('sidebar_collapsed') === '1') {
-            sidebar.classList.add('collapsed');
-        }
-    } catch (e) {}
+    normalizeSidebarState();
+    resizeFlowDiagrams();
+    initFlowDiagramResizeObserver();
+    initMobileHeaderAutoHide();
 });
+window.addEventListener('resize', normalizeSidebarState);
+window.addEventListener('resize', resizeFlowDiagrams);
+window.addEventListener('orientationchange', resizeFlowDiagrams);
 
 // ── Mode Selector ───────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
@@ -1656,3 +1758,148 @@ function _collectEditFields(grid) {
     });
     return data;
 }
+
+
+// ── User Management ─────────────────────────────────
+function loadUsers() {
+    var tbody = document.getElementById('users-tbody');
+    if (!tbody) return;
+
+    fetch('/api/users')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.error) {
+            tbody.innerHTML = '<tr><td colspan="4" style="color: #f85149;">' + data.error + '</td></tr>';
+            return;
+        }
+        var users = data.users || [];
+        if (!users.length) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #6e7681;">No users configured</td></tr>';
+            return;
+        }
+        var html = '';
+        users.forEach(function(u) {
+            html += '<tr>';
+            html += '<td>' + u.username + '</td>';
+            html += '<td><select onchange="changeUserRole(\'' + u.username + '\', this.value)" style="background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border); padding: 2px 6px; border-radius: 4px;">';
+            html += '<option value="admin"' + (u.role === 'admin' ? ' selected' : '') + '>Admin</option>';
+            html += '<option value="viewer"' + (u.role === 'viewer' ? ' selected' : '') + '>Viewer</option>';
+            html += '</select></td>';
+            html += '<td><label style="cursor: pointer;"><input type="checkbox" onchange="toggleUserEnabled(\'' + u.username + '\', this.checked)"' + (u.enabled ? ' checked' : '') + '> ' + (u.enabled ? 'Yes' : 'No') + '</label></td>';
+            html += '<td>';
+            html += '<button type="button" class="btn btn-sm" onclick="resetUserPassword(\'' + u.username + '\')">Reset Password</button> ';
+            html += '<button type="button" class="btn btn-sm btn-danger" onclick="deleteUser(\'' + u.username + '\')">Delete</button>';
+            html += '</td>';
+            html += '</tr>';
+        });
+        tbody.innerHTML = html;
+    })
+    .catch(function(err) {
+        tbody.innerHTML = '<tr><td colspan="4" style="color: #f85149;">Failed to load users</td></tr>';
+    });
+}
+
+function addUser() {
+    var username = document.getElementById('new-user-username').value.trim();
+    var password = document.getElementById('new-user-password').value;
+    var confirm = document.getElementById('new-user-confirm').value;
+    var role = document.getElementById('new-user-role').value;
+    var errorEl = document.getElementById('user-add-error');
+
+    if (!username) { errorEl.textContent = 'Username is required'; return; }
+    if (password.length < 8) { errorEl.textContent = 'Password must be at least 8 characters'; return; }
+    if (password !== confirm) { errorEl.textContent = 'Passwords do not match'; return; }
+    errorEl.textContent = '';
+
+    fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username, password: password, role: role }),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(resp) {
+        if (resp.ok) {
+            document.getElementById('new-user-username').value = '';
+            document.getElementById('new-user-password').value = '';
+            document.getElementById('new-user-confirm').value = '';
+            loadUsers();
+        } else {
+            errorEl.textContent = resp.error || 'Failed to add user';
+        }
+    })
+    .catch(function(e) { errorEl.textContent = 'Request failed: ' + e; });
+}
+
+function changeUserRole(username, newRole) {
+    fetch('/api/users/' + encodeURIComponent(username), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: newRole }),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(resp) {
+        if (!resp.ok) alert(resp.error || 'Failed to update role');
+        loadUsers();
+    })
+    .catch(function(e) { alert('Failed: ' + e); });
+}
+
+function toggleUserEnabled(username, enabled) {
+    fetch('/api/users/' + encodeURIComponent(username), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: enabled }),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(resp) {
+        if (!resp.ok) alert(resp.error || 'Failed to update user');
+        loadUsers();
+    })
+    .catch(function(e) { alert('Failed: ' + e); });
+}
+
+function resetUserPassword(username) {
+    var newPassword = prompt('Enter new password for ' + username + ' (min 8 characters):');
+    if (!newPassword) return;
+    if (newPassword.length < 8) { alert('Password must be at least 8 characters'); return; }
+
+    fetch('/api/users/' + encodeURIComponent(username) + '/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: newPassword }),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(resp) {
+        if (resp.ok) { alert('Password reset successfully'); }
+        else { alert(resp.error || 'Failed to reset password'); }
+    })
+    .catch(function(e) { alert('Failed: ' + e); });
+}
+
+function deleteUser(username) {
+    if (!confirm('Delete user "' + username + '"? This cannot be undone.')) return;
+
+    fetch('/api/users/' + encodeURIComponent(username), { method: 'DELETE' })
+    .then(function(r) { return r.json(); })
+    .then(function(resp) {
+        if (resp.ok) { loadUsers(); }
+        else { alert(resp.error || 'Failed to delete user'); }
+    })
+    .catch(function(e) { alert('Failed: ' + e); });
+}
+
+// Auto-load users when the Users tab is shown
+document.addEventListener('DOMContentLoaded', function() {
+    if (document.getElementById('users-tbody')) {
+        // Load users if tab is visible (first load on settings page with users tab)
+        var usersTab = document.getElementById('tab-users');
+        if (usersTab) {
+            // Observe tab activation
+            var origSwitchTab = window.switchTab;
+            window.switchTab = function(tabId, btn) {
+                origSwitchTab(tabId, btn);
+                if (tabId === 'users') loadUsers();
+            };
+        }
+    }
+});

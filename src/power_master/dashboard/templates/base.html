@@ -6,7 +6,7 @@
     <title>{% block title %}Power Master{% endblock %}</title>
     <script src="/static/htmx.min.js" defer></script>
     <script src="/static/chart.min.js" defer></script>
-    <link rel="stylesheet" href="/static/app.css?v=40">
+    <link rel="stylesheet" href="/static/app.css?v=49">
 </head>
 <body class="app">
     <!-- Mobile Header -->
@@ -77,6 +77,17 @@
             </ul>
             {% if auth_enabled %}
             <div style="margin-top: auto; padding: 8px 20px; border-top: 1px solid var(--border);">
+                {% if current_username %}
+                <div style="padding: 6px 12px; margin-bottom: 4px; font-size: 12px; color: var(--text-muted);">
+                    <span class="nav-icon" aria-hidden="true" style="display: inline;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; vertical-align: middle; margin-right: 4px;">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                    </span>
+                    <span class="nav-text">{{ current_username }} ({{ user_role }})</span>
+                </div>
+                {% endif %}
                 <a href="/change-password" class="nav-link" style="color: var(--text-muted); margin-bottom: 4px;">
                     <span class="nav-icon" aria-hidden="true">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -104,6 +115,6 @@
         </main>
     </div>
 
-    <script src="/static/app.js?v=9" defer></script>
+    <script src="/static/app.js?v=16" defer></script>
 </body>
 </html>

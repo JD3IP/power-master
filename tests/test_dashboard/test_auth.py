@@ -9,6 +9,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from power_master.config.manager import ConfigManager
+from power_master.config.schema import AuthConfig, UserConfig
 from power_master.dashboard.auth import (
     hash_password,
     sign_session,
@@ -78,6 +79,8 @@ class TestSessionSigning:
 # Integration tests — middleware + routes
 # ---------------------------------------------------------------------------
 
+TEST_PASSWORD = "test-password-123"
+
 
 @pytest.fixture
 def settings_config_manager(tmp_path: Path) -> ConfigManager:
@@ -89,14 +92,23 @@ def settings_config_manager(tmp_path: Path) -> ConfigManager:
     return mgr
 
 
-def _make_authed_app(config, repo, config_manager, password: str):
-    """Create an app with auth enabled."""
+def _make_authed_app(config, repo, config_manager, password: str, role: str = "admin"):
+    """Create an app with auth enabled (multi-user)."""
     from power_master.control.manual_override import ManualOverride
     from power_master.dashboard.app import create_app
 
     config = config.model_copy(deep=True)
-    config.dashboard.auth.password_hash = hash_password(password)
-    config.dashboard.auth.session_secret = "test-secret-for-tests"
+    config.dashboard.auth = AuthConfig(
+        users=[
+            UserConfig(
+                username="admin",
+                password_hash=hash_password(password),
+                role=role,
+                enabled=True,
+            ),
+        ],
+        session_secret="test-secret-for-tests",
+    )
     app = create_app(config, repo, config_manager=config_manager)
     app.state.manual_override = ManualOverride()
     return app
@@ -106,7 +118,7 @@ def _make_authed_app(config, repo, config_manager, password: str):
 async def authed_client(repo, settings_config_manager):
     """Test client with auth enabled (password: test-password-123)."""
     app = _make_authed_app(
-        settings_config_manager.config, repo, settings_config_manager, "test-password-123"
+        settings_config_manager.config, repo, settings_config_manager, TEST_PASSWORD
     )
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -127,8 +139,18 @@ async def unauthed_client(repo, settings_config_manager):
         yield ac
 
 
+async def _login(client, username="admin", password=TEST_PASSWORD):
+    """Helper: login and return cookies."""
+    resp = await client.post(
+        "/login",
+        data={"username": username, "password": password, "next": "/"},
+        follow_redirects=False,
+    )
+    return resp.cookies
+
+
 class TestAuthDisabled:
-    """When no password is set, auth is completely disabled."""
+    """When no users are configured, auth is completely disabled."""
 
     @pytest.mark.asyncio
     async def test_pages_accessible(self, unauthed_client) -> None:
@@ -142,7 +164,7 @@ class TestAuthDisabled:
 
 
 class TestAuthEnabled:
-    """When a password is set, all routes require authentication."""
+    """When users are configured, all routes require authentication."""
 
     @pytest.mark.asyncio
     async def test_login_page_accessible(self, authed_client) -> None:
@@ -171,7 +193,7 @@ class TestAuthEnabled:
     async def test_login_success_sets_cookie(self, authed_client) -> None:
         resp = await authed_client.post(
             "/login",
-            data={"username": "admin", "password": "test-password-123", "next": "/"},
+            data={"username": "admin", "password": TEST_PASSWORD, "next": "/"},
             follow_redirects=False,
         )
         assert resp.status_code == 302
@@ -188,15 +210,18 @@ class TestAuthEnabled:
         assert "error=" in resp.headers["location"]
 
     @pytest.mark.asyncio
-    async def test_authenticated_access(self, authed_client) -> None:
-        # Login first
-        login_resp = await authed_client.post(
+    async def test_login_wrong_username(self, authed_client) -> None:
+        resp = await authed_client.post(
             "/login",
-            data={"username": "admin", "password": "test-password-123", "next": "/"},
+            data={"username": "nobody", "password": TEST_PASSWORD, "next": "/"},
             follow_redirects=False,
         )
-        # Extract cookie and use it
-        cookies = login_resp.cookies
+        assert resp.status_code == 302
+        assert "error=" in resp.headers["location"]
+
+    @pytest.mark.asyncio
+    async def test_authenticated_access(self, authed_client) -> None:
+        cookies = await _login(authed_client)
         resp = await authed_client.get("/", cookies=cookies)
         assert resp.status_code == 200
         assert "Power Master" in resp.text
@@ -206,3 +231,75 @@ class TestAuthEnabled:
         resp = await authed_client.get("/logout", follow_redirects=False)
         assert resp.status_code == 302
         assert "/login" in resp.headers["location"]
+
+
+class TestRolePermissions:
+    """Verify admin vs viewer role access."""
+
+    @pytest.mark.asyncio
+    async def test_admin_can_access_settings(self, repo, settings_config_manager) -> None:
+        app = _make_authed_app(
+            settings_config_manager.config, repo, settings_config_manager,
+            TEST_PASSWORD, role="admin",
+        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            cookies = await _login(client)
+            resp = await client.get("/settings", cookies=cookies)
+            assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_viewer_redirected_from_settings(self, repo, settings_config_manager) -> None:
+        app = _make_authed_app(
+            settings_config_manager.config, repo, settings_config_manager,
+            TEST_PASSWORD, role="viewer",
+        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            cookies = await _login(client)
+            resp = await client.get("/settings", cookies=cookies, follow_redirects=False)
+            assert resp.status_code == 302
+
+    @pytest.mark.asyncio
+    async def test_viewer_cannot_change_mode(self, repo, settings_config_manager) -> None:
+        app = _make_authed_app(
+            settings_config_manager.config, repo, settings_config_manager,
+            TEST_PASSWORD, role="viewer",
+        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            cookies = await _login(client)
+            resp = await client.post(
+                "/api/mode",
+                json={"mode": 1},
+                cookies=cookies,
+            )
+            assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_admin_can_list_users(self, repo, settings_config_manager) -> None:
+        app = _make_authed_app(
+            settings_config_manager.config, repo, settings_config_manager,
+            TEST_PASSWORD, role="admin",
+        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            cookies = await _login(client)
+            resp = await client.get("/api/users", cookies=cookies)
+            assert resp.status_code == 200
+            data = resp.json()
+            assert len(data["users"]) == 1
+            assert data["users"][0]["username"] == "admin"
+            assert "password_hash" not in data["users"][0]
+
+    @pytest.mark.asyncio
+    async def test_viewer_cannot_list_users(self, repo, settings_config_manager) -> None:
+        app = _make_authed_app(
+            settings_config_manager.config, repo, settings_config_manager,
+            TEST_PASSWORD, role="viewer",
+        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            cookies = await _login(client)
+            resp = await client.get("/api/users", cookies=cookies)
+            assert resp.status_code == 403

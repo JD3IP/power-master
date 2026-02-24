@@ -9,6 +9,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import ValidationError
 
+from power_master.dashboard.auth import require_admin
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
@@ -49,7 +51,13 @@ NULLABLE_FIELDS = {
 
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request) -> HTMLResponse:
-    """Render settings page."""
+    """Render settings page. Admin only when auth is enabled."""
+    auth_config = request.app.state.config.dashboard.auth
+    if auth_config.users:
+        denied = require_admin(request)
+        if denied:
+            return RedirectResponse("/", status_code=302)
+
     templates = request.app.state.templates
     config = request.app.state.config
 
@@ -71,6 +79,12 @@ async def settings_page(request: Request) -> HTMLResponse:
 @router.post("/settings")
 async def save_settings(request: Request) -> RedirectResponse:
     """Save settings and hot-reload all affected components."""
+    auth_config = request.app.state.config.dashboard.auth
+    if auth_config.users:
+        denied = require_admin(request)
+        if denied:
+            return denied
+
     config_manager = request.app.state.config_manager
     if config_manager is None:
         return RedirectResponse(

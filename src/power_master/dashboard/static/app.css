@@ -495,7 +495,18 @@ body.app {
 /* ── Responsive ──────────────────────────────────── */
 
 @media (max-width: 768px) {
-    .mobile-header { display: flex; }
+    .mobile-header {
+        display: flex;
+        position: fixed;
+        left: 0;
+        right: 0;
+        top: 0;
+        z-index: 300;
+        transition: transform 0.2s ease;
+    }
+    body.app.mobile-header-hidden .mobile-header {
+        transform: translateY(-110%);
+    }
     .sidebar { display: none; position: fixed; left: 0; top: 0; z-index: 200; }
     .sidebar.open { display: flex; }
     .sidebar.collapsed { width: var(--sidebar-width); }
@@ -503,7 +514,8 @@ body.app {
     .sidebar.collapsed .nav-text { display: inline; }
     .sidebar.collapsed .nav-link { justify-content: flex-start; padding: 10px 20px; }
     .sidebar.collapsed .nav-icon { width: 20px; }
-    .content { padding: 16px; }
+    .content { padding: 72px 16px 16px; }
+    body.app.mobile-header-hidden .content { padding-top: 16px; }
     .status-cards { grid-template-columns: repeat(2, 1fr); }
     .card-value { font-size: 18px; }
     .mode-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -638,6 +650,39 @@ tr.mode-4 { background: rgba(248, 81, 73, 0.03); }
 }
 .tab-content.active {
     display: block;
+}
+
+.tab-select-wrap {
+    display: none;
+    margin-bottom: 14px;
+}
+
+.tab-select-label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 6px;
+}
+
+.tab-select {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+@media (max-width: 768px) {
+    .tabs {
+        display: none;
+    }
+    .tab-select-wrap {
+        display: block;
+    }
 }
 
 /* ── Time Range Buttons ─────────────────────────── */
@@ -942,25 +987,48 @@ h2:first-child {
     width: 100%;
     border-collapse: collapse;
     table-layout: fixed;
+    display: block;
+}
+
+.inverter-panel-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px;
+    width: 100%;
+}
+
+.inverter-panel-table > tbody > tr,
+.inverter-panel-table > tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px;
+    width: 100%;
 }
 
 .inverter-values-cell {
-    width: 50%;
+    width: auto;
     vertical-align: top;
     padding-right: 12px;
 }
 
 .inverter-graphic-cell {
-    width: 50%;
+    width: auto;
     vertical-align: middle;
     padding-left: 8px;
+    padding-right: 8px;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
 }
 
 .hub-flow-3d {
     position: relative;
-    width: 100%;
-    max-width: 340px;
-    height: 220px;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    aspect-ratio: auto !important;
+    height: clamp(210px, 28vw, 300px) !important;
     margin: 0 auto;
     border-radius: 12px;
     background: linear-gradient(145deg, #223142 0%, #121c27 100%);
@@ -1255,23 +1323,41 @@ h2:first-child {
 }
 
 @media (max-width: 768px) {
-    .inverter-panel-table,
-    .inverter-panel-table tr,
-    .inverter-panel-table td {
+    .inverter-panel-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .inverter-panel-table {
         display: block;
         width: 100%;
     }
+    .inverter-panel-table > tbody > tr,
+    .inverter-panel-table > tr {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        width: 100%;
+    }
+    .inverter-panel-table > tbody > tr > td {
+        display: block;
+        width: 100% !important;
+        max-width: 100%;
+    }
     .inverter-values-cell {
+        width: 100% !important;
         padding-right: 0;
     }
     .inverter-graphic-cell {
+        width: 100% !important;
         padding-left: 0;
+        padding-right: 0;
         padding-top: 10px;
+        overflow-x: visible;
     }
     .hub-flow-3d {
-        width: 100%;
-        max-width: none;
-        height: 165px;
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        aspect-ratio: auto !important;
+        height: clamp(190px, 52vw, 270px) !important;
         margin: 0 auto;
     }
 
@@ -1306,9 +1392,17 @@ h2:first-child {
         text-align: center;
     }
 
-    .energy-cost-table,
-    .energy-cost-table tr,
-    .energy-cost-table td {
+    .energy-cost-table {
+        display: block;
+        width: 100%;
+    }
+    .energy-cost-table > tbody > tr,
+    .energy-cost-table > tr {
+        display: block;
+        width: 100%;
+    }
+    .energy-cost-table > tbody > tr > td,
+    .energy-cost-table > tr > td {
         display: block;
         width: 100%;
     }
@@ -1320,8 +1414,13 @@ h2:first-child {
     .upcoming-prices-list { grid-template-columns: 1fr; }
 
     .upcoming-prices-table {
+        display: table;
         table-layout: fixed;
         min-width: 320px;
+    }
+    .upcoming-prices-table tr {
+        display: table-row;
+        width: auto;
     }
     .upcoming-prices-list {
         overflow-x: auto;
@@ -1329,6 +1428,8 @@ h2:first-child {
     }
     .upcoming-prices-table th,
     .upcoming-prices-table td {
+        display: table-cell;
+        width: auto;
         white-space: nowrap;
         padding: 4px 2px;
         font-size: 10px;
@@ -1356,11 +1457,45 @@ h2:first-child {
         min-width: 0;
         margin-left: 0;
     }
+    .weather-day-icon img {
+        width: 60px;
+        height: 60px;
+    }
+}
+
+/* Collapsed desktop sidebar can create a dense viewport; force inverter stack there too. */
+.app-layout .sidebar.collapsed ~ .content .inverter-panel-grid {
+    grid-template-columns: minmax(0, 1fr);
+}
+.app-layout .sidebar.collapsed ~ .content .inverter-panel-table {
+    display: block;
+    width: 100%;
+}
+.app-layout .sidebar.collapsed ~ .content .inverter-panel-table > tbody > tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+}
+.app-layout .sidebar.collapsed ~ .content .inverter-panel-table > tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+}
+.app-layout .sidebar.collapsed ~ .content .inverter-panel-table > tbody > tr > td {
+    display: block;
+    width: 100% !important;
+    max-width: 100%;
+}
+.app-layout .sidebar.collapsed ~ .content .inverter-values-cell,
+.app-layout .sidebar.collapsed ~ .content .inverter-graphic-cell {
+    width: 100% !important;
+    padding-left: 0;
+    padding-right: 0;
 }
 
 @media (max-width: 480px) {
     .hub-flow-3d {
-        height: 150px;
+        height: clamp(180px, 56vw, 240px) !important;
     }
     .upcoming-prices-table {
         min-width: 300px;
@@ -1421,12 +1556,22 @@ h2:first-child {
 
 .upcoming-prices-list {
     display: block;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.upcoming-prices-list::-webkit-scrollbar {
+    display: none;
 }
 
 .upcoming-prices-table {
-    width: 100%;
+    width: max-content;
+    min-width: 100%;
     border-collapse: collapse;
-    table-layout: fixed;
+    table-layout: auto;
     background: var(--bg-primary);
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -1435,11 +1580,12 @@ h2:first-child {
 
 .upcoming-prices-table th,
 .upcoming-prices-table td {
-    padding: 6px 4px;
+    padding: 6px 6px;
     font-size: 11px;
     font-variant-numeric: tabular-nums;
     text-align: center;
     white-space: nowrap;
+    word-break: keep-all;
     border-bottom: 1px solid rgba(48, 54, 61, 0.35);
 }
 
@@ -1449,11 +1595,15 @@ h2:first-child {
 }
 
 .upcoming-prices-table th {
-    width: 44px;
+    min-width: 44px;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.4px;
     font-weight: 600;
+}
+
+.upcoming-prices-table td {
+    min-width: 50px;
 }
 
 .chip-time { color: var(--text-secondary); }
@@ -1534,6 +1684,14 @@ h2:first-child {
     color: var(--accent-blue);
 }
 
+.weather-day-icon img {
+    width: 76px;
+    height: 76px;
+    display: block;
+    object-fit: contain;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25));
+}
+
 .weather-day-main {
     font-size: 15px;
     font-weight: 700;
@@ -1554,6 +1712,35 @@ h2:first-child {
     grid-column: 1 / -1;
     color: var(--text-muted);
     font-size: 12px;
+}
+
+.storm-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.storm-pill img {
+    width: 16px;
+    height: 16px;
+    display: block;
+}
+
+.storm-pill-alert {
+    color: var(--accent-red);
+    border-color: rgba(248, 81, 73, 0.6);
+    background: rgba(248, 81, 73, 0.12);
+}
+
+.storm-pill-clear {
+    color: var(--accent-green);
+    border-color: rgba(63, 185, 80, 0.6);
+    background: rgba(63, 185, 80, 0.12);
 }
 
 /* ── Operating Status Bar ──────────────────────── */

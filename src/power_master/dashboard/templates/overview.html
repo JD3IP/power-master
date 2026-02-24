@@ -66,9 +66,8 @@
     <div class="dash-panel">
         <div class="dash-panel-title">Inverter</div>
         <div class="dash-panel-body">
-            <table class="inverter-panel-table">
-                <tr>
-                    <td class="inverter-values-cell">
+            <div class="inverter-panel-grid">
+                <div class="inverter-values-cell">
                         <div class="dash-row">
                             <span class="dash-label">Work Mode</span>
                             <span class="dash-value" id="work-mode-value">
@@ -126,8 +125,8 @@
                                 {% endif %}
                             </span>
                         </div>
-                    </td>
-                    <td class="inverter-graphic-cell">
+                </div>
+                <div class="inverter-graphic-cell">
                         {% set inverter_soc_pct = "%.0f"|format((telemetry.soc or 0) * 100) %}
                         <div class="hub-flow-3d" id="inverter-flow-graphic">
                             <div class="hub-link hub-link-pv"></div>
@@ -183,9 +182,8 @@
                                 </div>
                             </div>
                         </div>
-                    </td>
-                </tr>
-            </table>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -207,7 +205,7 @@
                                     {% elif bp < 0 %}
                                         <span class="discharging">Discharging {{ "%.1f"|format((-bp) / 1000) }} kW</span>
                                     {% else %}
-                                        Idle
+                                Idle
                                     {% endif %}
                                 {% endif %}
                             </span>
@@ -358,12 +356,7 @@
                             <div class="weather-day-meta">{{ day.cloud_avg_pct|int }}% cloud &middot; {{ "%.1f"|format(day.precip_mm) }}mm</div>
                         </div>
                         <div class="weather-day-icon">
-                            {% if day.icon == "sun" %}&#9728;
-                            {% elif day.icon == "partly" %}&#9925;
-                            {% elif day.icon == "cloud" %}&#9729;
-                            {% elif day.icon == "rain" %}&#127783;
-                            {% elif day.icon == "wind" %}&#127788;
-                            {% else %}&#9729;{% endif %}
+                            <img src="/static/weather/{{ day.icon }}.svg" alt="{{ day.icon }} weather">
                         </div>
                     </div>
                     {% endfor %}
@@ -375,9 +368,15 @@
                 <span class="dash-label">Storm</span>
                 <span class="dash-value" id="storm-status">
                     {% if storm_active %}
-                        <span style="color: var(--accent-red);">&#9888; Warning active</span>
+                        <span class="storm-pill storm-pill-alert">
+                            <img src="/static/weather/storm-alert.svg" alt="Storm warning">
+                            Warning active
+                        </span>
                     {% else %}
-                        None
+                        <span class="storm-pill storm-pill-clear">
+                            <img src="/static/weather/storm-clear.svg" alt="No storm warning">
+                            Clear
+                        </span>
                     {% endif %}
                 </span>
             </div>
@@ -469,4 +468,3 @@
 
 </div>
 {% endblock %}
-

@@ -136,8 +136,7 @@ dashboard:
   rolling_chart_power_max_kw: 20.0
   rolling_chart_window_hours: 12
   auth:
-    username: "admin"
-    password_hash: ""                      # Empty = auth disabled; run: python -m power_master.dashboard.auth --set-password
+    users: []                              # Empty = auth disabled; run: python -m power_master.dashboard.auth --set-password
     session_secret: ""                     # Auto-generated on first authenticated startup
     session_max_age_seconds: 86400         # 24 hours
 
