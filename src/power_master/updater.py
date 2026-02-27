@@ -12,14 +12,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import platform
-import subprocess
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+import docker as docker_sdk
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -33,6 +31,7 @@ VERSION_FILE = Path("/opt/power-master/version.json")
 UPDATE_STATUS_FILE = Path("/data/.update_status.json")
 
 CHECK_INTERVAL_SECONDS = 3600  # 1 hour
+CONTAINER_NAME = "power-master"
 
 
 @dataclass
@@ -213,17 +212,13 @@ class UpdateManager:
         self._state.progress_message = "Pulling new image..."
 
         try:
-            # 1. Pull the new image
+            # 1. Pull the new image via Docker SDK (through mounted socket)
             logger.info("Pulling %s:latest ...", GHCR_IMAGE)
-            result = subprocess.run(
-                ["docker", "pull", f"{GHCR_IMAGE}:latest"],
-                capture_output=True,
-                text=True,
-                timeout=600,
+            client = docker_sdk.from_env()
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None, lambda: client.images.pull(GHCR_IMAGE, tag="latest")
             )
-            if result.returncode != 0:
-                raise RuntimeError(f"docker pull failed: {result.stderr.strip()}")
-
             logger.info("Image pulled successfully")
 
             # 2. Write update status so the new container knows it just updated
@@ -237,7 +232,7 @@ class UpdateManager:
             # 3. Schedule restart (gives time for the API response to be sent)
             self._state.state = "restarting"
             self._state.progress_message = "Restarting container..."
-            asyncio.get_event_loop().call_later(2.0, self._restart_container)
+            asyncio.ensure_future(self._delayed_restart())
 
             return {"status": "ok", "message": "Update downloaded, restarting..."}
 
@@ -248,42 +243,114 @@ class UpdateManager:
             logger.error("Update failed: %s", e)
             return {"status": "error", "message": str(e)}
 
-    def _restart_container(self) -> None:
-        """Recreate the container using docker compose (runs in background)."""
-        try:
-            # Find the compose file — check common locations
-            compose_file = self._find_compose_file()
-            if compose_file:
-                cmd = ["docker", "compose", "-f", compose_file, "up", "-d"]
-            else:
-                cmd = ["docker", "compose", "up", "-d"]
+    async def _delayed_restart(self) -> None:
+        """Wait for API response to be sent, then trigger restart."""
+        await asyncio.sleep(2.0)
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._restart_container)
 
-            logger.info("Restarting via: %s", " ".join(cmd))
-            # Fire and forget — the daemon will stop this container and start a new one
-            subprocess.Popen(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+    def _restart_container(self) -> None:
+        """Launch a helper container that stops this one and starts a new version.
+
+        A container cannot restart itself directly — ``docker stop`` kills all
+        processes inside it.  Instead we spin up a short-lived helper from the
+        NEW image.  The helper: stops the old container → renames it → creates
+        a new container with the same configuration → starts it.  If creation
+        fails the helper restores the old container automatically.
+        """
+        try:
+            client = docker_sdk.from_env()
+            current = client.containers.get(CONTAINER_NAME)
+            attrs = current.attrs
+
+            restart_config = json.dumps({
+                "name": current.name,
+                "image": f"{GHCR_IMAGE}:latest",
+                "binds": attrs["HostConfig"].get("Binds") or [],
+                "network_mode": attrs["HostConfig"].get("NetworkMode", "bridge"),
+                "restart_policy": attrs["HostConfig"].get("RestartPolicy") or {},
+                "environment": attrs["Config"].get("Env") or [],
+                "labels": attrs["Config"].get("Labels") or {},
+            })
+
+            # Python script executed inside the helper container.  It reads the
+            # full container config from the RESTART_CONFIG env-var so there are
+            # no shell-escaping issues.
+            helper_script = '''
+import docker, json, os, sys, time
+time.sleep(3)
+config = json.loads(os.environ["RESTART_CONFIG"])
+client = docker.from_env()
+name = config["name"]
+
+def parse_binds(binds):
+    vols = {}
+    for b in binds:
+        parts = b.split(":")
+        if len(parts) == 2:
+            vols[parts[0]] = {"bind": parts[1], "mode": "rw"}
+        elif len(parts) >= 3:
+            vols[parts[0]] = {"bind": parts[1], "mode": parts[2]}
+    return vols
+
+try:
+    old = client.containers.get(name)
+    old.stop(timeout=30)
+    old.rename(name + "-old")
+except Exception as e:
+    print(f"Warning stopping old container: {e}")
+
+try:
+    client.containers.run(
+        config["image"], name=name, detach=True,
+        environment=config["environment"],
+        volumes=parse_binds(config["binds"]),
+        network_mode=config["network_mode"],
+        restart_policy=config["restart_policy"],
+        labels=config["labels"],
+    )
+    print(f"Container {name} recreated successfully")
+    try:
+        client.containers.get(name + "-old").remove(force=True)
+    except Exception:
+        pass
+except Exception as e:
+    print(f"ERROR recreating container: {e}", file=sys.stderr)
+    try:
+        old = client.containers.get(name + "-old")
+        old.rename(name)
+        old.start()
+        print(f"Restored old container {name}")
+    except Exception as e2:
+        print(f"Failed to restore old container: {e2}", file=sys.stderr)
+    sys.exit(1)
+'''
+
+            # Remove leftover helper from a previous attempt
+            try:
+                client.containers.get("power-master-updater").remove(force=True)
+            except docker_sdk.errors.NotFound:
+                pass
+
+            client.containers.run(
+                f"{GHCR_IMAGE}:latest",
+                entrypoint="python",
+                command=["-c", helper_script],
+                name="power-master-updater",
+                detach=True,
+                auto_remove=True,
+                environment={"RESTART_CONFIG": restart_config},
+                volumes={"/var/run/docker.sock": {"bind": "/var/run/docker.sock"}},
             )
+
+            logger.info("Restart helper container launched")
+
         except Exception:
             logger.exception("Failed to trigger container restart")
             self._write_status({
                 "state": "failed",
                 "error": "Container restart failed",
             })
-
-    def _find_compose_file(self) -> str | None:
-        """Locate the docker-compose file."""
-        candidates = [
-            "/data/docker-compose.yml",
-            "/data/docker-compose.pi.yml",
-            # Compose file might be bind-mounted
-            os.environ.get("COMPOSE_FILE", ""),
-        ]
-        for path in candidates:
-            if path and os.path.exists(path):
-                return path
-        return None
 
     async def _fetch_remote_labels(self) -> dict | None:
         """Fetch OCI labels from the latest GHCR image manifest.
