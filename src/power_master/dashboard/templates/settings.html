@@ -1012,16 +1012,22 @@ function refreshSystemInfo() {
             'success': 'Updated successfully',
             'failed': 'Update failed'
         };
-        stateEl.textContent = stateLabels[data.state] || data.state;
-        if (data.state === 'success') stateEl.style.color = '#3fb950';
-        else if (data.state === 'failed') stateEl.style.color = '#f85149';
-        else stateEl.style.color = '';
+        if (data.state === 'idle' && data.last_check_error) {
+            stateEl.textContent = 'Check failed';
+            stateEl.style.color = '#f85149';
+        } else {
+            stateEl.textContent = stateLabels[data.state] || data.state;
+            if (data.state === 'success') stateEl.style.color = '#3fb950';
+            else if (data.state === 'failed') stateEl.style.color = '#f85149';
+            else stateEl.style.color = '';
+        }
 
         progressEl.textContent = data.progress || '';
 
-        if (data.error) {
+        var errMsg = data.error || data.last_check_error || '';
+        if (errMsg) {
             errorRow.style.display = '';
-            errorEl.textContent = data.error;
+            errorEl.textContent = errMsg;
         } else {
             errorRow.style.display = 'none';
         }
@@ -1050,9 +1056,11 @@ function checkForUpdate() {
         btn.textContent = 'Check Now';
         refreshSystemInfo();
     })
-    .catch(function() {
+    .catch(function(err) {
         btn.disabled = false;
         btn.textContent = 'Check Now';
+        var status = document.getElementById('sys-update-status');
+        if (status) { status.textContent = 'Check failed: ' + err.message; status.style.color = 'var(--danger)'; }
     });
 }
 

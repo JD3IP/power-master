@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import os
+import platform
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -158,6 +159,8 @@ class UpdateManager:
             remote_labels = await self._fetch_remote_labels()
             if remote_labels is None:
                 self._state.state = "idle"
+                self._state.last_check_error = "Could not fetch version info from GHCR"
+                self._state.last_check_at = datetime.now(timezone.utc).isoformat()
                 return False
 
             remote_version = remote_labels.get(
@@ -286,8 +289,14 @@ class UpdateManager:
         """Fetch OCI labels from the latest GHCR image manifest.
 
         Uses the GHCR v2 API with anonymous token for public repos.
+        GHCR redirects blob fetches to Azure storage, so follow_redirects
+        is required (httpx strips Authorization on cross-origin redirects).
         """
-        async with httpx.AsyncClient(timeout=30) as client:
+        # Detect local architecture to pick the right platform from manifest
+        arch_map = {"x86_64": "amd64", "aarch64": "arm64", "armv7l": "arm"}
+        local_arch = arch_map.get(platform.machine(), "amd64")
+
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
             # 1. Get anonymous bearer token
             resp = await client.get(GHCR_TOKEN_URL)
             if resp.status_code != 200:
@@ -301,13 +310,14 @@ class UpdateManager:
                 "Authorization": f"Bearer {token}",
                 "Accept": (
                     "application/vnd.oci.image.index.v1+json, "
+                    "application/vnd.oci.image.manifest.v1+json, "
                     "application/vnd.docker.distribution.manifest.list.v2+json, "
                     "application/vnd.docker.distribution.manifest.v2+json"
                 ),
             }
 
             # 2. Get the manifest for :latest
-            manifest_url = f"https://ghcr.io/v2/jd3ip/power-master/manifests/latest"
+            manifest_url = "https://ghcr.io/v2/jd3ip/power-master/manifests/latest"
             resp = await client.get(manifest_url, headers=headers)
             if resp.status_code != 200:
                 logger.warning("GHCR manifest fetch failed: %d", resp.status_code)
@@ -315,43 +325,63 @@ class UpdateManager:
 
             manifest = resp.json()
 
-            # 3. If it's a manifest list (multi-arch), pick the amd64 manifest
+            # 3. If it's a manifest list (multi-arch), pick the platform manifest
             if manifest.get("mediaType") in (
                 "application/vnd.oci.image.index.v1+json",
                 "application/vnd.docker.distribution.manifest.list.v2+json",
             ):
                 for m in manifest.get("manifests", []):
-                    platform = m.get("platform", {})
-                    if platform.get("architecture") == "amd64":
+                    plat = m.get("platform", {})
+                    if plat.get("architecture") == local_arch:
                         digest = m["digest"]
                         resp = await client.get(
                             f"https://ghcr.io/v2/jd3ip/power-master/manifests/{digest}",
                             headers={
                                 "Authorization": f"Bearer {token}",
-                                "Accept": "application/vnd.docker.distribution.manifest.v2+json",
+                                "Accept": (
+                                    "application/vnd.oci.image.manifest.v1+json, "
+                                    "application/vnd.docker.distribution.manifest.v2+json"
+                                ),
                             },
                         )
                         if resp.status_code != 200:
+                            logger.warning(
+                                "GHCR platform manifest fetch failed: %d (arch=%s)",
+                                resp.status_code, local_arch,
+                            )
                             return None
                         manifest = resp.json()
                         break
                 else:
+                    logger.warning("No manifest found for arch=%s", local_arch)
                     return None
 
             # 4. Get the config blob which contains labels
             config_digest = manifest.get("config", {}).get("digest")
             if not config_digest:
+                logger.warning("No config digest in manifest")
                 return None
 
             resp = await client.get(
                 f"https://ghcr.io/v2/jd3ip/power-master/blobs/{config_digest}",
-                headers={"Authorization": f"Bearer {token}"},
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/vnd.oci.image.config.v1+json",
+                },
             )
             if resp.status_code != 200:
+                logger.warning("GHCR config blob fetch failed: %d", resp.status_code)
                 return None
 
-            config = resp.json()
+            try:
+                config = resp.json()
+            except Exception:
+                logger.warning("Config blob not valid JSON (len=%d)", len(resp.content))
+                return None
+
             labels = config.get("config", {}).get("Labels", {})
+            if not labels:
+                logger.info("No OCI labels found in config blob")
             return labels
 
     def _write_status(self, data: dict) -> None:
