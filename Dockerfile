@@ -29,7 +29,8 @@ COPY --from=builder /install /usr/local
 # ── Version info baked at build time ──
 ARG BUILD_VERSION=dev
 ARG BUILD_SHA=unknown
-RUN printf '{"version":"%s","sha":"%s","built_at":"%s"}\n' \
+RUN mkdir -p /opt/power-master && \
+    printf '{"version":"%s","sha":"%s","built_at":"%s"}\n' \
     "$BUILD_VERSION" "$BUILD_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     > /opt/power-master/version.json
 
