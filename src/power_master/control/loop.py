@@ -45,6 +45,9 @@ class ControlLoop:
     6. Dispatch command to inverter
     """
 
+    # Modes that use remote power control and need periodic refresh
+    _REMOTE_MODES = frozenset({OperatingMode.FORCE_CHARGE, OperatingMode.FORCE_DISCHARGE})
+
     def __init__(
         self,
         config: AppConfig,
@@ -58,6 +61,13 @@ class ControlLoop:
         self._anti_oscillation = anti_oscillation or AntiOscillationGuard(config.anti_oscillation)
         self._state = LoopState()
         self._stop_event = asyncio.Event()
+
+        # External state for hierarchy evaluation (updated by main app)
+        self._storm_active: bool = False
+        self._storm_reserve_soc: float = 0.0
+
+        # Last dispatched command — used by the refresh loop to re-send
+        self._last_dispatched_command: ControlCommand | None = None
 
         # Callbacks for extensibility
         self._on_telemetry: list = []
@@ -77,12 +87,24 @@ class ControlLoop:
         self._state.current_plan = plan
 
     async def run(self) -> None:
-        """Run the control loop until stopped."""
+        """Run the control loop until stopped.
+
+        Starts two concurrent tasks:
+        1. Main tick loop (every evaluation_interval_seconds, default 300s)
+        2. Command refresh loop (every remote_refresh_interval_seconds, default 20s)
+
+        The refresh loop re-sends the last dispatched command for modes that
+        use remote power control (FORCE_CHARGE, FORCE_DISCHARGE).  The FoxESS KH
+        inverter reverts to self-use when remote commands stop arriving, so
+        continuous refresh is required to maintain force charge/discharge.
+        """
         self._state.is_running = True
         self._stop_event.clear()
         interval = self._config.planning.evaluation_interval_seconds
 
         logger.info("Control loop starting (interval: %ds)", interval)
+
+        refresh_task = asyncio.create_task(self._command_refresh_loop())
 
         try:
             while not self._stop_event.is_set():
@@ -93,6 +115,11 @@ class ControlLoop:
                 except asyncio.TimeoutError:
                     pass  # Normal — just means interval elapsed
         finally:
+            refresh_task.cancel()
+            try:
+                await refresh_task
+            except asyncio.CancelledError:
+                pass
             self._state.is_running = False
             logger.info("Control loop stopped after %d ticks", self._state.tick_count)
 
@@ -135,7 +162,8 @@ class ControlLoop:
             current_soc=telemetry.soc,
             soc_min_hard=self._config.battery.soc_min_hard,
             soc_max_hard=self._config.battery.soc_max_hard,
-            storm_active=False,  # Will be updated when storm module is integrated
+            storm_active=self._storm_active,
+            storm_reserve_soc=self._storm_reserve_soc,
             grid_available=telemetry.grid_available,
         )
         final_command = hierarchy_result.command
@@ -153,6 +181,7 @@ class ControlLoop:
         if result.success:
             self._anti_oscillation.record_command(final_command)
             self._state.current_mode = final_command.mode
+            self._last_dispatched_command = final_command
         self._state.last_command_result = "ok" if result.success else f"error: {result.message}"
 
         elapsed_ms = int((time.monotonic() - tick_start) * 1000)
@@ -176,6 +205,50 @@ class ControlLoop:
                 logger.exception("Command callback error")
 
         return final_command
+
+    async def _command_refresh_loop(self) -> None:
+        """Periodically re-send the active command to keep the inverter in remote mode.
+
+        The FoxESS KH inverter reverts to self-use when remote control commands
+        stop arriving (~30s observed).  This loop re-sends the last dispatched
+        command at a configurable interval (default 20s) so force charge and
+        force discharge are maintained between the slower control ticks (300s).
+
+        Only refreshes for modes that use remote power control; SELF_USE modes
+        don't need refresh since remote control is disabled for those.
+        Bypasses anti-oscillation since this is a refresh, not a mode change.
+        """
+        interval = self._config.hardware.foxess.remote_refresh_interval_seconds
+        logger.info("Command refresh loop starting (interval: %ds)", interval)
+
+        while not self._stop_event.is_set():
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=interval)
+                break  # stop_event was set
+            except asyncio.TimeoutError:
+                pass  # Normal — interval elapsed
+
+            cmd = self._last_dispatched_command
+            if cmd is None:
+                continue
+
+            if cmd.mode not in self._REMOTE_MODES:
+                continue
+
+            try:
+                result = await dispatch_command(self._adapter, cmd)
+                if result.success:
+                    logger.debug(
+                        "Command refresh: mode=%s power=%dW latency=%dms",
+                        cmd.mode.name, cmd.power_w, result.latency_ms,
+                    )
+                else:
+                    logger.warning(
+                        "Command refresh failed: mode=%s error=%s",
+                        cmd.mode.name, result.message,
+                    )
+            except Exception:
+                logger.exception("Command refresh error")
 
     def _determine_command(self, telemetry: Telemetry) -> ControlCommand | None:
         """Determine the command to execute.
@@ -202,6 +275,11 @@ class ControlLoop:
             reason="no_plan",
             priority=5,
         )
+
+    def update_storm_state(self, active: bool, reserve_soc: float = 0.0) -> None:
+        """Update storm state for hierarchy evaluation."""
+        self._storm_active = active
+        self._storm_reserve_soc = reserve_soc
 
     def update_adapter(self, adapter: InverterAdapter) -> None:
         """Hot-swap the inverter adapter (for config reload)."""

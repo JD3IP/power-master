@@ -33,6 +33,7 @@ def schedule_loads(
     plan: OptimisationPlan,
     available_loads: list[dict],
     spike_active: bool = False,
+    actual_runtime_minutes: dict[str, float] | None = None,
 ) -> list[ScheduledLoad]:
     """Assign deferrable loads to optimal plan slots.
 
@@ -62,6 +63,20 @@ def schedule_loads(
 
         slot_minutes = _slot_duration_minutes(plan)
         runtime_minutes = _effective_runtime_minutes(load_config)
+
+        # Credit actual runtime already achieved today
+        if actual_runtime_minutes:
+            load_id = load_config.get("id", "")
+            actual = actual_runtime_minutes.get(load_id, 0.0)
+            if actual > 0:
+                runtime_minutes = max(0, runtime_minutes - int(actual))
+                if runtime_minutes <= 0:
+                    logger.info(
+                        "Load '%s' already satisfied minimum (%.0f min actual)",
+                        load_config["name"], actual,
+                    )
+                    continue
+
         duration_slots = max(1, math.ceil(runtime_minutes / slot_minutes))
         power_w = load_config.get("power_w", 0)
         prefer_solar = load_config.get("prefer_solar", True)

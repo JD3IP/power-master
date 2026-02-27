@@ -1,0 +1,45 @@
+# Docker Compose for Raspberry Pi 3B deployment
+# Usage: docker compose -f docker-compose.pi.yml up -d
+#
+# Prerequisites:
+#   - Raspberry Pi OS 64-bit Lite (recommended)
+#   - Docker installed (see deploy/pi-setup.sh)
+#   - Config file at /opt/power-master/data/config.yaml
+#
+# Build on Pi:   docker compose -f docker-compose.pi.yml build
+# Cross-build:   see deploy/build-pi-image.sh
+
+services:
+  power-master:
+    image: ghcr.io/jd3ip/power-master:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: power-master
+    restart: unless-stopped
+
+    # Host networking for direct LAN access to:
+    #   - Inverter (Modbus TCP, default 192.168.1.100:502)
+    #   - MQTT broker (default localhost:1883)
+    #   - Shelly devices on LAN
+    network_mode: host
+
+    volumes:
+      - /opt/power-master/data:/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+    environment:
+      - TZ=Australia/Brisbane
+
+    # Pi 3B: 1GB RAM total — limit container to leave room for OS
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080')"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

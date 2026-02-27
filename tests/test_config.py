@@ -17,6 +17,7 @@ class TestAppConfig:
         assert config.planning.horizon_hours == 48
         assert config.arbitrage.break_even_delta_cents == 5
         assert config.storm.probability_threshold == 0.70
+        assert config.battery_targets.daytime_reserve_soc_target == 0.50
 
     def test_battery_soc_limits(self) -> None:
         config = AppConfig()
@@ -33,10 +34,12 @@ class TestAppConfig:
         config = AppConfig(
             battery={"capacity_wh": 20000, "max_charge_rate_w": 8000},
             arbitrage={"break_even_delta_cents": 8, "spike_threshold_cents": 200},
+            battery_targets={"daytime_reserve_soc_target": 0.6, "daytime_reserve_start_hour": 9, "daytime_reserve_end_hour": 17},
         )
         assert config.battery.capacity_wh == 20000
         assert config.arbitrage.break_even_delta_cents == 8
         assert config.arbitrage.spike_threshold_cents == 200
+        assert config.battery_targets.daytime_reserve_soc_target == 0.6
 
 
 class TestConfigManager:

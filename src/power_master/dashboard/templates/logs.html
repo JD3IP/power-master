@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% set active_page = "logs" %}
+
+{% block title %}Logs - Power Master{% endblock %}
+
+{% block content %}
+<h1>Application Logs</h1>
+
+<div class="logs-controls">
+    <div class="logs-filter">
+        <label for="log-level-filter" class="tab-select-label">Level</label>
+        <select id="log-level-filter" class="tab-select" style="width: auto; min-width: 120px;" onchange="refreshLogs()">
+            <option value="">All</option>
+            <option value="DEBUG">Debug</option>
+            <option value="INFO">Info</option>
+            <option value="WARNING">Warning</option>
+            <option value="ERROR">Error</option>
+            <option value="CRITICAL">Critical</option>
+        </select>
+    </div>
+    <div class="logs-actions">
+        <button type="button" class="btn btn-sm" onclick="refreshLogs()">Refresh</button>
+        <label style="font-size: 12px; color: var(--text-muted); margin-left: 8px;">
+            <input type="checkbox" id="log-auto-refresh" checked> Auto-refresh (5s)
+        </label>
+    </div>
+</div>
+
+<div class="table-scroll">
+    <table class="data-table" id="logs-table">
+        <thead>
+            <tr>
+                <th style="width: 160px;">Time</th>
+                <th style="width: 70px;">Level</th>
+                <th style="width: 180px;">Logger</th>
+                <th>Message</th>
+            </tr>
+        </thead>
+        <tbody id="logs-tbody">
+            <tr><td colspan="4" style="text-align: center; color: #6e7681;">Loading...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<style>
+.logs-controls {
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+.logs-filter { display: flex; flex-direction: column; gap: 4px; }
+.logs-actions { display: flex; align-items: center; gap: 8px; }
+#logs-table { font-size: 12px; }
+#logs-table td { font-family: monospace; white-space: pre-wrap; word-break: break-all; padding: 4px 8px; }
+#logs-table .log-debug { color: var(--text-muted); }
+#logs-table .log-info { color: var(--text-primary); }
+#logs-table .log-warning { color: var(--accent-orange); }
+#logs-table .log-error { color: var(--accent-red); }
+#logs-table .log-critical { color: #ff6b6b; font-weight: 700; }
+</style>
+
+<script>
+var logRefreshTimer = null;
+
+function refreshLogs() {
+    var level = document.getElementById('log-level-filter').value;
+    var url = '/api/logs?limit=300';
+    if (level) url += '&level=' + encodeURIComponent(level);
+
+    fetch(url)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        var tbody = document.getElementById('logs-tbody');
+        if (!tbody) return;
+        var records = data.records || [];
+        if (!records.length) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #6e7681;">No log entries</td></tr>';
+            return;
+        }
+        var html = '';
+        records.forEach(function(r) {
+            var cls = 'log-' + (r.level || 'info').toLowerCase();
+            var ts = r.timestamp || '';
+            try {
+                var d = new Date(ts);
+                ts = d.toLocaleTimeString() + '.' + String(d.getMilliseconds()).padStart(3, '0');
+            } catch(e) {}
+            var msg = (r.message || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            var logger = (r.logger || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+            html += '<tr class="' + cls + '">';
+            html += '<td>' + ts + '</td>';
+            html += '<td>' + (r.level || '') + '</td>';
+            html += '<td>' + logger + '</td>';
+            html += '<td>' + msg + '</td>';
+            html += '</tr>';
+        });
+        tbody.innerHTML = html;
+    })
+    .catch(function(err) {
+        var tbody = document.getElementById('logs-tbody');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="4" style="color: #f85149;">Failed to load logs: ' + err + '</td></tr>';
+    });
+}
+
+function startLogPoll() {
+    refreshLogs();
+    if (logRefreshTimer) clearInterval(logRefreshTimer);
+    logRefreshTimer = setInterval(function() {
+        var auto = document.getElementById('log-auto-refresh');
+        if (auto && auto.checked) refreshLogs();
+    }, 5000);
+}
+
+document.addEventListener('DOMContentLoaded', startLogPoll);
+</script>
+{% endblock %}

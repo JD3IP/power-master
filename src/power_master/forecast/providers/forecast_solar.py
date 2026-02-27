@@ -41,8 +41,9 @@ class ForecastSolarProvider(SolarProvider):
         resp.raise_for_status()
         data = resp.json()
 
+        result = data.get("result", {}) if isinstance(data, dict) else {}
         watts: dict[str, float] = (
-            data.get("result", {}).get("watts", {}) if isinstance(data, dict) else {}
+            result.get("watts", {}) if isinstance(result, dict) else {}
         )
         message = data.get("message", {}) if isinstance(data, dict) else {}
         info = message.get("info", {}) if isinstance(message, dict) else {}
@@ -53,8 +54,53 @@ class ForecastSolarProvider(SolarProvider):
         )
         local_tz = resolve_timezone(tz_name)
 
+        # Fallback: if watts is empty, try watt_hours_period (energy per
+        # interval) and convert to average power.
+        if not watts and isinstance(result, dict):
+            whp = result.get("watt_hours_period", {})
+            if whp and isinstance(whp, dict):
+                logger.info(
+                    "Forecast.Solar: 'watts' empty, falling back to "
+                    "'watt_hours_period' (%d entries)", len(whp),
+                )
+                sorted_keys = sorted(whp.keys())
+                if len(sorted_keys) >= 2:
+                    t0 = datetime.strptime(sorted_keys[0], "%Y-%m-%d %H:%M:%S")
+                    t1 = datetime.strptime(sorted_keys[1], "%Y-%m-%d %H:%M:%S")
+                    period_h = max((t1 - t0).total_seconds() / 3600.0, 0.25)
+                else:
+                    period_h = 1.0
+                watts = {k: float(v) / period_h for k, v in whp.items()}
+
+        # Second fallback: cumulative watt_hours (take derivative)
+        if not watts and isinstance(result, dict):
+            wh = result.get("watt_hours", {})
+            if wh and isinstance(wh, dict):
+                logger.info(
+                    "Forecast.Solar: falling back to 'watt_hours' "
+                    "derivative (%d entries)", len(wh),
+                )
+                sorted_items = sorted(wh.items())
+                prev_val = None
+                for k, v in sorted_items:
+                    cur = float(v)
+                    if prev_val is not None:
+                        watts[k] = max(0.0, cur - prev_val)
+                    prev_val = cur
+
+        logger.info(
+            "Forecast.Solar response: result_keys=%s, watts_entries=%d, "
+            "tz=%s, path=%s",
+            list(result.keys()) if isinstance(result, dict) else "N/A",
+            len(watts), tz_name, self._build_path(),
+        )
+
         if not watts:
-            logger.warning("Forecast.Solar returned no watts data")
+            logger.warning(
+                "Forecast.Solar returned no usable solar data "
+                "(result keys: %s)",
+                list(result.keys()) if isinstance(result, dict) else "N/A",
+            )
             return SolarForecast(
                 slots=[],
                 fetched_at=datetime.now(UTC),
@@ -98,7 +144,12 @@ class ForecastSolarProvider(SolarProvider):
                 )
             )
 
-        logger.info("Forecast.Solar forecast fetched: %d slots", len(slots))
+        logger.info(
+            "Forecast.Solar forecast fetched: %d slots, range %s to %s",
+            len(slots),
+            slots[0].start.isoformat() if slots else "N/A",
+            slots[-1].end.isoformat() if slots else "N/A",
+        )
         return SolarForecast(
             slots=slots,
             fetched_at=datetime.now(UTC),

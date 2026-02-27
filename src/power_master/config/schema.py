@@ -55,7 +55,8 @@ class PlanningConfig(BaseModel):
     evaluation_interval_seconds: int = 300
     periodic_rebuild_interval_seconds: int = 3600
     forecast_delta_threshold_pct: float = 15.0
-    soc_deviation_tolerance: float = Field(0.10, ge=0.0, le=1.0)
+    soc_deviation_tolerance: float = Field(0.05, ge=0.0, le=1.0)
+    soc_deviation_cooldown_seconds: int = 300
     solver_timeout_seconds: int = 25
 
 
@@ -64,6 +65,9 @@ class BatteryTargetsConfig(BaseModel):
     evening_target_hour: int = Field(16, ge=0, le=23)
     morning_soc_minimum: float = Field(0.20, ge=0.0, le=1.0)
     morning_minimum_hour: int = Field(6, ge=0, le=23)
+    daytime_reserve_soc_target: float = Field(0.50, ge=0.0, le=1.0)
+    daytime_reserve_start_hour: int = Field(8, ge=0, le=23)
+    daytime_reserve_end_hour: int = Field(18, ge=0, le=24)
     overnight_charge_threshold_cents: int = 10
 
 
@@ -148,6 +152,7 @@ class FoxESSConfig(BaseModel):
     unit_id: int = 247
     poll_interval_seconds: int = 15
     watchdog_timeout_seconds: int = 3600  # Remote control watchdog (seconds); must exceed tick interval
+    remote_refresh_interval_seconds: int = 20  # Re-send active command this often to keep inverter in remote mode
 
 
 class HardwareConfig(BaseModel):

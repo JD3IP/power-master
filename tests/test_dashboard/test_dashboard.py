@@ -166,6 +166,24 @@ class TestSettingsPost:
         assert "Restart required" not in resp.text
 
     @pytest.mark.asyncio
+    async def test_save_daytime_reserve_settings(self, client) -> None:
+        await client.post(
+            "/settings",
+            data={
+                "battery_targets.daytime_reserve_soc_target": "0.55",
+                "battery_targets.daytime_reserve_start_hour": "9",
+                "battery_targets.daytime_reserve_end_hour": "17",
+            },
+            follow_redirects=False,
+        )
+        resp = await client.get("/api/config")
+        data = resp.json()
+        bt = data["battery_targets"]
+        assert bt["daytime_reserve_soc_target"] == 0.55
+        assert bt["daytime_reserve_start_hour"] == 9
+        assert bt["daytime_reserve_end_hour"] == 17
+
+    @pytest.mark.asyncio
     async def test_save_planning_no_restart(self, client) -> None:
         """POST planning changes does NOT show restart banner."""
         resp = await client.post(
@@ -426,3 +444,4 @@ class TestAPI:
         assert "battery" in data
         assert "planning" in data
         assert "arbitrage" in data
+

@@ -1,11 +1,9 @@
 services:
   power-master:
-    image: power-master:2026-02-24-1
+    image: ghcr.io/jd3ip/power-master:latest
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        CACHE_BUST: "2026-02-24-1"
     container_name: power-master
     restart: unless-stopped
 
@@ -22,6 +20,7 @@ services:
 
     volumes:
       - power-master-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
     environment:
       - TZ=Australia/Brisbane

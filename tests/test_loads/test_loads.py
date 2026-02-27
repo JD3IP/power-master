@@ -197,7 +197,7 @@ class TestShellyAdapter:
         mock_response.status_code = 200
         mock_response.raise_for_status = lambda: None
         mock_response.json = lambda: {"output": True, "apower": 1150.5}
-        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.get = AsyncMock(return_value=mock_response)
 
         adapter = ShellyAdapter(config, client=mock_client)
         status = await adapter.get_status()
@@ -214,7 +214,7 @@ class TestShellyAdapter:
         mock_response.status_code = 200
         mock_response.raise_for_status = lambda: None
         mock_response.json = lambda: {"output": False, "apower": 0}
-        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.get = AsyncMock(return_value=mock_response)
 
         adapter = ShellyAdapter(config, client=mock_client)
         status = await adapter.get_status()
@@ -227,11 +227,14 @@ class TestShellyAdapter:
         config = _make_shelly_config()
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(side_effect=httpx.HTTPError("rpc failed"))
-        mock_response = AsyncMock()
-        mock_response.status_code = 200
-        mock_response.raise_for_status = lambda: None
-        mock_response.json = lambda: {"ison": True, "power": 987.4}
-        mock_client.get = AsyncMock(return_value=mock_response)
+        gen1_response = AsyncMock()
+        gen1_response.status_code = 200
+        gen1_response.raise_for_status = lambda: None
+        gen1_response.json = lambda: {"ison": True, "power": 987.4}
+        # GET is tried twice: first Gen2 GET (fails), then Gen1 GET (succeeds)
+        mock_client.get = AsyncMock(
+            side_effect=[httpx.HTTPError("gen2 get failed"), gen1_response],
+        )
 
         adapter = ShellyAdapter(config, client=mock_client)
         status = await adapter.get_status()
@@ -239,7 +242,6 @@ class TestShellyAdapter:
         assert status.state == LoadState.ON
         assert status.power_w == 987
         assert status.is_available is True
-        mock_client.get.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_turn_on_gen1_fallback(self) -> None:

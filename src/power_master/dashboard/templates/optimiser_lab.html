@@ -1,0 +1,601 @@
+{% extends "base.html" %}
+{% set active_page = "optimiser_lab" %}
+
+{% block title %}Optimiser Lab - Power Master{% endblock %}
+
+{% block content %}
+<h1>Optimiser Lab</h1>
+<p class="hint">Run historical backtests with the real optimiser, tune key settings, then export the tuned values back to app config.</p>
+
+{% if saved_kind == "export" %}
+<div class="alert success">Settings exported to app config.</div>
+{% elif saved_kind == "experiment" %}
+<div class="alert success">Experiment saved.</div>
+{% endif %}
+{% if error %}
+<div class="alert error">{{ error }}</div>
+{% endif %}
+
+<section class="settings-section">
+    <h2>Saved Experiments</h2>
+    <form method="get" action="/optimiser-lab" class="form-actions" style="margin-bottom: 12px; align-items: end;">
+        <div class="form-group" style="min-width: 240px;">
+            <label for="compare_a">Compare A</label>
+            <select id="compare_a" name="compare_a">
+                <option value="">Select</option>
+                {% for ex in experiments %}
+                <option value="{{ ex.id }}" {% if compare_a and compare_a|int == ex.id %}selected{% endif %}>{{ ex.name }} (#{{ ex.id }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group" style="min-width: 240px;">
+            <label for="compare_b">Compare B</label>
+            <select id="compare_b" name="compare_b">
+                <option value="">Select</option>
+                {% for ex in experiments %}
+                <option value="{{ ex.id }}" {% if compare_b and compare_b|int == ex.id %}selected{% endif %}>{{ ex.name }} (#{{ ex.id }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button class="btn" type="submit">Compare</button>
+    </form>
+    {% if compare %}
+    <div class="status-cards panel-cards--compact" style="margin-bottom: 12px;">
+        <div class="card">
+            <div class="card-label">A</div>
+            <div class="card-value">{{ compare.a.name }} (#{{ compare.a.id }})</div>
+        </div>
+        <div class="card">
+            <div class="card-label">B</div>
+            <div class="card-value">{{ compare.b.name }} (#{{ compare.b.id }})</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Net Delta (B-A)</div>
+            <div class="card-value" style="color: {% if compare.b_is_better %}var(--accent-green){% else %}var(--accent-red){% endif %};">
+                ${{ "%.2f"|format(compare.net_delta_dollars) }}
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-label">Import Delta</div>
+            <div class="card-value">${{ "%.2f"|format(compare.import_delta_dollars) }}</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Export Delta</div>
+            <div class="card-value">${{ "%.2f"|format(compare.export_delta_dollars) }}</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Final SOC Delta</div>
+            <div class="card-value">{{ "%.1f"|format(compare.final_soc_delta_pct) }}%</div>
+        </div>
+    </div>
+    {% endif %}
+    <div class="table-scroll">
+        <table class="plan-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Created (UTC)</th>
+                    <th>Candidate Net $</th>
+                    <th>Delta $</th>
+                    <th>Final SOC</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ex in experiments %}
+                <tr>
+                    <td>{{ ex.id }}</td>
+                    <td>{{ ex.name }}</td>
+                    <td>{{ ex.created_at[:16].replace("T", " ") if ex.created_at else "" }}</td>
+                    <td>{{ "%.2f"|format(ex.candidate_net_dollars) }}</td>
+                    <td>{{ "%.2f"|format(ex.delta_dollars) }}</td>
+                    <td>{{ "%.1f"|format(ex.final_soc_pct) }}%</td>
+                    <td><a class="btn" href="/optimiser-lab?load_experiment_id={{ ex.id }}">Load</a></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7">No saved experiments yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+{% if loaded_experiment_id %}
+<div class="alert" style="margin-bottom: 12px;">Loaded experiment: {{ loaded_experiment_name }} (#{{ loaded_experiment_id }})</div>
+{% endif %}
+
+<div id="lab-running-banner" class="alert" style="display:none; margin-bottom: 12px;">
+    Running backtest... this can take a while on large windows.
+    <strong><span id="lab-running-elapsed">0s</span></strong>
+    <span id="lab-running-details" style="margin-left: 8px;"></span>
+    <button id="lab-stop-btn" class="btn" type="button" style="margin-left: 12px;">Stop</button>
+    <div style="margin-top: 8px; width: 100%; max-width: 520px;">
+        <div style="height: 10px; background: rgba(110,118,129,0.25); border-radius: 999px; overflow: hidden;">
+            <div id="lab-running-bar" style="height: 10px; width: 0%; background: var(--accent-blue); transition: width .2s;"></div>
+        </div>
+    </div>
+</div>
+
+<form id="optimiser-lab-form" method="post">
+    <section class="settings-section">
+        <h2>Backtest Window</h2>
+        <div class="form-actions" style="margin-bottom: 12px;">
+            <button class="btn" type="button" onclick="applyPreset2025()">Full 2025 Preset</button>
+        </div>
+        <div class="settings-grid">
+            <div class="form-group">
+                <label for="start_iso">Start (ISO)</label>
+                <input type="text" id="start_iso" name="start_iso" value="{{ default_start }}">
+            </div>
+            <div class="form-group">
+                <label for="end_iso">End (ISO)</label>
+                <input type="text" id="end_iso" name="end_iso" value="{{ default_end }}">
+            </div>
+            <div class="form-group">
+                <label for="initial_soc">Initial SOC (0-1)</label>
+                <input type="number" step="0.01" min="0" max="1" id="initial_soc" name="initial_soc" value="{{ initial_soc }}">
+            </div>
+            <div class="form-group">
+                <label for="initial_wacb_cents">Initial WACB (c/kWh)</label>
+                <input type="number" step="0.1" id="initial_wacb_cents" name="initial_wacb_cents" value="{{ initial_wacb_cents }}">
+            </div>
+            <div class="form-group">
+                <label for="use_forecast_pricing">Planning Price Source</label>
+                <label style="display:flex; align-items:center; gap:8px;">
+                    <input type="checkbox" id="use_forecast_pricing" name="use_forecast_pricing" {% if use_forecast_pricing %}checked{% endif %}>
+                    Use forecast price series for planning (score still uses actual prices)
+                </label>
+            </div>
+            <div class="form-group">
+                <label for="replan_every_slots">Replan Every N Slots</label>
+                <input type="number" min="1" id="replan_every_slots" name="replan_every_slots" value="{{ replan_every_slots }}">
+                <small class="form-hint">1 = exact (slow), 6+ = much faster approximation.</small>
+            </div>
+        </div>
+    </section>
+
+    <section class="settings-section">
+        <h2>Battery</h2>
+        <div class="settings-grid">
+            <div class="form-group">
+                <label for="battery.capacity_wh">Capacity (Wh)</label>
+                <input type="number" id="battery.capacity_wh" name="battery.capacity_wh" value="{{ config.battery.capacity_wh }}">
+            </div>
+            <div class="form-group">
+                <label for="battery.max_charge_rate_w">Max Charge (W)</label>
+                <input type="number" id="battery.max_charge_rate_w" name="battery.max_charge_rate_w" value="{{ config.battery.max_charge_rate_w }}">
+            </div>
+            <div class="form-group">
+                <label for="battery.max_discharge_rate_w">Max Discharge (W)</label>
+                <input type="number" id="battery.max_discharge_rate_w" name="battery.max_discharge_rate_w" value="{{ config.battery.max_discharge_rate_w }}">
+            </div>
+            <div class="form-group">
+                <label for="battery.max_grid_import_w">Max Grid Import (W)</label>
+                <input type="number" id="battery.max_grid_import_w" name="battery.max_grid_import_w" value="{{ config.battery.max_grid_import_w }}">
+            </div>
+        </div>
+    </section>
+
+    <section class="settings-section">
+        <h2>SOC Targets</h2>
+        <div class="settings-grid">
+            <div class="form-group">
+                <label for="battery_targets.evening_soc_target">Evening SOC Target</label>
+                <input type="number" step="0.01" min="0" max="1" id="battery_targets.evening_soc_target" name="battery_targets.evening_soc_target" value="{{ config.battery_targets.evening_soc_target }}">
+            </div>
+            <div class="form-group">
+                <label for="battery_targets.evening_target_hour">Evening Hour</label>
+                <input type="number" min="0" max="23" id="battery_targets.evening_target_hour" name="battery_targets.evening_target_hour" value="{{ config.battery_targets.evening_target_hour }}">
+            </div>
+            <div class="form-group">
+                <label for="battery_targets.morning_soc_minimum">Morning SOC Minimum</label>
+                <input type="number" step="0.01" min="0" max="1" id="battery_targets.morning_soc_minimum" name="battery_targets.morning_soc_minimum" value="{{ config.battery_targets.morning_soc_minimum }}">
+            </div>
+            <div class="form-group">
+                <label for="battery_targets.morning_minimum_hour">Morning Hour</label>
+                <input type="number" min="0" max="23" id="battery_targets.morning_minimum_hour" name="battery_targets.morning_minimum_hour" value="{{ config.battery_targets.morning_minimum_hour }}">
+            </div>
+            <div class="form-group">
+                <label for="battery_targets.daytime_reserve_soc_target">Daytime Reserve SOC</label>
+                <input type="number" step="0.01" min="0" max="1" id="battery_targets.daytime_reserve_soc_target" name="battery_targets.daytime_reserve_soc_target" value="{{ config.battery_targets.daytime_reserve_soc_target }}">
+            </div>
+            <div class="form-group">
+                <label for="battery_targets.daytime_reserve_start_hour">Daytime Start Hour</label>
+                <input type="number" min="0" max="23" id="battery_targets.daytime_reserve_start_hour" name="battery_targets.daytime_reserve_start_hour" value="{{ config.battery_targets.daytime_reserve_start_hour }}">
+            </div>
+            <div class="form-group">
+                <label for="battery_targets.daytime_reserve_end_hour">Daytime End Hour (exclusive)</label>
+                <input type="number" min="1" max="24" id="battery_targets.daytime_reserve_end_hour" name="battery_targets.daytime_reserve_end_hour" value="{{ config.battery_targets.daytime_reserve_end_hour }}">
+            </div>
+        </div>
+    </section>
+
+    <section class="settings-section">
+        <h2>Pricing / Arbitrage</h2>
+        <div class="settings-grid">
+            <div class="form-group">
+                <label for="arbitrage.break_even_delta_cents">Break-Even Delta (c/kWh)</label>
+                <input type="number" id="arbitrage.break_even_delta_cents" name="arbitrage.break_even_delta_cents" value="{{ config.arbitrage.break_even_delta_cents }}">
+            </div>
+            <div class="form-group">
+                <label for="arbitrage.spike_threshold_cents">Spike Threshold (c/kWh)</label>
+                <input type="number" id="arbitrage.spike_threshold_cents" name="arbitrage.spike_threshold_cents" value="{{ config.arbitrage.spike_threshold_cents }}">
+            </div>
+            <div class="form-group">
+                <label for="arbitrage.spike_response_mode">Spike Response Mode</label>
+                <select id="arbitrage.spike_response_mode" name="arbitrage.spike_response_mode">
+                    <option value="aggressive" {% if config.arbitrage.spike_response_mode == 'aggressive' %}selected{% endif %}>Aggressive</option>
+                    <option value="conservative" {% if config.arbitrage.spike_response_mode == 'conservative' %}selected{% endif %}>Conservative</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="arbitrage.price_dampen_threshold_cents">Dampen Threshold (c/kWh)</label>
+                <input type="number" id="arbitrage.price_dampen_threshold_cents" name="arbitrage.price_dampen_threshold_cents" value="{{ config.arbitrage.price_dampen_threshold_cents }}">
+            </div>
+            <div class="form-group">
+                <label for="arbitrage.price_dampen_factor">Dampen Factor</label>
+                <input type="number" step="0.05" min="0" max="1" id="arbitrage.price_dampen_factor" name="arbitrage.price_dampen_factor" value="{{ config.arbitrage.price_dampen_factor }}">
+            </div>
+            <div class="form-group">
+                <label for="fixed_costs.hedging_per_kwh_cents">Hedging (c/kWh)</label>
+                <input type="number" id="fixed_costs.hedging_per_kwh_cents" name="fixed_costs.hedging_per_kwh_cents" value="{{ config.fixed_costs.hedging_per_kwh_cents }}">
+            </div>
+            <div class="form-group">
+                <label for="planning.horizon_hours">Horizon Hours</label>
+                <input type="number" min="1" id="planning.horizon_hours" name="planning.horizon_hours" value="{{ config.planning.horizon_hours }}">
+            </div>
+        </div>
+    </section>
+
+    <div class="form-actions">
+        <button id="lab-run-btn" class="btn btn-primary" type="submit" name="action" value="run">Run Backtest</button>
+        <button id="lab-export-btn" class="btn" type="submit" name="action" value="export">Export Tuned Settings to App</button>
+    </div>
+</form>
+
+{% if results and job_id %}
+<section class="settings-section">
+    <h2>Save Current Run</h2>
+    <form method="post" class="form-actions">
+        <input type="hidden" name="action" value="save_experiment">
+        <input type="hidden" name="job_id" value="{{ job_id }}">
+        <div class="form-group" style="min-width: 300px;">
+            <label for="experiment_name">Experiment Name</label>
+            <input type="text" id="experiment_name" name="experiment_name" placeholder="e.g. reserve-50-arb-v2">
+        </div>
+        <button class="btn" type="submit">Save Experiment</button>
+    </form>
+</section>
+{% endif %}
+
+{% if results %}
+<section class="settings-section">
+    <h2>Financial Impact</h2>
+    <div class="status-cards panel-cards--compact">
+        <div class="card">
+            <div class="card-label">Candidate Net</div>
+            <div class="card-value">${{ "%.2f"|format(results.candidate.net_cost_cents / 100) }}</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Baseline Net</div>
+            <div class="card-value">${{ "%.2f"|format(results.baseline.net_cost_cents / 100) }}</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Delta</div>
+            <div class="card-value" style="color: {% if results.improved %}var(--accent-green){% else %}var(--accent-red){% endif %};">
+                ${{ "%.2f"|format(results.delta_dollars) }}
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-label">Candidate Export Revenue</div>
+            <div class="card-value">${{ "%.2f"|format(results.candidate.export_revenue_cents / 100) }}</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Candidate Import Cost</div>
+            <div class="card-value">${{ "%.2f"|format(results.candidate.import_cost_cents / 100) }}</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Final SOC</div>
+            <div class="card-value">{{ "%.1f"|format(results.candidate.final_soc * 100) }}%</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Forecast-Scored Net</div>
+            <div class="card-value">${{ "%.2f"|format(results.candidate.planner_net_cost_cents / 100) }}</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Forecast Error Impact</div>
+            <div class="card-value" style="color: {% if results.forecast_error_cents <= 0 %}var(--accent-green){% else %}var(--accent-red){% endif %};">
+                ${{ "%.2f"|format(results.forecast_error_dollars) }}
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="settings-section">
+    <h2>Daily Breakdown (Candidate)</h2>
+    <div class="table-scroll">
+        <table class="plan-table">
+            <thead>
+                <tr>
+                    <th>Day</th>
+                    <th>Import kWh</th>
+                    <th>Export kWh</th>
+                    <th>Import $</th>
+                    <th>Export $</th>
+                    <th>Net $</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in results.daily_rows %}
+                <tr data-day="{{ d.day }}" class="lab-day-row">
+                    <td>{{ d.day }}</td>
+                    <td>{{ "%.3f"|format(d.import_kwh) }}</td>
+                    <td>{{ "%.3f"|format(d.export_kwh) }}</td>
+                    <td>{{ "%.2f"|format(d.import_cost_cents / 100) }}</td>
+                    <td>{{ "%.2f"|format(d.export_revenue_cents / 100) }}</td>
+                    <td>{{ "%.2f"|format(d.net_cost_cents / 100) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="settings-section">
+    <h2>Power Flow Diagnostics</h2>
+    <div class="form-actions" style="margin-bottom: 8px;">
+        <span id="lab-selected-day" class="hint">Showing: full range</span>
+        <button class="btn" type="button" onclick="labResetDayFilter()">Clear Day Filter</button>
+    </div>
+    <div class="chart-wrapper"><canvas id="lab-power-flow-chart" height="320"></canvas></div>
+</section>
+
+<section class="settings-section">
+    <h2>Price and Slot Value Diagnostics</h2>
+    <div class="chart-wrapper"><canvas id="lab-value-chart" height="320"></canvas></div>
+</section>
+{% endif %}
+
+<script>
+function applyPreset2025() {
+    var start = document.getElementById('start_iso');
+    var end = document.getElementById('end_iso');
+    var soc = document.getElementById('initial_soc');
+    var wacb = document.getElementById('initial_wacb_cents');
+    var replan = document.getElementById('replan_every_slots');
+    if (start) start.value = '2025-01-01T00:00:00+00:00';
+    if (end) end.value = '2025-12-31T23:30:00+00:00';
+    if (soc) soc.value = '0.50';
+    if (wacb) wacb.value = '10.0';
+    if (replan) replan.value = '6';
+}
+
+(function() {
+    var form = document.getElementById('optimiser-lab-form');
+    if (!form) return;
+    var banner = document.getElementById('lab-running-banner');
+    var elapsed = document.getElementById('lab-running-elapsed');
+    var details = document.getElementById('lab-running-details');
+    var bar = document.getElementById('lab-running-bar');
+    var runBtn = document.getElementById('lab-run-btn');
+    var exportBtn = document.getElementById('lab-export-btn');
+    var stopBtn = document.getElementById('lab-stop-btn');
+    var currentJobId = '';
+    var timer = null;
+    var poll = null;
+
+    function resetRunUi() {
+        if (timer) clearInterval(timer);
+        if (poll) clearInterval(poll);
+        timer = null;
+        poll = null;
+        currentJobId = '';
+        runBtn.disabled = false;
+        exportBtn.disabled = false;
+        runBtn.textContent = 'Run Backtest';
+        if (stopBtn) {
+            stopBtn.disabled = false;
+            stopBtn.style.display = 'none';
+        }
+    }
+
+    if (stopBtn) {
+        stopBtn.style.display = 'none';
+        stopBtn.addEventListener('click', async function() {
+            if (!currentJobId) return;
+            stopBtn.disabled = true;
+            if (details) details.textContent = 'Cancelling...';
+            try {
+                await fetch('/optimiser-lab/job/' + encodeURIComponent(currentJobId) + '/cancel', { method: 'POST' });
+            } catch (e) {
+                // polling will surface current state
+            }
+        });
+    }
+
+    form.addEventListener('submit', async function(ev) {
+        var submitter = ev.submitter;
+        var action = submitter && submitter.value ? submitter.value : 'run';
+        if (!runBtn || !exportBtn || !banner || !elapsed) return;
+
+        if (action === 'run') {
+            ev.preventDefault();
+            runBtn.disabled = true;
+            exportBtn.disabled = true;
+            banner.style.display = 'block';
+            var started = Date.now();
+            elapsed.textContent = '0s';
+            if (details) details.textContent = 'Starting...';
+            if (bar) bar.style.width = '0%';
+            runBtn.textContent = 'Running...';
+            if (stopBtn) {
+                stopBtn.style.display = 'inline-block';
+                stopBtn.disabled = false;
+            }
+            timer = setInterval(function() {
+                var secs = Math.floor((Date.now() - started) / 1000);
+                elapsed.textContent = secs + 's';
+            }, 1000);
+            try {
+                var fd = new FormData(form);
+                var startResp = await fetch('/optimiser-lab/start', { method: 'POST', body: fd });
+                if (!startResp.ok) throw new Error('Failed to start job');
+                var startData = await startResp.json();
+                var jobId = startData.job_id;
+                if (!jobId) throw new Error('Missing job id');
+                currentJobId = jobId;
+
+                poll = setInterval(async function() {
+                    try {
+                        var r = await fetch('/optimiser-lab/job/' + encodeURIComponent(jobId));
+                        if (!r.ok) return;
+                        var s = await r.json();
+                        if (details) {
+                            var ts = s.current_ts ? (' @ ' + String(s.current_ts).replace('T', ' ').slice(0, 16)) : '';
+                            details.textContent = (s.message || 'Running') + ' - ' + (s.completed_slots || 0) + '/' + (s.total_slots || 0) + ts;
+                        }
+                        if (bar && s.percent !== undefined) bar.style.width = Math.max(0, Math.min(100, s.percent)) + '%';
+                        if (s.status === 'done') {
+                            resetRunUi();
+                            window.location.href = '/optimiser-lab?job_id=' + encodeURIComponent(jobId);
+                        } else if (s.status === 'cancelled') {
+                            resetRunUi();
+                            alert('Backtest cancelled.');
+                        } else if (s.status === 'error') {
+                            resetRunUi();
+                            alert('Backtest failed: ' + (s.message || 'unknown error'));
+                        }
+                    } catch (e) {
+                        // keep polling
+                    }
+                }, 800);
+                window.addEventListener('beforeunload', function() {
+                    if (timer) clearInterval(timer);
+                    if (poll) clearInterval(poll);
+                }, { once: true });
+            } catch (e) {
+                resetRunUi();
+                alert('Failed to start backtest: ' + (e && e.message ? e.message : e));
+            }
+        } else {
+            runBtn.disabled = true;
+            exportBtn.disabled = true;
+            runBtn.textContent = 'Working...';
+            exportBtn.textContent = 'Exporting...';
+        }
+    });
+})();
+
+{% if results and results.slot_rows %}
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof Chart === 'undefined') {
+        console.error('Chart.js not loaded');
+        return;
+    }
+    var allSlotRows = {{ results.slot_rows | tojson }};
+    if (!allSlotRows || !allSlotRows.length) return;
+    var flowCanvas = document.getElementById('lab-power-flow-chart');
+    var valueCanvas = document.getElementById('lab-value-chart');
+    var selectedDayLabel = document.getElementById('lab-selected-day');
+    var dayRows = Array.prototype.slice.call(document.querySelectorAll('.lab-day-row'));
+    var flowChart = null;
+    var valueChart = null;
+
+    function buildModeSeries(rows, targetMode, yValue) {
+        return rows.map(function(r) { return r.mode === targetMode ? yValue : null; });
+    }
+
+    function setSelectedDay(day) {
+        dayRows.forEach(function(row) {
+            var active = day && row.getAttribute('data-day') === day;
+            row.style.background = active ? 'rgba(88,166,255,0.12)' : '';
+            row.style.cursor = 'pointer';
+        });
+        if (selectedDayLabel) selectedDayLabel.textContent = day ? ('Showing: ' + day + ' (24h)') : 'Showing: full range';
+    }
+
+    function renderCharts(day) {
+        var slotRows = day ? allSlotRows.filter(function(r) { return (r.ts || '').slice(0, 10) === day; }) : allSlotRows;
+        var labels = slotRows.map(function(r) { return (r.ts || '').replace('T', ' ').slice(0, 16); });
+        if (flowChart) flowChart.destroy();
+        if (valueChart) valueChart.destroy();
+
+        if (flowCanvas) {
+            flowChart = new Chart(flowCanvas.getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: 'Load (kW)', data: slotRows.map(function(r) { return r.load_kw; }), borderColor: '#58a6ff', pointRadius: 0, tension: 0.2 },
+                        { label: 'Solar (kW)', data: slotRows.map(function(r) { return r.solar_kw; }), borderColor: '#d29922', pointRadius: 0, tension: 0.2 },
+                        { label: 'Charge (kW)', data: slotRows.map(function(r) { return r.charge_kw; }), borderColor: '#3fb950', pointRadius: 0, tension: 0.2 },
+                        { label: 'Discharge (kW)', data: slotRows.map(function(r) { return -r.discharge_kw; }), borderColor: '#f85149', pointRadius: 0, tension: 0.2 },
+                        { label: 'Grid Import (kW)', data: slotRows.map(function(r) { return r.grid_import_kw; }), borderColor: '#ff7b72', borderDash: [5, 3], pointRadius: 0, tension: 0.2 },
+                        { label: 'Grid Export (kW)', data: slotRows.map(function(r) { return -r.grid_export_kw; }), borderColor: '#56d364', borderDash: [5, 3], pointRadius: 0, tension: 0.2 },
+                        { label: 'SOC (%)', data: slotRows.map(function(r) { return r.soc * 100; }), borderColor: '#a371f7', pointRadius: 0, tension: 0.15, yAxisID: 'y1' },
+                        { label: 'Mode: Self-Use', data: buildModeSeries(slotRows, 1, 0.18), yAxisID: 'y2', borderColor: 'rgba(88,166,255,0.95)', pointRadius: 0, borderWidth: 6, tension: 0, stepped: true, spanGaps: true },
+                        { label: 'Mode: Force Charge', data: buildModeSeries(slotRows, 3, 0.50), yAxisID: 'y2', borderColor: 'rgba(63,185,80,0.95)', pointRadius: 0, borderWidth: 6, tension: 0, stepped: true, spanGaps: true },
+                        { label: 'Mode: Force Discharge', data: buildModeSeries(slotRows, 4, 0.82), yAxisID: 'y2', borderColor: 'rgba(248,81,73,0.95)', pointRadius: 0, borderWidth: 6, tension: 0, stepped: true, spanGaps: true }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        x: { ticks: { maxTicksLimit: 16 } },
+                        y: { title: { display: true, text: 'kW (export/discharge negative)' } },
+                        y1: { position: 'right', min: 0, max: 100, grid: { display: false }, title: { display: true, text: 'SOC %' } },
+                        y2: { display: false, min: 0, max: 1, grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        if (valueCanvas) {
+            valueChart = new Chart(valueCanvas.getContext('2d'), {
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { type: 'line', label: 'Import Price (c/kWh)', data: slotRows.map(function(r) { return r.import_cents; }), borderColor: '#ff7b72', pointRadius: 0, yAxisID: 'y' },
+                        { type: 'line', label: 'Export Price (c/kWh)', data: slotRows.map(function(r) { return r.export_cents; }), borderColor: '#56d364', pointRadius: 0, yAxisID: 'y' },
+                        { type: 'line', label: 'Planner Import Price (c/kWh)', data: slotRows.map(function(r) { return r.planner_import_cents; }), borderColor: '#ff7b72', borderDash: [4, 4], pointRadius: 0, yAxisID: 'y' },
+                        { type: 'line', label: 'Planner Export Price (c/kWh)', data: slotRows.map(function(r) { return r.planner_export_cents; }), borderColor: '#56d364', borderDash: [4, 4], pointRadius: 0, yAxisID: 'y' },
+                        { type: 'bar', label: 'Slot Value (c)', data: slotRows.map(function(r) { return r.slot_value_cents; }), backgroundColor: 'rgba(88,166,255,0.35)', borderColor: '#58a6ff', yAxisID: 'y1' }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        x: { ticks: { maxTicksLimit: 16 } },
+                        y: { position: 'left', title: { display: true, text: 'Price (c/kWh)' } },
+                        y1: { position: 'right', grid: { display: false }, title: { display: true, text: 'Slot Value (c)' } }
+                    }
+                }
+            });
+        }
+    }
+
+    window.labResetDayFilter = function() {
+        setSelectedDay('');
+        renderCharts('');
+    };
+
+    dayRows.forEach(function(row) {
+        row.addEventListener('click', function() {
+            var day = row.getAttribute('data-day') || '';
+            setSelectedDay(day);
+            renderCharts(day);
+        });
+        row.style.cursor = 'pointer';
+    });
+
+    setSelectedDay('');
+    renderCharts('');
+});
+{% endif %}
+</script>
+{% endblock %}

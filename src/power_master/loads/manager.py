@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from power_master.config.schema import AppConfig
 from power_master.loads.base import LoadController, LoadState, LoadStatus
@@ -32,6 +33,7 @@ class LoadManager:
     - Execute scheduled load commands from the load scheduler
     - Handle spike responses (shed non-essential loads)
     - Track command history
+    - Track actual runtime via state change detection
     """
 
     def __init__(self, config: AppConfig) -> None:
@@ -39,6 +41,12 @@ class LoadManager:
         self._controllers: dict[str, LoadController] = {}
         self._command_history: list[LoadCommand] = []
         self._shed_loads: set[str] = set()  # Loads currently shed for spike
+
+        # Runtime tracking: detect state transitions and accumulate ON time
+        self._last_known_state: dict[str, LoadState] = {}
+        self._on_since: dict[str, datetime] = {}  # When load turned ON
+        self._daily_runtime_s: dict[str, float] = {}  # Accumulated seconds today
+        self._runtime_date: datetime | None = None  # Date of current accumulation
 
     def register(self, controller: LoadController) -> None:
         """Register a load controller."""
@@ -58,11 +66,26 @@ class LoadManager:
         return list(self._command_history)
 
     async def get_all_statuses(self) -> list[LoadStatus]:
-        """Query status from all registered controllers."""
+        """Query status from all registered controllers concurrently."""
+        if not self._controllers:
+            return []
+        results = await asyncio.gather(
+            *(ctrl.get_status() for ctrl in self._controllers.values()),
+            return_exceptions=True,
+        )
         statuses = []
-        for controller in self._controllers.values():
-            status = await controller.get_status()
-            statuses.append(status)
+        for ctrl, result in zip(self._controllers.values(), results):
+            if isinstance(result, Exception):
+                logger.warning("Status poll failed for '%s': %s", ctrl.name, result)
+                statuses.append(LoadStatus(
+                    load_id=ctrl.load_id,
+                    name=ctrl.name,
+                    state=LoadState.ERROR,
+                    is_available=False,
+                    error=str(result),
+                ))
+            else:
+                statuses.append(result)
         return statuses
 
     async def execute_schedule(self, scheduled: list[ScheduledLoad], current_slot_index: int) -> list[LoadCommand]:
@@ -201,6 +224,61 @@ class LoadManager:
 
         logger.warning("All loads turned OFF (reason: %s)", reason)
         return commands
+
+    def update_runtime_tracking(self, statuses: list[LoadStatus]) -> None:
+        """Detect state transitions and accumulate ON-time for each load.
+
+        Call this periodically (e.g. every telemetry poll) with fresh statuses.
+        """
+        now = datetime.now(timezone.utc)
+
+        # Reset daily counters at midnight UTC
+        today = now.date()
+        if self._runtime_date is None or self._runtime_date != today:
+            self._daily_runtime_s.clear()
+            # For loads still ON across midnight, reset their start time to now
+            # so today's runtime only counts from midnight forward
+            for lid in list(self._on_since):
+                self._on_since[lid] = now
+            self._runtime_date = today
+
+        for status in statuses:
+            lid = status.load_id
+            prev_state = self._last_known_state.get(lid)
+            cur_state = status.state
+
+            if cur_state == LoadState.ON:
+                if prev_state != LoadState.ON:
+                    # Transition to ON — start tracking
+                    self._on_since[lid] = now
+                    logger.debug("Load '%s' turned ON (runtime tracking)", status.name)
+            else:
+                if prev_state == LoadState.ON and lid in self._on_since:
+                    # Transition from ON to OFF — accumulate runtime
+                    elapsed = (now - self._on_since[lid]).total_seconds()
+                    self._daily_runtime_s[lid] = self._daily_runtime_s.get(lid, 0.0) + elapsed
+                    logger.info(
+                        "Load '%s' ran for %.0fs (total today: %.0fs)",
+                        status.name, elapsed, self._daily_runtime_s[lid],
+                    )
+                    self._on_since.pop(lid, None)
+
+            self._last_known_state[lid] = cur_state
+
+    def get_runtime_minutes(self, load_id: str) -> float:
+        """Get accumulated runtime in minutes for a load today.
+
+        Includes currently-running time if the load is ON.
+        """
+        total_s = self._daily_runtime_s.get(load_id, 0.0)
+        # Add current running time if ON
+        if load_id in self._on_since:
+            total_s += (datetime.now(timezone.utc) - self._on_since[load_id]).total_seconds()
+        return total_s / 60.0
+
+    def get_all_runtime_minutes(self) -> dict[str, float]:
+        """Get runtime in minutes for all tracked loads today."""
+        return {lid: self.get_runtime_minutes(lid) for lid in self._last_known_state}
 
     def get_load_configs(self) -> list[dict]:
         """Build load config dicts for the load scheduler."""

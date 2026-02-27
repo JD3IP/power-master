@@ -8,7 +8,7 @@ import pytest
 
 from power_master.config.schema import AppConfig
 from power_master.optimisation.plan import SlotMode
-from power_master.optimisation.solver import SolverInputs, solve
+from power_master.optimisation.solver import SolverInputs, dampen_price_weighted, solve
 
 
 def _make_inputs(
@@ -156,6 +156,186 @@ class TestSolverBasic:
         # Should have mostly self-use slots (or charge from solar)
         self_use = [s for s in plan.slots if s.mode in (SlotMode.SELF_USE, SlotMode.FORCE_CHARGE)]
         assert len(self_use) >= len(plan.slots) // 2
+
+    def test_excess_solar_charging_uses_self_use_mode(self) -> None:
+        """Charging from excess PV should not require FORCE_CHARGE mode."""
+        config = AppConfig()
+        inputs = _make_inputs(
+            n_slots=6,
+            solar=5000.0,
+            load=500.0,
+            soc=0.2,
+            import_price=30.0,
+            export_price=5.0,
+        )
+        plan = solve(config, inputs)
+
+        force_charge_slots = [s for s in plan.slots if s.mode == SlotMode.FORCE_CHARGE]
+        assert len(force_charge_slots) == 0
+
+    def test_force_charge_targets_full_power_by_default(self) -> None:
+        """Force-charge slots should command full configured charge power."""
+        config = AppConfig()
+        n = 8
+        now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        starts = [now + timedelta(minutes=30 * i) for i in range(n)]
+        inputs = SolverInputs(
+            solar_forecast_w=[0.0] * n,
+            load_forecast_w=[500.0] * 4 + [3500.0] * 4,
+            import_rate_cents=[1.0] * 4 + [100.0] * 4,
+            export_rate_cents=[0.0] * n,
+            is_spike=[False] * n,
+            current_soc=0.1,
+            wacb_cents=5.0,
+            slot_start_times=starts,
+        )
+        plan = solve(config, inputs)
+
+        force_charge_slots = [s for s in plan.slots if s.mode == SlotMode.FORCE_CHARGE]
+        assert len(force_charge_slots) > 0
+        assert all(s.target_power_w == config.battery.max_charge_rate_w for s in force_charge_slots)
+
+    def test_force_charge_respects_grid_import_cap(self) -> None:
+        """Force-charge power should be reduced when total grid-import cap is configured."""
+        config = AppConfig()
+        config.battery.max_grid_import_w = 2500
+        n = 8
+        now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        starts = [now + timedelta(minutes=30 * i) for i in range(n)]
+        inputs = SolverInputs(
+            solar_forecast_w=[0.0] * n,
+            load_forecast_w=[1500.0] * n,
+            import_rate_cents=[1.0] * 4 + [100.0] * 4,
+            export_rate_cents=[0.0] * n,
+            is_spike=[False] * n,
+            current_soc=0.1,
+            wacb_cents=5.0,
+            slot_start_times=starts,
+        )
+        plan = solve(config, inputs)
+
+        force_charge_slots = [s for s in plan.slots if s.mode == SlotMode.FORCE_CHARGE]
+        assert len(force_charge_slots) > 0
+        assert all(s.target_power_w == 1000 for s in force_charge_slots)
+
+    def test_daytime_reserve_bias_charges_toward_50_percent(self) -> None:
+        """Planner should bias daytime SOC toward at least 50%."""
+        config = AppConfig()
+        config.load_profile.timezone = "UTC"
+        config.battery_targets.daytime_reserve_soc_target = 0.50
+        config.battery_targets.daytime_reserve_start_hour = 8
+        config.battery_targets.daytime_reserve_end_hour = 18
+
+        n = 48  # 24h at 30-minute slots
+        start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        starts = [start + timedelta(minutes=30 * i) for i in range(n)]
+
+        import_prices = []
+        for i in range(n):
+            hour = starts[i].hour
+            import_prices.append(6.0 if 10 <= hour < 16 else 28.0)
+
+        inputs = SolverInputs(
+            solar_forecast_w=[0.0] * n,
+            load_forecast_w=[1200.0] * n,
+            import_rate_cents=import_prices,
+            export_rate_cents=[5.0] * n,
+            is_spike=[False] * n,
+            current_soc=0.2,
+            wacb_cents=10.0,
+            slot_start_times=starts,
+        )
+
+        plan = solve(config, inputs)
+        daytime_soc = [
+            slot.expected_soc
+            for slot in plan.slots
+            if 8 <= slot.start.hour < 18
+        ]
+        assert daytime_soc, "Expected daytime slots in plan"
+        assert max(daytime_soc) >= 0.48
+
+
+    def test_evening_soc_target_triggers_charging(self) -> None:
+        """Even with flat pricing, evening SOC target should force charging."""
+        config = AppConfig()
+        config.load_profile.timezone = "UTC"
+        config.battery_targets.evening_soc_target = 0.80
+        config.battery_targets.evening_target_hour = 16
+
+        n = 48  # 24h at 30-minute slots
+        start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        starts = [start + timedelta(minutes=30 * i) for i in range(n)]
+
+        # Flat pricing — no arbitrage signal, only SOC target drives charging
+        inputs = SolverInputs(
+            solar_forecast_w=[0.0] * n,
+            load_forecast_w=[500.0] * n,
+            import_rate_cents=[15.0] * n,
+            export_rate_cents=[5.0] * n,
+            is_spike=[False] * n,
+            current_soc=0.15,
+            wacb_cents=10.0,
+            slot_start_times=starts,
+        )
+
+        plan = solve(config, inputs)
+
+        # SOC should rise well above initial 0.15 toward the 0.80 target
+        max_soc = max(s.expected_soc for s in plan.slots)
+        assert max_soc >= 0.5, (
+            f"Evening SOC target should drive charging, but max SOC was only {max_soc:.2f}"
+        )
+
+        # Should have at least one FORCE_CHARGE slot
+        charge_slots = [s for s in plan.slots if s.mode == SlotMode.FORCE_CHARGE]
+        assert len(charge_slots) > 0, "Expected FORCE_CHARGE slots to meet evening target"
+
+    def test_morning_soc_minimum_prevents_full_drain(self) -> None:
+        """Morning SOC minimum should prevent the battery from fully draining overnight."""
+        config = AppConfig()
+        config.load_profile.timezone = "UTC"
+        config.battery_targets.morning_soc_minimum = 0.20
+        config.battery_targets.morning_minimum_hour = 6
+
+        n = 48
+        start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        starts = [start + timedelta(minutes=30 * i) for i in range(n)]
+
+        inputs = SolverInputs(
+            solar_forecast_w=[0.0] * n,
+            load_forecast_w=[800.0] * n,
+            import_rate_cents=[15.0] * n,
+            export_rate_cents=[5.0] * n,
+            is_spike=[False] * n,
+            current_soc=0.10,
+            wacb_cents=10.0,
+            slot_start_times=starts,
+        )
+
+        plan = solve(config, inputs)
+
+        # SOC at morning hour (6) should be near or above target
+        morning_slots = [s for s in plan.slots if s.start.hour == 6]
+        if morning_slots:
+            morning_soc = morning_slots[0].expected_soc
+            assert morning_soc >= 0.15, (
+                f"Morning SOC target should prevent drain, but SOC at 6am was {morning_soc:.2f}"
+            )
+
+
+class TestPriceDampening:
+    def test_weighted_dampening_is_lighter_near_horizon_start(self) -> None:
+        price = 300.0
+        threshold = 100
+        base_factor = 0.5
+        n_slots = 10
+
+        near = dampen_price_weighted(price, threshold, base_factor, slot_index=0, n_slots=n_slots)
+        far = dampen_price_weighted(price, threshold, base_factor, slot_index=n_slots - 1, n_slots=n_slots)
+
+        assert near > far
+        assert near == pytest.approx(price)
 
 
 class TestSolverSpike:

@@ -35,6 +35,9 @@ battery_targets:
   evening_target_hour: 16               # Hour to check evening target (4pm)
   morning_soc_minimum: 0.20             # Minimum SOC to hold overnight
   morning_minimum_hour: 6               # Hour to check morning minimum (6am)
+  daytime_reserve_soc_target: 0.50      # Target SOC to bias toward during daytime
+  daytime_reserve_start_hour: 8         # Start hour for daytime reserve window
+  daytime_reserve_end_hour: 18          # End hour (exclusive) for reserve window
   overnight_charge_threshold_cents: 10  # Charge from grid if price < this (c/kWh)
 
 arbitrage:

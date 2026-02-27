@@ -61,6 +61,12 @@ def setup_logging(level: str = "INFO", fmt: str = "json", log_file: str = "") ->
         file_handler.setFormatter(formatter)
         handlers.append(file_handler)
 
+    # In-memory ring buffer for dashboard log viewer
+    from power_master.dashboard.log_buffer import log_buffer
+
+    log_buffer.setFormatter(formatter)
+    handlers.append(log_buffer)
+
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
     for handler in handlers:

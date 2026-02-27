@@ -354,7 +354,7 @@ function initRollingChart() {
                     data: [],
                     borderColor: '#d29922',
                     borderWidth: 1.5,
-                    yAxisID: 'y-power',
+                    yAxisID: 'y-power-pos',
                     tension: 0.3,
                     pointRadius: 0,
                 },
@@ -363,7 +363,7 @@ function initRollingChart() {
                     data: [],
                     borderColor: '#58a6ff',
                     borderWidth: 1.5,
-                    yAxisID: 'y-power',
+                    yAxisID: 'y-power-pos',
                     tension: 0.3,
                     pointRadius: 0,
                 },
@@ -372,7 +372,7 @@ function initRollingChart() {
                     data: [],
                     borderColor: '#f85149',
                     borderWidth: 1.5,
-                    yAxisID: 'y-power',
+                    yAxisID: 'y-grid',
                     tension: 0.3,
                     pointRadius: 0,
                 },
@@ -399,22 +399,10 @@ function initRollingChart() {
                     fill: true,
                 },
                 {
-                    label: 'Plan Self-Use',
-                    data: [],
-                    borderWidth: 6,
-                    yAxisID: 'y-power',
-                    tension: 0,
-                    pointRadius: 0,
-                    spanGaps: true,
-                    clip: false,
-                    borderColor: modeColor(1),
-                    planModeValue: 1,
-                },
-                {
                     label: 'Plan Zero Export',
                     data: [],
                     borderWidth: 6,
-                    yAxisID: 'y-power',
+                    yAxisID: 'y-power-pos',
                     tension: 0,
                     pointRadius: 0,
                     spanGaps: true,
@@ -426,7 +414,7 @@ function initRollingChart() {
                     label: 'Plan Force Charge',
                     data: [],
                     borderWidth: 6,
-                    yAxisID: 'y-power',
+                    yAxisID: 'y-power-pos',
                     tension: 0,
                     pointRadius: 0,
                     spanGaps: true,
@@ -438,7 +426,7 @@ function initRollingChart() {
                     label: 'Plan Force Discharge',
                     data: [],
                     borderWidth: 6,
-                    yAxisID: 'y-power',
+                    yAxisID: 'y-power-pos',
                     tension: 0,
                     pointRadius: 0,
                     spanGaps: true,
@@ -450,7 +438,7 @@ function initRollingChart() {
                     label: 'Plan Charge No Import',
                     data: [],
                     borderWidth: 6,
-                    yAxisID: 'y-power',
+                    yAxisID: 'y-power-pos',
                     tension: 0,
                     pointRadius: 0,
                     spanGaps: true,
@@ -461,7 +449,7 @@ function initRollingChart() {
                 {
                     label: 'Plan Mode',
                     data: [],
-                    yAxisID: 'y-power',
+                    yAxisID: 'y-power-pos',
                     borderWidth: 0,
                     pointRadius: 0,
                     hidden: true,
@@ -526,13 +514,20 @@ function initRollingChart() {
                     ticks: { color: '#3fb950', font: { size: 10 } },
                     title: { display: true, text: 'SOC %', color: '#3fb950', font: { size: 10 } }
                 },
-                'y-power': {
+                'y-power-pos': {
                     position: 'right',
-                    min: -ROLLING_POWER_MAX_KW,
+                    min: 0,
                     max: ROLLING_POWER_MAX_KW,
                     grid: { display: false },
                     ticks: { color: '#8b949e', font: { size: 10 } },
                     title: { display: true, text: 'kW', color: '#8b949e', font: { size: 10 } }
+                },
+                'y-grid': {
+                    position: 'right',
+                    min: -ROLLING_POWER_MAX_KW,
+                    max: ROLLING_POWER_MAX_KW,
+                    grid: { display: false },
+                    display: false,
                 },
                 'y-price': {
                     position: 'right',
@@ -687,7 +682,7 @@ function loadRollingChartData() {
     var planMode = new Array(N).fill(null);
     var planModeName = new Array(N).fill(null);
     var planScheduledLoads = new Array(N).fill(null);
-    var modeStripY = -ROLLING_POWER_MAX_KW;
+    var modeStripY = 0;
 
     Promise.all([
         fetch('/api/telemetry/history?hours=' + ROLLING_WINDOW_HOURS).then(function(r) { return r.json(); }),
@@ -765,12 +760,12 @@ function loadRollingChartData() {
                 planMode[i] = Number.isFinite(planMode[i]) ? planMode[i] : null;
             }
         }
-        var planModeY1 = buildModeSeries(planMode, 1, modeStripY);
+        // Only show mode indicator when plan deviates from Self-Use (mode 1)
         var planModeY2 = buildModeSeries(planMode, 2, modeStripY);
         var planModeY3 = buildModeSeries(planMode, 3, modeStripY);
         var planModeY4 = buildModeSeries(planMode, 4, modeStripY);
         var planModeY5 = buildModeSeries(planMode, 5, modeStripY);
-        var planModeY = planMode.map(function(m) { return m === null ? null : modeStripY; });
+        var planModeY = planMode.map(function(m) { return (m === null || m === 1) ? null : modeStripY; });
 
         rollingChart.data.labels = rollingTimeline.labels;
         rollingChart.data.datasets[0].data = soc;
@@ -779,14 +774,13 @@ function loadRollingChartData() {
         rollingChart.data.datasets[3].data = grid;
         rollingChart.data.datasets[4].data = price;
         rollingChart.data.datasets[5].data = planSoc;
-        rollingChart.data.datasets[6].data = planModeY1;
-        rollingChart.data.datasets[7].data = planModeY2;
-        rollingChart.data.datasets[8].data = planModeY3;
-        rollingChart.data.datasets[9].data = planModeY4;
-        rollingChart.data.datasets[10].data = planModeY5;
+        rollingChart.data.datasets[6].data = planModeY2;
+        rollingChart.data.datasets[7].data = planModeY3;
+        rollingChart.data.datasets[8].data = planModeY4;
+        rollingChart.data.datasets[9].data = planModeY5;
         // Hidden aggregate used only for debug/compat if needed.
-        rollingChart.data.datasets[11].data = planModeY;
-        for (var d = 6; d <= 10; d++) {
+        rollingChart.data.datasets[10].data = planModeY;
+        for (var d = 6; d <= 9; d++) {
             rollingChart.data.datasets[d].scheduledLoadsData = planScheduledLoads;
             rollingChart.data.datasets[d].modeData = planMode;
         }
@@ -914,6 +908,11 @@ function connectSSE() {
             // Update accounting display
             if (data.accounting) {
                 updateAccountingDisplay(data.accounting);
+            }
+
+            // Update device state badges
+            if (data.devices) {
+                updateDeviceStates(data.devices);
             }
         } catch(err) {
             console.error('SSE parse error:', err);
@@ -1173,6 +1172,31 @@ function updateSpikeAlert(active) {
     }
 }
 
+function updateDeviceStates(devices) {
+    for (var i = 0; i < devices.length; i++) {
+        var dev = devices[i];
+        var badge = document.querySelector('[data-device-state="' + dev.name + '"]');
+        if (!badge) continue;
+
+        // Update CSS class
+        badge.className = 'load-state-badge';
+        if (dev.state === 'ON') badge.classList.add('load-state-on');
+        else if (dev.state === 'OFF') badge.classList.add('load-state-off');
+        else if (dev.state === 'ERROR') badge.classList.add('load-state-error');
+        else badge.classList.add('load-state-unknown');
+
+        // Update text
+        var textEl = badge.querySelector('.load-state-text');
+        if (textEl) textEl.textContent = dev.state;
+
+        // Update runtime
+        var rtEl = document.querySelector('[data-device-runtime="' + dev.name + '"]');
+        if (rtEl) {
+            rtEl.textContent = dev.runtime_min > 0 ? dev.runtime_min + 'm' : '\u2014';
+        }
+    }
+}
+
 function updateAccountingDisplay(accounting) {
     var wacbEl = document.getElementById('wacb-value');
     if (wacbEl && accounting.wacb_cents !== undefined) {
@@ -1302,11 +1326,71 @@ function createOrUpdateChart(canvasId, config) {
     return graphCharts[canvasId];
 }
 
+function pickGraphPointLimit(range) {
+    var n = Number(range);
+    if (!Number.isFinite(n) || n <= 0) return 240;
+    if (n <= 6) return 180;
+    if (n <= 12) return 220;
+    if (n <= 24) return 260;
+    if (n <= 48) return 280;
+    if (n <= 168) return 336;
+    return 360;
+}
+
+function downsampleRows(rows, maxPoints, timestampKeys, numericKeys) {
+    if (!Array.isArray(rows) || rows.length <= maxPoints || maxPoints <= 0) return rows;
+    var keys = Array.isArray(timestampKeys) ? timestampKeys : ['recorded_at', 'timestamp', 'created_at'];
+    var step = rows.length / maxPoints;
+    var out = [];
+
+    for (var i = 0; i < maxPoints; i++) {
+        var start = Math.floor(i * step);
+        var end = Math.floor((i + 1) * step);
+        if (end <= start) end = start + 1;
+        var bucket = rows.slice(start, Math.min(end, rows.length));
+        if (!bucket.length) continue;
+
+        var base = Object.assign({}, bucket[bucket.length - 1]);
+        numericKeys.forEach(function(key) {
+            var sum = 0;
+            var count = 0;
+            bucket.forEach(function(row) {
+                var val = Number(row[key]);
+                if (Number.isFinite(val)) {
+                    sum += val;
+                    count += 1;
+                }
+            });
+            if (count > 0) base[key] = sum / count;
+        });
+
+        // Keep the latest timestamp in each bucket so labels stay ordered.
+        for (var k = 0; k < keys.length; k++) {
+            var tsKey = keys[k];
+            if (base[tsKey]) {
+                break;
+            }
+            if (bucket[bucket.length - 1][tsKey]) {
+                base[tsKey] = bucket[bucket.length - 1][tsKey];
+                break;
+            }
+        }
+        out.push(base);
+    }
+    return out;
+}
+
 function loadEnergyChart(hours) {
     fetch('/api/telemetry/history?hours=' + hours)
     .then(function(r) { return r.json(); })
     .then(function(rows) {
         if (!rows.length) return;
+        rows = downsampleRows(
+            rows,
+            pickGraphPointLimit(hours),
+            ['recorded_at', 'timestamp', 'created_at'],
+            ['solar_power_w', 'load_power_w', 'grid_power_w', 'battery_power_w'],
+        );
         var labels = rows.map(function(r) { return formatTimeLabel(r.recorded_at || r.timestamp || r.created_at); });
         createOrUpdateChart('energy-chart', {
             type: 'line',
@@ -1359,6 +1443,12 @@ function loadBatteryChart(hours) {
     .then(function(r) { return r.json(); })
     .then(function(rows) {
         if (!rows.length) return;
+        rows = downsampleRows(
+            rows,
+            pickGraphPointLimit(hours),
+            ['recorded_at', 'timestamp', 'created_at'],
+            ['soc', 'battery_power_w'],
+        );
         var labels = rows.map(function(r) { return formatTimeLabel(r.recorded_at || r.timestamp || r.created_at); });
 
         // Use shared configured max power for fixed Y-axis scale
@@ -1403,7 +1493,7 @@ function loadBatteryChart(hours) {
                     x: { grid: { color: 'rgba(48, 54, 61, 0.5)' }, ticks: { color: '#6e7681', maxTicksLimit: 12 } },
                     y: { position: 'left', min: 0, max: 100, grid: { color: 'rgba(48, 54, 61, 0.3)' },
                          ticks: { color: '#3fb950' }, title: { display: true, text: 'SOC %', color: '#3fb950' } },
-                    y1: { position: 'right', min: -maxPower, max: maxPower, grid: { display: false },
+                    y1: { position: 'right', grid: { display: false },
                           ticks: { color: '#d29922' }, title: { display: true, text: 'kW', color: '#d29922' } },
                     y2: { display: false, min: -1.5, max: 1.5 },
                 }
@@ -1418,8 +1508,18 @@ function loadPricesChart(hours) {
         fetch('/api/prices/history?hours=' + hours).then(function(r) { return r.json(); }),
         fetch('/api/telemetry/history?hours=' + hours).then(function(r) { return r.json(); }),
     ]).then(function(results) {
-        var priceRows = results[0];
-        var telemetryRows = results[1];
+        var priceRows = downsampleRows(
+            results[0],
+            pickGraphPointLimit(hours),
+            ['recorded_at'],
+            ['import_price_cents', 'export_price_cents'],
+        );
+        var telemetryRows = downsampleRows(
+            results[1],
+            pickGraphPointLimit(hours),
+            ['recorded_at', 'timestamp', 'created_at'],
+            ['grid_power_w'],
+        );
         if (!priceRows.length) return;
 
         var labels = priceRows.map(function(r) { return formatTimeLabel(r.recorded_at); });
@@ -1459,7 +1559,6 @@ function loadPricesChart(hours) {
                          ticks: { color: '#8b949e', font: { size: 10 } },
                          title: { display: true, text: 'c/kWh', color: '#8b949e', font: { size: 10 } } },
                     y1: { position: 'right', grid: { display: false },
-                          min: -ROLLING_POWER_MAX_KW, max: ROLLING_POWER_MAX_KW,
                           ticks: { color: '#58a6ff', font: { size: 10 } },
                           title: { display: true, text: 'kW', color: '#58a6ff', font: { size: 10 } } },
                 }
@@ -1473,6 +1572,12 @@ function loadSolarChart(hours) {
     .then(function(r) { return r.json(); })
     .then(function(rows) {
         if (!rows.length) return;
+        rows = downsampleRows(
+            rows,
+            pickGraphPointLimit(hours),
+            ['recorded_at', 'timestamp', 'created_at'],
+            ['solar_power_w'],
+        );
         var labels = rows.map(function(r) { return formatTimeLabel(r.recorded_at || r.timestamp || r.created_at); });
         createOrUpdateChart('solar-chart', {
             type: 'line',
@@ -1493,6 +1598,12 @@ function loadLoadChart(hours) {
     .then(function(r) { return r.json(); })
     .then(function(rows) {
         if (!rows.length) return;
+        rows = downsampleRows(
+            rows,
+            pickGraphPointLimit(hours),
+            ['recorded_at', 'timestamp', 'created_at'],
+            ['load_power_w'],
+        );
         var labels = rows.map(function(r) { return formatTimeLabel(r.recorded_at || r.timestamp || r.created_at); });
         createOrUpdateChart('load-chart', {
             type: 'line',
@@ -1509,7 +1620,6 @@ function loadLoadChart(hours) {
 }
 
 function chartOptions(unit, stacked) {
-    var isKw = unit === 'kW';
     return {
         responsive: true,
         maintainAspectRatio: false,
@@ -1527,8 +1637,6 @@ function chartOptions(unit, stacked) {
                 grid: { color: 'rgba(48, 54, 61, 0.3)' },
                 ticks: { color: '#8b949e', font: { size: 10 } },
                 title: { display: true, text: unit, color: '#8b949e', font: { size: 10 } },
-                min: isKw ? -ROLLING_POWER_MAX_KW : undefined,
-                max: isKw ? ROLLING_POWER_MAX_KW : undefined,
                 stacked: !!stacked,
             }
         }

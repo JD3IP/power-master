@@ -139,6 +139,32 @@ async def event_stream(request: Request) -> StreamingResponse:
                         "auto_active": not override_active,
                     }
 
+                # Include update status if updater is available
+                updater = getattr(request.app.state, "updater", None)
+                if updater:
+                    data["update"] = {
+                        "available": updater.update_available,
+                        "latest_version": updater.latest_version,
+                        "state": updater.state.state,
+                    }
+
+                # Include live device statuses if load manager is available
+                load_manager = getattr(request.app.state, "load_manager", None)
+                if load_manager:
+                    try:
+                        runtimes = load_manager.get_all_runtime_minutes()
+                        device_list = []
+                        for lid, ctrl in load_manager.controllers.items():
+                            last_state = load_manager._last_known_state.get(lid)
+                            device_list.append({
+                                "name": ctrl.name,
+                                "state": last_state.value.upper() if last_state else "UNKNOWN",
+                                "runtime_min": round(runtimes.get(lid, 0.0)),
+                            })
+                        data["devices"] = device_list
+                    except Exception:
+                        pass
+
                 yield f"data: {json.dumps(data)}\n\n"
             except Exception as e:
                 logger.error("SSE error: %s", e)

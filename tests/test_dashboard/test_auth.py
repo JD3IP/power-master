@@ -249,7 +249,7 @@ class TestRolePermissions:
             assert resp.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_viewer_redirected_from_settings(self, repo, settings_config_manager) -> None:
+    async def test_viewer_can_view_settings_readonly(self, repo, settings_config_manager) -> None:
         app = _make_authed_app(
             settings_config_manager.config, repo, settings_config_manager,
             TEST_PASSWORD, role="viewer",
@@ -258,7 +258,8 @@ class TestRolePermissions:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             cookies = await _login(client)
             resp = await client.get("/settings", cookies=cookies, follow_redirects=False)
-            assert resp.status_code == 302
+            assert resp.status_code == 200
+            assert b"Read Only" in resp.content
 
     @pytest.mark.asyncio
     async def test_viewer_cannot_change_mode(self, repo, settings_config_manager) -> None:

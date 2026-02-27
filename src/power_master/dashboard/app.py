@@ -79,6 +79,7 @@ def create_app(
     from power_master.dashboard.routes.accounting import router as accounting_router
     from power_master.dashboard.routes.api import router as api_router
     from power_master.dashboard.routes.graphs import router as graphs_router
+    from power_master.dashboard.routes.logs import router as logs_router
     from power_master.dashboard.routes.overview import router as overview_router
     from power_master.dashboard.routes.plans import router as plans_router
     from power_master.dashboard.routes.settings import router as settings_router
@@ -88,6 +89,7 @@ def create_app(
     app.include_router(plans_router)
     app.include_router(accounting_router)
     app.include_router(graphs_router)
+    app.include_router(logs_router)
     app.include_router(settings_router)
     app.include_router(api_router, prefix="/api")
     app.include_router(sse_router, prefix="/api")

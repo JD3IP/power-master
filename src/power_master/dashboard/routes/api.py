@@ -782,6 +782,17 @@ async def provider_status(request: Request) -> dict:
     }
 
 
+# ── Logs ─────────────────────────────────────────────
+
+@router.get("/logs")
+async def get_logs(request: Request, limit: int = 200, level: str = "") -> dict:
+    """Get recent application log entries from the in-memory buffer."""
+    from power_master.dashboard.log_buffer import log_buffer
+
+    records = log_buffer.get_records(limit=min(limit, 1000), level=level or None)
+    return {"records": records}
+
+
 # ── Config ───────────────────────────────────────────
 
 @router.get("/config")
@@ -789,3 +800,36 @@ async def get_config(request: Request) -> dict:
     """Get current configuration."""
     config = request.app.state.config
     return config.model_dump()
+
+
+# ── System / Updates ─────────────────────────────────
+
+@router.get("/system/version")
+async def system_version(request: Request) -> dict:
+    """Get current and latest version info."""
+    updater = getattr(request.app.state, "updater", None)
+    if updater is None:
+        return {"error": "Update manager not available"}
+    return updater.to_dict()
+
+
+@router.post("/system/check-update")
+async def check_update(request: Request) -> dict:
+    """Force an immediate version check against GHCR."""
+    require_admin(request)
+    updater = getattr(request.app.state, "updater", None)
+    if updater is None:
+        return JSONResponse({"status": "error", "message": "Update manager not available"}, 503)
+    available = await updater.check_for_update()
+    return {"status": "ok", "update_available": available, **updater.to_dict()}
+
+
+@router.post("/system/update")
+async def trigger_update(request: Request) -> dict:
+    """Trigger a self-update: pull latest image and restart."""
+    require_admin(request)
+    updater = getattr(request.app.state, "updater", None)
+    if updater is None:
+        return JSONResponse({"status": "error", "message": "Update manager not available"}, 503)
+    result = await updater.execute_update()
+    return result

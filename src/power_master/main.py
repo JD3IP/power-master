@@ -195,6 +195,57 @@ class Application:
             history.record_telemetry(telemetry)
             # Sync accounting SOC
             accounting.sync_soc(telemetry.soc)
+
+            # Record energy flows for accounting (power × interval → Wh)
+            tick_interval_s = self.config.planning.evaluation_interval_seconds
+            tick_hours = tick_interval_s / 3600.0
+            tariff = getattr(aggregator.state, "tariff", None)
+            import_rate = 15.0  # default cents/kWh
+            export_rate = 5.0
+            if tariff:
+                ip = tariff.get_current_import_price()
+                ep = tariff.get_current_export_price()
+                if ip is not None:
+                    import_rate = ip
+                if ep is not None:
+                    export_rate = ep
+
+            grid_w = telemetry.grid_power_w
+            solar_w = telemetry.solar_power_w
+            battery_w = telemetry.battery_power_w  # positive=charging
+            load_w = telemetry.load_power_w
+
+            if grid_w > 0:
+                # Grid import
+                import_wh = int(grid_w * tick_hours)
+                if import_wh > 0:
+                    accounting.record_grid_import(import_wh, import_rate)
+                # If battery is also charging from grid
+                if battery_w > 0:
+                    grid_charge_w = min(battery_w, grid_w)
+                    grid_charge_wh = int(grid_charge_w * tick_hours)
+                    if grid_charge_wh > 0:
+                        accounting.record_grid_charge(grid_charge_wh, import_rate)
+            elif grid_w < 0:
+                # Grid export
+                export_wh = int(abs(grid_w) * tick_hours)
+                if export_wh > 0:
+                    accounting.record_grid_export(export_wh, export_rate)
+
+            # Solar charging battery
+            if battery_w > 0 and solar_w > 0 and grid_w <= 0:
+                solar_charge_w = min(battery_w, solar_w)
+                solar_charge_wh = int(solar_charge_w * tick_hours)
+                if solar_charge_wh > 0:
+                    accounting.record_solar_charge(solar_charge_wh, export_rate)
+
+            # Self-consumption: load served by solar/battery (not grid)
+            if load_w > 0 and grid_w <= 0:
+                self_consumption_w = min(load_w, solar_w + max(0, -battery_w))
+                self_consumption_wh = int(self_consumption_w * tick_hours)
+                if self_consumption_wh > 0:
+                    accounting.record_self_consumption(self_consumption_wh, import_rate)
+
             # Health check: inverter success
             health_checker.record_success("inverter")
             # Publish to MQTT
@@ -209,6 +260,21 @@ class Application:
 
         control_loop._on_telemetry.append(on_telemetry)
 
+        # SOC deviation fast-check: flag the forecast loop when SOC drifts
+        self._soc_rebuild_needed = asyncio.Event()
+
+        async def on_telemetry_soc_check(telemetry):
+            """Check SOC deviation on every control tick for faster response."""
+            plan = control_loop.state.current_plan
+            if plan is None:
+                return
+            result = rebuild_evaluator.evaluate(plan, telemetry.soc, aggregator)
+            if result.should_rebuild and result.trigger == "soc_deviation":
+                logger.info("SOC deviation detected on tick: %s", result.reason)
+                self._soc_rebuild_needed.set()
+
+        control_loop._on_telemetry.append(on_telemetry_soc_check)
+
         # ── 13. Load cached forecasts + initial fetch ─────────
         logger.info("Loading cached forecasts from DB...")
         await aggregator.load_from_db(repo)
@@ -217,6 +283,26 @@ class Application:
         await aggregator.update_all(
             config=self.config.providers, respect_validity=True,
         )
+
+        # Fetch one telemetry reading so the initial plan uses real SOC
+        # (without this, _run_solver defaults to 50% because the control
+        # loop / poll tasks haven't started yet).
+        try:
+            init_telemetry = await adapter.get_telemetry()
+            control_loop.update_live_telemetry(init_telemetry)
+            logger.info(
+                "Initial telemetry: SOC=%.1f%%, PV=%dW, Grid=%dW, Load=%dW",
+                init_telemetry.soc * 100,
+                init_telemetry.solar_power_w,
+                init_telemetry.grid_power_w,
+                init_telemetry.load_power_w,
+            )
+        except Exception:
+            logger.warning(
+                "Could not fetch telemetry before initial plan — "
+                "solver will use SOC=50%% default",
+                exc_info=True,
+            )
 
         # Always build an initial plan so startup does not reuse stale plan data.
         # If tariff data is missing, _run_solver falls back to default rates.
@@ -242,7 +328,7 @@ class Application:
 
         # Fast telemetry polling for live dashboard updates
         self._tasks.append(asyncio.create_task(
-            self._telemetry_poll_loop(adapter, control_loop),
+            self._telemetry_poll_loop(adapter, control_loop, repo=repo, load_manager=load_manager),
             name="telemetry_poller",
         ))
 
@@ -278,7 +364,15 @@ class Application:
         if mqtt_publisher:
             await mqtt_publisher.publish_status(online=True)
 
-        # ── 15. Dashboard server ─────────────────────────────
+        # ── 15. Self-update manager ───────────────────────────
+        from power_master.updater import UpdateManager
+
+        updater = UpdateManager()
+        self._tasks.append(asyncio.create_task(
+            updater.run(), name="update_checker",
+        ))
+
+        # ── 16. Dashboard server ─────────────────────────────
         from power_master.dashboard.app import create_app
 
         app = create_app(self.config, repo, config_manager=self.config_manager)
@@ -291,6 +385,7 @@ class Application:
         app.state.load_manager = load_manager
         app.state.resilience_mgr = resilience_mgr
         app.state.manual_override = manual_override
+        app.state.updater = updater
 
         import uvicorn
 
@@ -633,77 +728,112 @@ class Application:
         import time
 
         while not self._stop_event.is_set():
-            now = time.monotonic()
+            try:
+                now = time.monotonic()
 
-            # Tariff update
-            if now - last_tariff >= tariff_interval:
-                result = await aggregator.update_tariff()
-                if result:
-                    health_checker.record_success("tariff")
-                    await history.record_price(result)
-                    last_tariff = now
-                else:
-                    health_checker.record_failure("tariff", "fetch failed")
+                # Tariff update
+                if now - last_tariff >= tariff_interval:
+                    result = await aggregator.update_tariff()
+                    if result:
+                        health_checker.record_success("tariff")
+                        await history.record_price(result)
+                        last_tariff = now
+                    else:
+                        health_checker.record_failure("tariff", "fetch failed")
 
-            # Solar update
-            if now - last_solar >= solar_interval:
-                result = await aggregator.update_solar()
-                # Throttle retries by configured interval even on failures
-                # to avoid excessive provider polling when endpoint is degraded.
-                last_solar = now
-                if result:
-                    health_checker.record_success("solar_forecast")
-                else:
-                    health_checker.record_failure("solar_forecast", "fetch failed")
+                # Solar update
+                if now - last_solar >= solar_interval:
+                    result = await aggregator.update_solar()
+                    # Throttle retries by configured interval even on failures
+                    # to avoid excessive provider polling when endpoint is degraded.
+                    last_solar = now
+                    if result:
+                        health_checker.record_success("solar_forecast")
+                    else:
+                        health_checker.record_failure("solar_forecast", "fetch failed")
 
-            # Weather update
-            if now - last_weather >= weather_interval:
-                result = await aggregator.update_weather()
-                if result:
-                    health_checker.record_success("weather_forecast")
-                    await history.record_weather(result)
-                    last_weather = now
-                else:
-                    health_checker.record_failure("weather_forecast", "fetch failed")
+                # Weather update
+                if now - last_weather >= weather_interval:
+                    result = await aggregator.update_weather()
+                    if result:
+                        health_checker.record_success("weather_forecast")
+                        await history.record_weather(result)
+                        last_weather = now
+                    else:
+                        health_checker.record_failure("weather_forecast", "fetch failed")
 
-            # Storm update
-            if self.config.storm.enabled and now - last_storm >= storm_interval:
-                result = await aggregator.update_storm()
-                if result:
-                    health_checker.record_success("storm")
-                    storm_monitor.update(result.max_probability)
-                    last_storm = now
-                elif health_checker.is_healthy("storm"):
-                    health_checker.record_failure("storm", "fetch failed")
+                # Storm update
+                if self.config.storm.enabled and now - last_storm >= storm_interval:
+                    result = await aggregator.update_storm()
+                    if result:
+                        health_checker.record_success("storm")
+                        storm_monitor.update(result.max_probability)
+                        last_storm = now
+                    elif health_checker.is_healthy("storm"):
+                        health_checker.record_failure("storm", "fetch failed")
 
-            # Publish storm/spike status via MQTT
-            if mqtt_publisher:
-                await mqtt_publisher.publish_storm(storm_monitor.is_active)
-                await mqtt_publisher.publish_spike(
-                    aggregator.spike_detector.is_spike_active,
-                )
-                summary = accounting.get_summary()
-                await mqtt_publisher.publish_wacb(summary.wacb_cents)
+                # Publish storm/spike status via MQTT
+                if mqtt_publisher:
+                    await mqtt_publisher.publish_storm(storm_monitor.is_active)
+                    await mqtt_publisher.publish_spike(
+                        aggregator.spike_detector.is_spike_active,
+                    )
+                    summary = accounting.get_summary()
+                    await mqtt_publisher.publish_wacb(summary.wacb_cents)
 
-            # Check if plan rebuild needed
-            telemetry = control_loop.state.last_telemetry
-            current_soc = telemetry.soc if telemetry else 0.5
-            rebuild_result = rebuild_evaluator.evaluate(
-                control_loop.state.current_plan, current_soc, aggregator,
-            )
-
-            if rebuild_result.should_rebuild:
-                await self._run_solver(
-                    aggregator, storm_monitor, accounting,
-                    rebuild_evaluator, control_loop, repo,
-                    trigger=rebuild_result.trigger, load_manager=load_manager,
+                # Update storm state on control loop for hierarchy evaluation
+                control_loop.update_storm_state(
+                    active=storm_monitor.is_active,
+                    reserve_soc=storm_monitor.reserve_soc,
                 )
 
-                # Handle spike load shedding
-                if rebuild_result.trigger == "price_spike":
-                    await load_manager.shed_for_spike()
-                elif not aggregator.spike_detector.is_spike_active:
-                    await load_manager.restore_after_spike()
+                # Check if plan rebuild needed
+                telemetry = control_loop.state.last_telemetry
+                current_soc = telemetry.soc if telemetry else 0.5
+                manual_active = control_loop.manual_override.is_active
+                rebuild_result = rebuild_evaluator.evaluate(
+                    control_loop.state.current_plan, current_soc, aggregator,
+                    manual_override_active=manual_active,
+                    actual_solar_w=telemetry.solar_power_w if telemetry else None,
+                    actual_load_w=telemetry.load_power_w if telemetry else None,
+                )
+
+                if rebuild_result.should_rebuild:
+                    logger.info(
+                        "Plan rebuild triggered: %s — %s (SOC=%.1f%%)",
+                        rebuild_result.trigger, rebuild_result.reason,
+                        current_soc * 100,
+                    )
+                    await self._run_solver(
+                        aggregator, storm_monitor, accounting,
+                        rebuild_evaluator, control_loop, repo,
+                        trigger=rebuild_result.trigger, load_manager=load_manager,
+                    )
+
+                    # Handle spike load shedding
+                    if rebuild_result.trigger == "price_spike":
+                        await load_manager.shed_for_spike()
+                    elif not aggregator.spike_detector.is_spike_active:
+                        await load_manager.restore_after_spike()
+
+                # Check if control loop flagged urgent SOC deviation
+                if self._soc_rebuild_needed.is_set():
+                    self._soc_rebuild_needed.clear()
+                    telemetry = control_loop.state.last_telemetry
+                    current_soc = telemetry.soc if telemetry else 0.5
+                    soc_result = rebuild_evaluator.evaluate(
+                        control_loop.state.current_plan, current_soc, aggregator,
+                        manual_override_active=control_loop.manual_override.is_active,
+                    )
+                    if soc_result.should_rebuild:
+                        await self._run_solver(
+                            aggregator, storm_monitor, accounting,
+                            rebuild_evaluator, control_loop, repo,
+                            trigger=soc_result.trigger, load_manager=load_manager,
+                        )
+
+            except Exception:
+                logger.exception("Error in forecast update loop iteration")
 
             # Sleep before next check
             try:
@@ -716,7 +846,9 @@ class Application:
                 pass
 
     async def _history_flush_loop(self, history):
-        """Flush history buffer every 30 minutes."""
+        """Flush history buffer and checkpoint WAL every 30 minutes."""
+        from power_master.db.engine import checkpoint_wal
+
         while not self._stop_event.is_set():
             try:
                 await asyncio.wait_for(
@@ -726,6 +858,7 @@ class Application:
             except asyncio.TimeoutError:
                 pass
             await history.flush_telemetry()
+            await checkpoint_wal()
 
     async def _resilience_loop(self, resilience_mgr):
         """Periodically evaluate resilience level."""
@@ -746,14 +879,54 @@ class Application:
                     resilience_mgr.state.unhealthy_providers,
                 )
 
-    async def _telemetry_poll_loop(self, adapter, control_loop) -> None:
-        """Poll inverter telemetry frequently for responsive dashboard updates."""
+    async def _telemetry_poll_loop(self, adapter, control_loop, repo=None, load_manager=None) -> None:
+        """Poll inverter telemetry frequently for responsive dashboard updates.
+
+        Also stores to DB every 60s so historical charts have continuous
+        data even if the control loop tick is delayed or skipped.
+        """
+        import time as _time
+
         interval = max(1, int(self.config.hardware.foxess.poll_interval_seconds))
+        db_store_interval = 60  # seconds between DB writes from poll loop
+        load_poll_interval = 30  # seconds between load status polls
+        last_db_store = 0.0
+        last_load_poll = 0.0
         logger.info("Telemetry poll loop starting (interval: %ds)", interval)
         while not self._stop_event.is_set():
             try:
                 telemetry = await adapter.get_telemetry()
                 control_loop.update_live_telemetry(telemetry)
+
+                # Persist to DB at a throttled rate for chart continuity
+                now_mono = _time.monotonic()
+                if repo is not None and (now_mono - last_db_store) >= db_store_interval:
+                    try:
+                        await repo.store_telemetry(
+                            soc=telemetry.soc,
+                            battery_power_w=telemetry.battery_power_w,
+                            solar_power_w=telemetry.solar_power_w,
+                            grid_power_w=telemetry.grid_power_w,
+                            load_power_w=telemetry.load_power_w,
+                            battery_voltage=telemetry.battery_voltage,
+                            battery_temp_c=telemetry.battery_temp_c,
+                            inverter_mode=telemetry.inverter_mode,
+                            grid_available=telemetry.grid_available,
+                            raw_data=telemetry.raw_data,
+                        )
+                        last_db_store = now_mono
+                    except Exception:
+                        logger.debug("Poll loop DB store failed", exc_info=True)
+
+                # Poll load device statuses for runtime tracking
+                if load_manager and (now_mono - last_load_poll) >= load_poll_interval:
+                    try:
+                        statuses = await load_manager.get_all_statuses()
+                        load_manager.update_runtime_tracking(statuses)
+                        last_load_poll = now_mono
+                    except Exception:
+                        logger.debug("Load status poll failed", exc_info=True)
+
             except Exception:
                 logger.debug("Telemetry poll read failed", exc_info=True)
 
@@ -811,11 +984,30 @@ class Application:
             )
 
         if solar_source and solar_source.slots:
+            matched_solar = 0
             for i, t in enumerate(slot_start_times):
                 for slot in solar_source.slots:
                     if slot.start <= t < slot.end:
                         solar_forecast_w[i] = slot.pv_estimate_w
+                        matched_solar += 1
                         break
+            nonzero_solar = sum(1 for v in solar_forecast_w if v > 0)
+            logger.info(
+                "Solar matching: %d/%d plan slots matched, %d non-zero. "
+                "Forecast range: %s to %s, Plan range: %s to %s",
+                matched_solar, n_slots, nonzero_solar,
+                solar_source.slots[0].start.isoformat(),
+                solar_source.slots[-1].end.isoformat(),
+                slot_start_times[0].isoformat(),
+                slot_start_times[-1].isoformat(),
+            )
+        else:
+            logger.warning(
+                "No solar forecast data available for plan. "
+                "has_solar=%s, solar_source=%s",
+                state.has_solar,
+                solar_source.provider if solar_source else "None",
+            )
 
         # Load forecast — use historic patterns, fall back to configured profile
         load_forecast_w = await self._build_load_forecast(
@@ -877,6 +1069,12 @@ class Application:
         # Get current SOC from telemetry or default
         telemetry = control_loop.state.last_telemetry
         current_soc = telemetry.soc if telemetry else 0.5
+        if telemetry is None:
+            logger.warning(
+                "No telemetry available for solver — using default SOC=50%%"
+            )
+        else:
+            logger.info("Solver starting SOC=%.1f%% (from telemetry)", current_soc * 100)
 
         inputs = SolverInputs(
             solar_forecast_w=solar_forecast_w,
@@ -907,6 +1105,7 @@ class Application:
                     plan,
                     available_loads=load_manager.get_load_configs(),
                     spike_active=aggregator.spike_detector.is_spike_active,
+                    actual_runtime_minutes=load_manager.get_all_runtime_minutes(),
                 )
                 logger.info("Load scheduler assigned %d devices across plan slots", len(scheduled))
             except Exception:
@@ -928,7 +1127,7 @@ class Application:
 
         # Update control loop with new plan
         control_loop.set_plan(plan)
-        rebuild_evaluator.mark_rebuilt()
+        rebuild_evaluator.mark_rebuilt(trigger=trigger)
 
         logger.info(
             "Plan v%d built: trigger=%s objective=%.2f solver=%dms",

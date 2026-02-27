@@ -1,0 +1,937 @@
+INFO:     127.0.0.1:54312 - "GET /optimiser-lab HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58729 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65406 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61409 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62587 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55663 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50930 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62962 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51444 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51444 - "GET /optimiser-lab HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51444 - "GET /static/app.css?v=50 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:59144 - "GET /static/app.js?v=17 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:59144 - "GET /api/mode HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51444 - "GET /api/accounting/summary HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59144 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59144 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59144 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59144 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59144 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59144 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59144 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59144 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59144 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51230 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51230 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51230 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51230 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51230 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51230 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51230 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51230 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51230 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51230 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51230 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62277 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61421 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61421 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61421 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61421 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61421 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61421 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61421 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61421 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61421 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61421 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61421 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54471 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54471 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54471 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54471 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54471 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54471 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54471 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54471 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54471 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54471 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54471 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52861 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52861 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52861 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52861 - "POST /optimiser-lab/start HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52861 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52028 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63712 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57636 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52861 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64074 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59261 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61819 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57636 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52861 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64074 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59261 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61819 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57636 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52861 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64074 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59261 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61819 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57636 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64074 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59261 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62936 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61819 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57636 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64074 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59261 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62936 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61819 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57636 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64074 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59261 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62936 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61819 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57636 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64074 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59261 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62936 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61819 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57636 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64074 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64074 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64074 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64074 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64074 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64074 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64074 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64074 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64074 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57636 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61819 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62936 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59261 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50060 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63128 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62936 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55049 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59261 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50060 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63128 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62936 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55049 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59261 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50060 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63128 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62936 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55049 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59261 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50060 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63128 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62936 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55049 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59261 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50060 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63128 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62936 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55049 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59261 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50060 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63128 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62936 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55049 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59261 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50060 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63128 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62936 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55049 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59261 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50060 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63128 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62936 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55049 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59261 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50060 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63128 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62936 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55049 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59261 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50060 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63128 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62936 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55049 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59261 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50060 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63128 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62936 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55049 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59261 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50060 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63128 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62936 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55049 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59261 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50060 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63128 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62936 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab/job/132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56101 - "GET /optimiser-lab?job_id=132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62936 - "GET /optimiser-lab?job_id=132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63128 - "GET /optimiser-lab?job_id=132e130b474942cabc11ef92e01f2cce HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63128 - "GET /api/mode HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50060 - "GET /api/accounting/summary HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50060 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50060 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50060 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50060 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50060 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58706 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58706 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58706 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58706 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58706 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58706 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58706 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58706 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58706 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58706 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58706 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64347 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49667 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49667 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49667 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49667 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49667 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49667 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49667 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49667 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49667 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49667 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49667 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "POST /optimiser-lab/start HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62805 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49667 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62002 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53581 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54103 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62002 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53581 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54103 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62002 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53581 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54131 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54103 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62002 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54102 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54103 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62002 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54102 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54103 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62002 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54102 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54103 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62002 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54102 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54103 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62002 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62002 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62002 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62002 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62002 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62002 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54103 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54102 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59963 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50810 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54102 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59963 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50810 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54102 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59963 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50810 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54102 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59963 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50810 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54102 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59963 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50810 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54102 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59963 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50810 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54102 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59963 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50810 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54102 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59963 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50810 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54102 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59963 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50810 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54102 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59963 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50810 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54102 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59963 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50810 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54102 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59963 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50810 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54102 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59963 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50810 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54102 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59963 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50810 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54102 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59963 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56031 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50810 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54102 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54057 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab/job/d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /optimiser-lab?job_id=d81135cde4de45689eb247765bc051df HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54131 - "GET /api/mode HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/accounting/summary HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54057 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50834 - "POST /optimiser-lab/start HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50834 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54691 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63200 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49953 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49248 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63200 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56891 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49953 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49248 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63200 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56891 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49953 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49248 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63200 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56891 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49953 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49248 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63200 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56891 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49954 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49248 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63200 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56891 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49954 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49248 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63200 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56891 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49954 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49248 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63200 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56891 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49954 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49248 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63200 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56891 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49954 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49248 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63200 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56891 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63200 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63200 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63200 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63200 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63200 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63200 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63200 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56891 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49248 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49954 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50888 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56054 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49954 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50888 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55635 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56054 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49954 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50888 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55635 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56054 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49954 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50888 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55635 - "GET /optimiser-lab?job_id=27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56054 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64718 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49954 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50888 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56054 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64718 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49954 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50888 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56054 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64718 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49954 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50888 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56054 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64718 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49954 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50888 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56054 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64718 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49954 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50888 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56054 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64718 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49954 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50888 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56054 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64718 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49954 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50888 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49954 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64718 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56054 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50888 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49954 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64718 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56054 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50888 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49954 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64718 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56054 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50888 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49954 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64718 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56054 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49963 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab/job/27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /optimiser-lab?job_id=27b394da9a4b409b861d2570e4752edc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60583 - "GET /api/mode HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49963 - "GET /api/accounting/summary HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49963 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49963 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49963 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49948 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49948 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49948 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49948 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49948 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49948 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49948 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49948 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49948 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49948 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49948 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:53021 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:53021 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:53021 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:53021 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:53021 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:53021 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:53021 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:53021 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:53021 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:53021 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:53021 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61408 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61408 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50900 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50900 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50900 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50900 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50900 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50900 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50900 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50900 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50900 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50900 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50900 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58214 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58214 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58214 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58214 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58214 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58214 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58214 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58214 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58214 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58214 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58214 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51467 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51467 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51467 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51467 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51467 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51467 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51467 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51467 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51467 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51467 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51467 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56116 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56116 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56116 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56116 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56116 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56116 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56116 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56116 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56116 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65069 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65069 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59027 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59027 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59027 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59027 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59027 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59027 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59027 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59027 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59027 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59027 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59027 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61951 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60869 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62470 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62470 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62470 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62470 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62470 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62470 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62470 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62470 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62470 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62470 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62470 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62470 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62470 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65428 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51323 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51323 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51323 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51323 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51323 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51323 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51323 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60157 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60157 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60157 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60157 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64022 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64022 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64022 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64022 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64022 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64022 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64022 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64022 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64022 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64022 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64022 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62285 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62285 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62285 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62285 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62285 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62285 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62285 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62285 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62285 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62285 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:62285 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63412 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64026 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64026 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64026 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64026 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64026 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64026 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64026 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64026 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64026 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57592 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57592 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57592 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57592 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57592 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57592 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57592 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57592 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57592 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57592 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57592 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49254 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49254 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49254 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49254 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49254 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49254 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49254 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49254 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49254 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49254 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49254 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65438 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65438 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65438 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65438 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65438 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65438 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65438 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65438 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65438 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65438 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65438 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57694 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57694 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51078 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51078 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51078 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51078 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51078 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51078 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51078 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51078 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51078 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51078 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51078 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50560 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50560 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50560 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50560 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50560 - "GET /api/events HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50560 - "GET /api/events HTTP/1.1" 404 Not Found

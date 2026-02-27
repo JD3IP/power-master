@@ -1797,3 +1797,48 @@ h2:first-child {
     line-height: 1.5;
 }
 
+/* ── Mobile Auth Footer ──────────────────────────── */
+
+.mobile-auth-footer {
+    display: none;
+}
+
+@media (max-width: 768px) {
+    .mobile-auth-footer {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 300;
+        background: var(--bg-sidebar);
+        border-top: 1px solid var(--border);
+        padding: 8px 16px;
+        font-size: 12px;
+    }
+    .mobile-auth-user {
+        color: var(--text-muted);
+        font-weight: 500;
+    }
+    .mobile-auth-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        color: var(--text-secondary);
+        text-decoration: none;
+        padding: 4px 8px;
+        border-radius: 4px;
+    }
+    .mobile-auth-link:hover {
+        color: var(--text-primary);
+        background: rgba(88, 166, 255, 0.08);
+    }
+    /* Add bottom padding to content so footer doesn't overlap */
+    .content {
+        padding-bottom: 56px;
+    }
+}
+

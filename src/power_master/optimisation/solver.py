@@ -14,6 +14,7 @@ from power_master.config.schema import (
 )
 from power_master.optimisation.constraints import (
     add_arbitrage_gate,
+    add_daytime_soc_minimum,
     add_energy_balance,
     add_evening_soc_target,
     add_morning_soc_minimum,
@@ -43,6 +44,22 @@ def dampen_price(price_cents: float, threshold_cents: int, factor: float) -> flo
     if price_cents <= threshold_cents:
         return price_cents
     return threshold_cents + (price_cents - threshold_cents) * factor
+
+
+def dampen_price_weighted(
+    price_cents: float,
+    threshold_cents: int,
+    base_factor: float,
+    slot_index: int,
+    n_slots: int,
+) -> float:
+    """Apply less dampening to near-term slots and more to far-term slots."""
+    if n_slots <= 1:
+        effective_factor = base_factor
+    else:
+        horizon_pos = slot_index / (n_slots - 1)
+        effective_factor = 1.0 - (1.0 - base_factor) * horizon_pos
+    return dampen_price(price_cents, threshold_cents, effective_factor)
 
 
 @dataclass
@@ -93,8 +110,14 @@ def solve(
     # ── Apply price dampening to import rates ──
     arb = config.arbitrage
     dampened_import = [
-        dampen_price(p, arb.price_dampen_threshold_cents, arb.price_dampen_factor)
-        for p in inputs.import_rate_cents
+        dampen_price_weighted(
+            price_cents=p,
+            threshold_cents=arb.price_dampen_threshold_cents,
+            base_factor=arb.price_dampen_factor,
+            slot_index=t,
+            n_slots=n,
+        )
+        for t, p in enumerate(inputs.import_rate_cents)
     ]
 
     # ── Create problem ──
@@ -110,12 +133,15 @@ def solve(
     grid_export = [pulp.LpVariable(f"grid_export_{t}", 0, max_grid) for t in range(n)]
     soc = [pulp.LpVariable(f"soc_{t}", 0, 1) for t in range(n)]
     self_consumed = [pulp.LpVariable(f"self_consumed_{t}", 0) for t in range(n)]
+    # Curtailment: excess solar that can't be absorbed (battery full + export blocked)
+    curtail = [pulp.LpVariable(f"curtail_{t}", 0) for t in range(n)]
 
     # Slack variables
     safety_slack = [pulp.LpVariable(f"safety_slack_{t}", 0) for t in range(n)]
     storm_slack = []
     evening_slack = []
     morning_slack = []
+    daytime_slack = []
 
     # ── Constraints per slot ──
     for t in range(n):
@@ -135,7 +161,8 @@ def solve(
         # Energy balance
         add_energy_balance(
             prob, t, inputs.solar_forecast_w[t], inputs.load_forecast_w[t],
-            grid_import[t], grid_export[t], charge[t], discharge[t], self_consumed[t],
+            grid_import[t], grid_export[t], charge[t], discharge[t],
+            self_consumed[t], curtail[t],
         )
 
         # Arbitrage gate (blocks grid export, not self-use discharge)
@@ -167,6 +194,13 @@ def solve(
                 ms = pulp.LpVariable(f"morning_slack_{t}", 0)
                 morning_slack.append(ms)
                 add_morning_soc_minimum(prob, t, soc[t], config.battery_targets.morning_soc_minimum, ms)
+            reserve_start = config.battery_targets.daytime_reserve_start_hour
+            reserve_end = config.battery_targets.daytime_reserve_end_hour
+            reserve_target = config.battery_targets.daytime_reserve_soc_target
+            if reserve_start <= hour < reserve_end and reserve_target > 0:
+                ds = pulp.LpVariable(f"daytime_slack_{t}", 0)
+                daytime_slack.append(ds)
+                add_daytime_soc_minimum(prob, t, soc[t], reserve_target, ds)
 
     # ── Objective ── (uses dampened import prices to avoid overreaction to spikes)
     build_objective(
@@ -174,7 +208,7 @@ def solve(
         dampened_import, inputs.export_rate_cents,
         config.fixed_costs.hedging_per_kwh_cents,
         grid_import, grid_export, self_consumed,
-        safety_slack, storm_slack, evening_slack, morning_slack,
+        safety_slack, storm_slack, evening_slack, morning_slack, daytime_slack,
     )
 
     # ── Solve ──
@@ -207,8 +241,15 @@ def solve(
 
         # Determine mode from solution
         export_val = pulp.value(grid_export[t]) or 0
-        mode = _determine_mode(charge_val, discharge_val, export_val, inputs.is_spike[t])
-        power = abs(int(charge_val)) if mode == SlotMode.FORCE_CHARGE else abs(int(discharge_val))
+        import_val = pulp.value(grid_import[t]) or 0
+        mode = _determine_mode(charge_val, discharge_val, export_val, import_val, inputs.is_spike[t])
+        power = _determine_target_power(
+            mode=mode,
+            discharge_w=discharge_val,
+            config=config,
+            inputs=inputs,
+            slot_index=t,
+        )
 
         slot_start = horizon_start + timedelta(minutes=t * slot_minutes)
         slot_end = slot_start + timedelta(minutes=slot_minutes)
@@ -269,7 +310,7 @@ def _resolve_planner_timezone(config: AppConfig):
 
 
 def _determine_mode(
-    charge_w: float, discharge_w: float, grid_export_w: float, is_spike: bool,
+    charge_w: float, discharge_w: float, grid_export_w: float, grid_import_w: float, is_spike: bool,
 ) -> SlotMode:
     """Determine the operating mode from solver decision variables.
 
@@ -280,7 +321,7 @@ def _determine_mode(
     """
     threshold = 50  # Minimum power to consider active
 
-    if charge_w > threshold:
+    if charge_w > threshold and grid_import_w > threshold:
         return SlotMode.FORCE_CHARGE
     elif discharge_w > threshold and grid_export_w > threshold:
         # Arbitrage: actively exporting to grid for profit
@@ -290,3 +331,32 @@ def _determine_mode(
     else:
         # Self-use covers both idle and load-serving discharge
         return SlotMode.SELF_USE
+
+
+def _determine_target_power(
+    mode: SlotMode,
+    discharge_w: float,
+    config: AppConfig,
+    inputs: SolverInputs,
+    slot_index: int,
+) -> int:
+    """Map solver flows to inverter command power for the selected mode."""
+    if mode == SlotMode.FORCE_CHARGE:
+        return _force_charge_target_power(config, inputs, slot_index)
+    if mode == SlotMode.FORCE_DISCHARGE:
+        return max(0, int(discharge_w))
+    return max(0, int(discharge_w))
+
+
+def _force_charge_target_power(config: AppConfig, inputs: SolverInputs, slot_index: int) -> int:
+    """Use full force-charge power unless total grid import is capped."""
+    full_power = max(0, int(config.battery.max_charge_rate_w))
+    import_cap = int(config.battery.max_grid_import_w)
+    if import_cap <= 0:
+        return full_power
+
+    load_w = max(0.0, float(inputs.load_forecast_w[slot_index]))
+    solar_w = max(0.0, float(inputs.solar_forecast_w[slot_index]))
+    base_grid_import_w = max(0.0, load_w - solar_w)
+    headroom_w = max(0.0, float(import_cap) - base_grid_import_w)
+    return min(full_power, int(headroom_w))

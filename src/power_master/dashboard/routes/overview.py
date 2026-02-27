@@ -344,7 +344,7 @@ async def overview(request: Request) -> HTMLResponse:
 
         async def _safe_status(controller):
             try:
-                return await asyncio.wait_for(controller.get_status(), timeout=0.8)
+                return await asyncio.wait_for(controller.get_status(), timeout=2.5)
             except Exception:
                 return None
 
@@ -383,6 +383,11 @@ async def overview(request: Request) -> HTMLResponse:
                 if load_name and load_name not in next_run_by_name:
                     next_run_by_name[load_name] = label
 
+    # Runtime tracking data from load manager
+    runtime_by_id: dict[str, float] = {}
+    if load_manager:
+        runtime_by_id = load_manager.get_all_runtime_minutes()
+
     for d in devices:
         st = status_by_name.get(d["name"])
         if st:
@@ -394,6 +399,9 @@ async def overview(request: Request) -> HTMLResponse:
             d["current_power_w"] = 0
             d["is_available"] = False
         d["next_run"] = next_run_by_name.get(d["name"], "Not scheduled")
+        # Attach runtime info
+        load_id = f"shelly_{d['name']}" if d["type"] == "shelly" else f"mqtt_{d['name']}"
+        d["runtime_min"] = round(runtime_by_id.get(load_id, 0.0), 0)
 
     # Previous/next significant events in active plan: mode/device changes
     # at slot boundaries.

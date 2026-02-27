@@ -369,13 +369,11 @@
                 <span class="dash-value" id="storm-status">
                     {% if storm_active %}
                         <span class="storm-pill storm-pill-alert">
-                            <img src="/static/weather/storm-alert.svg" alt="Storm warning">
                             Warning active
                         </span>
                     {% else %}
                         <span class="storm-pill storm-pill-clear">
-                            <img src="/static/weather/storm-clear.svg" alt="No storm warning">
-                            Clear
+                            No storm forecast
                         </span>
                     {% endif %}
                 </span>
@@ -395,6 +393,7 @@
                             <th>Device</th>
                             <th>Power</th>
                             <th>State</th>
+                            <th>Today</th>
                             <th>Next</th>
                             <th>Enabled</th>
                         </tr>
@@ -410,14 +409,13 @@
                                     {% if st == 'ON' %}load-state-on
                                     {% elif st == 'OFF' %}load-state-off
                                     {% elif st == 'ERROR' %}load-state-error
-                                    {% else %}load-state-unknown{% endif %}">
+                                    {% else %}load-state-unknown{% endif %}"
+                                    data-device-state="{{ dev.name }}">
                                     <span class="load-state-dot"></span>
-                                    {{ st }}
-                                    {% if dev.current_power_w and dev.current_power_w > 0 %}
-                                        {{ (dev.current_power_w|string) + 'W' }}
-                                    {% endif %}
+                                    <span class="load-state-text">{{ st }}</span>
                                 </span>
                             </td>
+                            <td data-device-runtime="{{ dev.name }}">{% if dev.runtime_min > 0 %}{{ dev.runtime_min|int }}m{% else %}&mdash;{% endif %}</td>
                             <td>{{ dev.next_run }}</td>
                             <td>
                                 <label class="load-toggle-label">

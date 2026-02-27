@@ -15,14 +15,24 @@ def add_energy_balance(
     charge: pulp.LpVariable,
     discharge: pulp.LpVariable,
     self_consumed: pulp.LpVariable,
+    curtail: pulp.LpVariable,
 ) -> None:
-    """Energy balance: solar + grid_import + discharge = load + grid_export + charge."""
+    """Energy balance: solar + grid_import + discharge = load + grid_export + charge + curtail.
+
+    All power sources (solar, grid import, battery discharge) must equal
+    all power sinks (load, grid export, battery charge, curtailment).
+    Excess solar flows into battery charge, grid export, or is curtailed
+    when neither sink is available (e.g. battery full + export blocked).
+    """
     prob += (
         solar_w + grid_import + discharge
-        == load_w + grid_export + charge + (solar_w - self_consumed),
+        == load_w + grid_export + charge + curtail,
         f"energy_balance_{t}",
     )
-    # Self-consumed solar <= available solar and <= load
+    # Curtailment can't exceed available solar
+    prob += curtail <= solar_w, f"curtail_cap_{t}"
+    # Self-consumed solar is an accounting variable for the objective
+    # (rewards using solar locally instead of importing).
     prob += self_consumed <= solar_w, f"self_consume_cap_solar_{t}"
     prob += self_consumed <= load_w, f"self_consume_cap_load_{t}"
 
@@ -124,6 +134,17 @@ def add_morning_soc_minimum(
 ) -> None:
     """Soft penalty for SOC below minimum at morning."""
     prob += soc >= min_soc - slack, f"morning_soc_{t}"
+
+
+def add_daytime_soc_minimum(
+    prob: pulp.LpProblem,
+    t: int,
+    soc: pulp.LpVariable,
+    min_soc: float,
+    slack: pulp.LpVariable,
+) -> None:
+    """Soft penalty for SOC below daytime reserve target."""
+    prob += soc >= min_soc - slack, f"daytime_soc_{t}"
 
 
 def add_spike_constraints(

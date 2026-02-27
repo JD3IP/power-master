@@ -130,16 +130,21 @@ class FakeController:
 
 
 class TestScenario1NormalSelfUse:
-    """Abundant solar, moderate load → self-use mode, battery charges from PV."""
+    """Abundant solar, moderate load → solver charges battery from excess PV."""
 
-    def test_solver_produces_self_use_plan(self) -> None:
+    def test_solver_charges_from_excess_solar(self) -> None:
         config = AppConfig()
         inputs = _make_inputs(solar=5000.0, load=2000.0, soc=0.3)
         plan = solve(config, inputs)
 
         assert plan.metrics["status"] == "Optimal"
-        self_use_count = sum(1 for s in plan.slots if s.mode == SlotMode.SELF_USE)
-        assert self_use_count >= len(plan.slots) // 2
+        # With 5kW solar, 2kW load, SOC=30% — solver should charge battery
+        # from excess solar.  Slots will be FORCE_CHARGE or SELF_USE.
+        charge_or_self = sum(
+            1 for s in plan.slots
+            if s.mode in (SlotMode.FORCE_CHARGE, SlotMode.SELF_USE)
+        )
+        assert charge_or_self == len(plan.slots)
 
     def test_hierarchy_passes_self_use(self) -> None:
         cmd = ControlCommand(mode=OperatingMode.SELF_USE, priority=5)

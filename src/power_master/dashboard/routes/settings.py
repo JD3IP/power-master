@@ -48,18 +48,26 @@ NULLABLE_FIELDS = {
     "providers.solar.azimuth",
 }
 
+# Fields displayed as percentage in UI but stored as 0-1 decimal
+PERCENTAGE_FIELDS = {
+    "planning.soc_deviation_tolerance",
+}
+
 
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request) -> HTMLResponse:
-    """Render settings page. Admin only when auth is enabled."""
-    auth_config = request.app.state.config.dashboard.auth
-    if auth_config.users:
-        denied = require_admin(request)
-        if denied:
-            return RedirectResponse("/", status_code=302)
-
+    """Render settings page. Viewers can view read-only; admins can edit."""
     templates = request.app.state.templates
     config = request.app.state.config
+
+    # Determine if current user can edit (admin or auth disabled)
+    auth_config = config.dashboard.auth
+    is_read_only = False
+    if auth_config.users:
+        from power_master.dashboard.auth import get_session
+        session = get_session(request)
+        if session and session.get("role") != "admin":
+            is_read_only = True
 
     # Check for flash messages via query params
     saved = request.query_params.get("saved")
@@ -72,6 +80,7 @@ async def settings_page(request: Request) -> HTMLResponse:
             "config": config,
             "saved": saved == "1",
             "error": error or "",
+            "is_read_only": is_read_only,
         },
     )
 
@@ -111,6 +120,14 @@ async def save_settings(request: Request) -> RedirectResponse:
     for field_path in NULLABLE_FIELDS:
         if field_path in form_data and form_data[field_path] == "":
             form_data[field_path] = None
+
+    # Handle percentage fields — convert from integer % to 0-1 decimal
+    for field_path in PERCENTAGE_FIELDS:
+        if field_path in form_data and isinstance(form_data[field_path], str):
+            try:
+                form_data[field_path] = float(form_data[field_path]) / 100.0
+            except ValueError:
+                pass
 
     # Parse flat form keys to nested dict
     updates = _parse_form_to_config(form_data)
