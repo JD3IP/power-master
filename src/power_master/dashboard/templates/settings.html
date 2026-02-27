@@ -1015,6 +1015,9 @@ function refreshSystemInfo() {
         if (data.state === 'idle' && data.last_check_error) {
             stateEl.textContent = 'Check failed';
             stateEl.style.color = '#f85149';
+        } else if (data.state === 'idle' && data.update_available) {
+            stateEl.textContent = 'Update available';
+            stateEl.style.color = '#3fb950';
         } else {
             stateEl.textContent = stateLabels[data.state] || data.state;
             if (data.state === 'success') stateEl.style.color = '#3fb950';
