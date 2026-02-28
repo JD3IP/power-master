@@ -582,7 +582,201 @@ async def delete_mqtt_load(request: Request, name: str) -> dict:
     return {"status": "ok"}
 
 
-def _foxess_config_info(config) -> dict:
+# ── Load Detail & Manual Override ────────────────────
+
+class LoadOverrideRequest(BaseModel):
+    state: str  # "on" or "off"
+    timeout_s: float = 3600  # 60 minutes default
+
+
+def _find_load_id_by_name(config, name: str) -> str | None:
+    """Find the load_id for a configured device by name."""
+    for dev in getattr(config.loads, "shelly_devices", []):
+        if dev.name == name:
+            return f"shelly_{dev.name}"
+    for dev in getattr(config.loads, "mqtt_load_endpoints", []):
+        if dev.name == name:
+            return f"mqtt_{dev.name}"
+    return None
+
+
+@router.get("/loads/{name}/detail")
+async def load_detail(request: Request, name: str) -> dict:
+    """Get detail for a specific load: event history, planned events, and runtime."""
+    config = request.app.state.config
+    repo = request.app.state.repo
+    load_manager = getattr(request.app.state, "load_manager", None)
+
+    load_id = _find_load_id_by_name(config, name)
+    if load_id is None:
+        return {"status": "error", "message": f"Load '{name}' not found"}
+
+    # Event history from in-memory command history
+    event_history: list[dict] = []
+    if load_manager:
+        for cmd in load_manager.get_command_history_for_load(load_id, limit=20):
+            event_history.append({
+                "action": cmd.action,
+                "reason": cmd.reason,
+                "issued_at": cmd.issued_at.isoformat(),
+                "success": cmd.success,
+            })
+
+    # Planned events for next 48h from active plan slots
+    planned_events: list[dict] = []
+    active_plan = await repo.get_active_plan()
+    if active_plan:
+        try:
+            plan_slots = await repo.get_plan_slots(active_plan["id"])
+        except Exception:
+            plan_slots = []
+
+        now_utc = datetime.now(timezone.utc)
+        horizon_utc = now_utc + timedelta(hours=48)
+        from power_master.timezone_utils import resolve_timezone
+        local_tz = resolve_timezone(getattr(config.load_profile, "timezone", "UTC"))
+
+        import json as _json
+        prev_scheduled = False
+        for slot in sorted(plan_slots, key=lambda s: s.get("slot_start", "")):
+            raw = slot.get("scheduled_loads_json")
+            scheduled_names: list[str] = []
+            if raw:
+                try:
+                    parsed = _json.loads(raw)
+                    if isinstance(parsed, list):
+                        scheduled_names = [str(x) for x in parsed]
+                except Exception:
+                    pass
+            is_scheduled = name in scheduled_names
+
+            start_dt_str = slot.get("slot_start")
+            end_dt_str = slot.get("slot_end")
+            if not start_dt_str:
+                continue
+            try:
+                start_dt = datetime.fromisoformat(start_dt_str.replace("Z", "+00:00"))
+                if start_dt.tzinfo is None:
+                    start_dt = start_dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                continue
+
+            if start_dt > horizon_utc:
+                break
+            if start_dt < now_utc and not is_scheduled:
+                prev_scheduled = False
+                continue
+
+            if is_scheduled != prev_scheduled or start_dt >= now_utc:
+                if start_dt >= now_utc:
+                    local_dt = start_dt.astimezone(local_tz)
+                    planned_events.append({
+                        "slot_start": start_dt.isoformat(),
+                        "time_label": local_dt.strftime("%a %H:%M"),
+                        "scheduled": is_scheduled,
+                        "import_rate_cents": slot.get("import_rate_cents"),
+                    })
+            prev_scheduled = is_scheduled
+
+    # Daily runtime — today from load_manager, historical from historical_data
+    today_runtime_min = 0.0
+    if load_manager:
+        today_runtime_min = load_manager.get_runtime_minutes(load_id)
+
+    now_utc = datetime.now(timezone.utc)
+    runtime_history: list[dict] = []
+    start_7d = (now_utc - timedelta(days=7)).isoformat()
+    end_now = now_utc.isoformat()
+    try:
+        data_type = f"load_runtime_minutes_{load_id}"
+        rows = await repo.get_historical(data_type, start_7d, end_now, resolution="1day")
+        for row in rows:
+            runtime_history.append({
+                "date": row["recorded_at"][:10],
+                "runtime_minutes": row["value"],
+            })
+    except Exception:
+        pass
+
+    # Override status
+    override_info: dict | None = None
+    if load_manager:
+        override = load_manager.get_load_override(load_id)
+        if override:
+            override_info = {
+                "state": override.state,
+                "remaining_seconds": override.remaining_seconds,
+                "source": override.source,
+            }
+
+    return {
+        "load_id": load_id,
+        "name": name,
+        "today_runtime_min": round(today_runtime_min, 1),
+        "runtime_history": runtime_history,
+        "event_history": list(reversed(event_history)),
+        "planned_events": planned_events,
+        "override": override_info,
+    }
+
+
+@router.post("/loads/{name}/override")
+async def set_load_override(request: Request, name: str, body: LoadOverrideRequest) -> dict:
+    """Manually set a load ON or OFF, bypassing the optimiser plan for up to 60 minutes."""
+    denied = require_admin(request)
+    if denied:
+        return denied
+
+    if body.state not in ("on", "off"):
+        return {"status": "error", "message": "state must be 'on' or 'off'"}
+
+    config = request.app.state.config
+    load_manager = getattr(request.app.state, "load_manager", None)
+    if load_manager is None:
+        return {"status": "error", "message": "Load manager not available"}
+
+    load_id = _find_load_id_by_name(config, name)
+    if load_id is None:
+        return {"status": "error", "message": f"Load '{name}' not found"}
+
+    timeout_s = min(body.timeout_s, 3600)  # cap at 60 minutes
+    success = await load_manager.set_load_override(
+        load_id=load_id,
+        state=body.state,
+        timeout_seconds=timeout_s,
+        source="dashboard",
+    )
+
+    return {
+        "status": "ok",
+        "load_id": load_id,
+        "name": name,
+        "state": body.state,
+        "timeout_s": timeout_s,
+        "success": success,
+    }
+
+
+@router.delete("/loads/{name}/override")
+async def clear_load_override(request: Request, name: str) -> dict:
+    """Clear a manual load override, returning control to the optimiser."""
+    denied = require_admin(request)
+    if denied:
+        return denied
+
+    config = request.app.state.config
+    load_manager = getattr(request.app.state, "load_manager", None)
+    if load_manager is None:
+        return {"status": "error", "message": "Load manager not available"}
+
+    load_id = _find_load_id_by_name(config, name)
+    if load_id is None:
+        return {"status": "error", "message": f"Load '{name}' not found"}
+
+    load_manager.clear_load_override(load_id)
+    return {"status": "ok", "load_id": load_id, "name": name}
+
+
     """Return connection config for diagnostics, adapting to TCP vs RTU."""
     foxess = config.hardware.foxess
     info: dict = {"connection_type": foxess.connection_type, "unit_id": foxess.unit_id}

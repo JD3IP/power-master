@@ -34,11 +34,13 @@ def schedule_loads(
     available_loads: list[dict],
     spike_active: bool = False,
     actual_runtime_minutes: dict[str, float] | None = None,
+    manual_override_load_ids: set[str] | None = None,
 ) -> list[ScheduledLoad]:
     """Assign deferrable loads to optimal plan slots.
 
     Strategy:
     - During spike: only essential loads (priority <= 2)
+    - Skip loads that are in manual override mode
     - Prefer slots with excess solar (solar > load)
     - Then prefer cheapest import slots
     - Respect time windows (earliest_start, latest_end)
@@ -46,6 +48,7 @@ def schedule_loads(
     - Schedule one run per eligible day in the plan horizon
     """
     scheduled = []
+    overridden_ids: set[str] = manual_override_load_ids or set()
 
     # Sort loads by priority (lower = more important)
     sorted_loads = sorted(available_loads, key=lambda l: l.get("priority_class", 5))
@@ -61,12 +64,17 @@ def schedule_loads(
         if not load_config.get("enabled", True):
             continue
 
+        # Skip loads currently under manual override — they are controlled by the user
+        load_id = load_config.get("id", load_config["name"])
+        if load_id in overridden_ids:
+            logger.info("Skipping load '%s' — manual override active", load_config["name"])
+            continue
+
         slot_minutes = _slot_duration_minutes(plan)
         runtime_minutes = _effective_runtime_minutes(load_config)
 
         # Credit actual runtime already achieved today
         if actual_runtime_minutes:
-            load_id = load_config.get("id", "")
             actual = actual_runtime_minutes.get(load_id, 0.0)
             if actual > 0:
                 runtime_minutes = max(0, runtime_minutes - int(actual))
@@ -102,7 +110,7 @@ def schedule_loads(
 
         if assigned:
             scheduled.append(ScheduledLoad(
-                load_id=load_config.get("id", load_config["name"]),
+                load_id=load_id,
                 name=load_config["name"],
                 power_w=power_w,
                 priority_class=priority,

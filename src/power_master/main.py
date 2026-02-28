@@ -1134,6 +1134,7 @@ class Application:
                     available_loads=load_manager.get_load_configs(),
                     spike_active=aggregator.spike_detector.is_spike_active,
                     actual_runtime_minutes=load_manager.get_all_runtime_minutes(),
+                    manual_override_load_ids=load_manager.get_active_override_load_ids(),
                 )
                 logger.info("Load scheduler assigned %d devices across plan slots", len(scheduled))
             except Exception:

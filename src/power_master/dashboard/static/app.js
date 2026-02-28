@@ -2011,3 +2011,177 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 });
+
+// ── Load Control Panel ──────────────────────────────
+(function() {
+    var modal = null;
+    var currentLoadName = null;
+
+    function getModal() {
+        if (!modal) modal = document.getElementById('load-control-modal');
+        return modal;
+    }
+
+    function openLoadPanel(deviceName) {
+        currentLoadName = deviceName;
+        var m = getModal();
+        if (!m) return;
+        document.getElementById('load-panel-title').textContent = deviceName;
+        document.getElementById('load-panel-status').textContent = 'Loading…';
+        document.getElementById('load-panel-override-info').style.display = 'none';
+        document.getElementById('load-panel-plan-events').innerHTML = '';
+        document.getElementById('load-panel-history').innerHTML = '';
+        document.getElementById('load-panel-runtime').innerHTML = '&mdash;';
+        m.style.display = 'flex';
+        loadPanelDetail(deviceName);
+    }
+
+    function closeLoadPanel() {
+        var m = getModal();
+        if (m) m.style.display = 'none';
+        currentLoadName = null;
+    }
+
+    function loadPanelDetail(name) {
+        fetch('/api/loads/' + encodeURIComponent(name) + '/detail')
+            .then(function(r) { return r.json(); })
+            .then(function(data) { renderPanelDetail(data); })
+            .catch(function(e) {
+                document.getElementById('load-panel-status').textContent = 'Error loading details.';
+            });
+    }
+
+    function renderPanelDetail(data) {
+        if (data.status === 'error') {
+            document.getElementById('load-panel-status').textContent = data.message || 'Error';
+            return;
+        }
+
+        // Status / override
+        var ovr = data.override;
+        var statusEl = document.getElementById('load-panel-status');
+        var ovrEl = document.getElementById('load-panel-override-info');
+        if (ovr && ovr.remaining_seconds > 0) {
+            var mins = Math.ceil(ovr.remaining_seconds / 60);
+            var stateLabel = ovr.state.toUpperCase();
+            ovrEl.textContent = '\u26A0 Manual override active: ' + stateLabel + ' — ' + mins + 'm remaining';
+            ovrEl.style.display = 'block';
+            statusEl.textContent = 'Override active (' + stateLabel + ')';
+        } else {
+            ovrEl.style.display = 'none';
+            statusEl.textContent = 'Auto control';
+        }
+
+        // Runtime
+        var rt = data.today_runtime_min;
+        var rtEl = document.getElementById('load-panel-runtime');
+        if (rt > 0) {
+            rtEl.textContent = Math.round(rt) + ' min today';
+        } else {
+            rtEl.innerHTML = '&mdash;';
+        }
+
+        // Planned events
+        var planEl = document.getElementById('load-panel-plan-events');
+        if (data.planned_events && data.planned_events.length > 0) {
+            planEl.innerHTML = data.planned_events.map(function(ev) {
+                var badge = ev.scheduled
+                    ? '<span class="load-panel-event-badge scheduled">Planned ON</span>'
+                    : '<span class="load-panel-event-badge off">Not scheduled</span>';
+                var rate = ev.import_rate_cents != null ? ' &middot; ' + ev.import_rate_cents.toFixed(1) + 'c' : '';
+                return '<div class="load-panel-event-row">' +
+                    '<span class="load-panel-event-time">' + ev.time_label + '</span>' +
+                    badge + '<span class="load-panel-event-reason">' + rate + '</span></div>';
+            }).join('');
+        } else {
+            planEl.innerHTML = '<div class="load-panel-event-empty">No planned events in next 48h</div>';
+        }
+
+        // Event history
+        var histEl = document.getElementById('load-panel-history');
+        if (data.event_history && data.event_history.length > 0) {
+            histEl.innerHTML = data.event_history.map(function(ev) {
+                var badgeClass = ev.action === 'on' ? 'on' : 'off';
+                var label = ev.action.toUpperCase();
+                var ts = ev.issued_at ? ev.issued_at.substring(0, 16).replace('T', ' ') : '';
+                return '<div class="load-panel-event-row">' +
+                    '<span class="load-panel-event-time">' + ts + '</span>' +
+                    '<span class="load-panel-event-badge ' + badgeClass + '">' + label + '</span>' +
+                    '<span class="load-panel-event-reason">' + (ev.reason || '') + '</span></div>';
+            }).join('');
+        } else {
+            histEl.innerHTML = '<div class="load-panel-event-empty">No recent events</div>';
+        }
+    }
+
+    function sendLoadOverride(state) {
+        if (!currentLoadName) return;
+        fetch('/api/loads/' + encodeURIComponent(currentLoadName) + '/override', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ state: state, timeout_s: 3600 }),
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.status === 'ok') {
+                // Refresh panel
+                loadPanelDetail(currentLoadName);
+            } else {
+                alert(data.message || 'Failed to set override');
+            }
+        })
+        .catch(function(e) { alert('Failed: ' + e); });
+    }
+
+    function clearLoadOverride() {
+        if (!currentLoadName) return;
+        fetch('/api/loads/' + encodeURIComponent(currentLoadName) + '/override', {
+            method: 'DELETE',
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            loadPanelDetail(currentLoadName);
+        })
+        .catch(function(e) { alert('Failed: ' + e); });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Row click handler
+        document.addEventListener('click', function(e) {
+            var row = e.target.closest('.load-row');
+            if (row) {
+                // Don't open panel if user clicked the enable toggle checkbox
+                if (e.target.type === 'checkbox' || e.target.closest('.load-toggle-label')) return;
+                var name = row.dataset.deviceName;
+                if (name) openLoadPanel(name);
+            }
+        });
+
+        // Close button
+        var closeBtn = document.getElementById('load-panel-close');
+        if (closeBtn) closeBtn.addEventListener('click', closeLoadPanel);
+
+        // Backdrop click closes modal
+        var m = document.getElementById('load-control-modal');
+        if (m) {
+            m.addEventListener('click', function(e) {
+                if (e.target === m) closeLoadPanel();
+            });
+        }
+
+        // Control buttons
+        var btnOn = document.getElementById('load-btn-on');
+        if (btnOn) btnOn.addEventListener('click', function() { sendLoadOverride('on'); });
+
+        var btnOff = document.getElementById('load-btn-off');
+        if (btnOff) btnOff.addEventListener('click', function() { sendLoadOverride('off'); });
+
+        var btnAuto = document.getElementById('load-btn-auto');
+        if (btnAuto) btnAuto.addEventListener('click', clearLoadOverride);
+
+        // ESC key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeLoadPanel();
+        });
+    });
+})();

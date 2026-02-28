@@ -1842,3 +1842,218 @@ h2:first-child {
     }
 }
 
+
+/* ── Load Control Modal ────────────────────────── */
+
+.load-control-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+}
+
+@media (min-width: 600px) {
+    .load-control-modal {
+        align-items: center;
+    }
+}
+
+.load-control-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px 12px 0 0;
+    width: 100%;
+    max-width: 520px;
+    max-height: 88vh;
+    overflow-y: auto;
+    box-shadow: 0 -4px 32px rgba(0,0,0,0.4);
+}
+
+@media (min-width: 600px) {
+    .load-control-panel {
+        border-radius: 12px;
+        max-height: 80vh;
+    }
+}
+
+.load-control-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--bg-card);
+    z-index: 1;
+}
+
+.load-control-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.load-control-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 22px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.load-control-close:hover {
+    color: var(--text-primary);
+}
+
+.load-control-body {
+    padding: 0 20px 20px;
+}
+
+.load-panel-section {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.load-panel-section:last-child {
+    border-bottom: none;
+}
+
+.load-panel-section-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    font-weight: 600;
+}
+
+.load-panel-status {
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.load-panel-override-info {
+    font-size: 13px;
+    color: var(--accent-orange);
+    background: rgba(255, 153, 0, 0.08);
+    border: 1px solid rgba(255, 153, 0, 0.25);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-bottom: 10px;
+}
+
+.load-panel-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.load-ctrl-btn {
+    flex: 1;
+    min-width: 110px;
+    padding: 10px 14px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+}
+
+.load-ctrl-btn:hover {
+    opacity: 0.85;
+    transform: translateY(-1px);
+}
+
+.load-ctrl-btn:active {
+    transform: translateY(0);
+}
+
+.load-ctrl-on {
+    background: var(--accent-green);
+    color: #fff;
+}
+
+.load-ctrl-off {
+    background: var(--accent-red, #f85149);
+    color: #fff;
+}
+
+.load-ctrl-auto {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+}
+
+.load-panel-events {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.load-panel-event-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    padding: 4px 0;
+}
+
+.load-panel-event-time {
+    font-weight: 600;
+    color: var(--text-primary);
+    min-width: 70px;
+    flex-shrink: 0;
+}
+
+.load-panel-event-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.load-panel-event-badge.on {
+    background: rgba(63, 185, 80, 0.15);
+    color: var(--accent-green);
+}
+
+.load-panel-event-badge.off {
+    background: rgba(248, 81, 73, 0.12);
+    color: var(--accent-red, #f85149);
+}
+
+.load-panel-event-badge.scheduled {
+    background: rgba(88, 166, 255, 0.12);
+    color: var(--accent-blue, #58a6ff);
+}
+
+.load-panel-event-reason {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.load-panel-event-empty {
+    font-size: 13px;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.load-panel-runtime-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.load-row:hover > td {
+    background: rgba(88, 166, 255, 0.05);
+}
