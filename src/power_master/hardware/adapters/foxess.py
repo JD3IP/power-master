@@ -101,6 +101,15 @@ class FoxESSAdapter:
 
     async def connect(self) -> None:
         """Establish Modbus connection to the inverter (TCP or RTU)."""
+        # Close any existing client before reconnecting
+        if self._client is not None:
+            try:
+                self._client.close()
+            except Exception:
+                pass
+            self._client = None
+            self._connected = False
+
         if self._config.connection_type == "rtu":
             self._client = AsyncModbusSerialClient(
                 port=self._config.serial_port,

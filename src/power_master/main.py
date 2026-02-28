@@ -884,18 +884,46 @@ class Application:
 
         Also stores to DB every 60s so historical charts have continuous
         data even if the control loop tick is delayed or skipped.
+
+        Uses self._adapter (not the initial parameter) so hot-reloaded
+        adapters are picked up automatically.
         """
         import time as _time
 
         interval = max(1, int(self.config.hardware.foxess.poll_interval_seconds))
         db_store_interval = 60  # seconds between DB writes from poll loop
         load_poll_interval = 30  # seconds between load status polls
+        reconnect_interval = 30  # seconds between reconnect attempts
         last_db_store = 0.0
         last_load_poll = 0.0
+        last_reconnect_attempt = 0.0
         logger.info("Telemetry poll loop starting (interval: %ds)", interval)
         while not self._stop_event.is_set():
+            # Always use the latest adapter (may be swapped by config reload)
+            current_adapter = self._adapter
+            if current_adapter is None:
+                await asyncio.sleep(interval)
+                continue
+
+            # Attempt reconnect if disconnected
+            if not await current_adapter.is_connected():
+                now_mono = _time.monotonic()
+                if (now_mono - last_reconnect_attempt) >= reconnect_interval:
+                    last_reconnect_attempt = now_mono
+                    try:
+                        await current_adapter.connect()
+                        logger.info("Reconnected to inverter")
+                    except Exception:
+                        logger.debug("Inverter reconnect failed, will retry in %ds", reconnect_interval)
+                try:
+                    await asyncio.wait_for(self._stop_event.wait(), timeout=interval)
+                    break
+                except asyncio.TimeoutError:
+                    pass
+                continue
+
             try:
-                telemetry = await adapter.get_telemetry()
+                telemetry = await current_adapter.get_telemetry()
                 control_loop.update_live_telemetry(telemetry)
 
                 # Persist to DB at a throttled rate for chart continuity
