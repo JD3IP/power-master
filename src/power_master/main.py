@@ -26,7 +26,7 @@ from power_master.timezone_utils import resolve_timezone
 
 logger = logging.getLogger(__name__)
 
-VERSION = "0.1.0"
+from power_master import __version__ as VERSION
 
 
 class Application:

@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from power_master import __version__
 from power_master.config.manager import ConfigManager
 from power_master.config.schema import AppConfig
 from power_master.dashboard.auth import AuthMiddleware, auth_router
@@ -26,7 +27,7 @@ def create_app(
     app = FastAPI(
         title="Power Master",
         description="Solar optimisation and control system",
-        version="0.1.0",
+        version=__version__,
     )
 
     @app.middleware("http")

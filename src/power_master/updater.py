@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 GHCR_IMAGE = "ghcr.io/jd3ip/power-master"
 GHCR_MANIFEST_URL = f"https://ghcr.io/v2/jd3ip/power-master/tags/list"
 GHCR_TOKEN_URL = "https://ghcr.io/token?service=ghcr.io&scope=repository:jd3ip/power-master:pull"
+GITHUB_RELEASES_API = "https://api.github.com/repos/JD3IP/power-master/releases"
 
 VERSION_FILE = Path("/opt/power-master/version.json")
 UPDATE_STATUS_FILE = Path("/data/.update_status.json")
@@ -51,6 +52,9 @@ class UpdateState:
     current: VersionInfo = field(default_factory=VersionInfo)
     latest: VersionInfo | None = None
     update_available: bool = False
+
+    # Changelog from GitHub Release notes
+    changelog: str = ""
 
     # Check state
     last_check_at: str = ""
@@ -179,6 +183,7 @@ class UpdateManager:
             # Compare: update available if SHA differs and remote isn't empty
             if remote_sha and remote_sha != self._state.current.sha:
                 self._state.update_available = True
+                self._state.changelog = await self._fetch_changelog(remote_version)
                 logger.info(
                     "Update available: %s → %s",
                     self._state.current.version,
@@ -186,6 +191,7 @@ class UpdateManager:
                 )
             else:
                 self._state.update_available = False
+                self._state.changelog = ""
 
             self._state.state = "idle"
             return self._state.update_available
@@ -352,6 +358,34 @@ except Exception as e:
                 "error": "Container restart failed",
             })
 
+    async def _fetch_changelog(self, target_version: str) -> str:
+        """Fetch release notes from GitHub Releases API.
+
+        Tries the exact version tag first, then falls back to the latest release.
+        Returns the release body (markdown) or empty string on failure.
+        """
+        headers = {"Accept": "application/vnd.github+json"}
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                # Try exact version tag
+                resp = await client.get(
+                    f"{GITHUB_RELEASES_API}/tags/v{target_version}",
+                    headers=headers,
+                )
+                if resp.status_code == 404:
+                    # Fall back to latest release
+                    resp = await client.get(
+                        f"{GITHUB_RELEASES_API}/latest",
+                        headers=headers,
+                    )
+                if resp.status_code != 200:
+                    logger.debug("GitHub release fetch failed: %d", resp.status_code)
+                    return ""
+                return resp.json().get("body", "") or ""
+        except Exception as e:
+            logger.debug("Failed to fetch changelog: %s", e)
+            return ""
+
     async def _fetch_remote_labels(self) -> dict | None:
         """Fetch OCI labels from the latest GHCR image manifest.
 
@@ -471,6 +505,7 @@ except Exception as e:
                 "sha": self._state.latest.sha,
             } if self._state.latest else None,
             "update_available": self._state.update_available,
+            "changelog": self._state.changelog,
             "last_check": self._state.last_check_at,
             "last_check_error": self._state.last_check_error,
             "state": self._state.state,

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "power-master"
-version = "0.1.0"
+version = "0.2"
 description = "Solar optimisation and control system for battery management, PV self-consumption, and grid arbitrage"
 #readme = "README.md"
 requires-python = ">=3.11"

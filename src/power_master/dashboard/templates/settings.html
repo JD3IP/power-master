@@ -828,6 +828,21 @@
         {% endif %}
     </div>
 
+    <div id="sys-changelog" style="display:none; margin-top: 16px;">
+        <h3 style="font-size: 14px; margin-bottom: 8px; color: var(--text-primary);">What's New</h3>
+        <div id="sys-changelog-content"
+             style="background: rgba(139,148,158,0.08);
+                    border: 1px solid var(--border);
+                    border-radius: 6px;
+                    padding: 12px 16px;
+                    font-size: 13px;
+                    line-height: 1.6;
+                    max-height: 300px;
+                    overflow-y: auto;
+                    color: var(--text-secondary);">
+        </div>
+    </div>
+
     <div id="sys-update-progress" style="display:none; margin-top: 16px;">
         <div style="background:rgba(139,148,158,0.15); border-radius:4px; padding:12px;">
             <span id="sys-progress-text">Updating...</span>
@@ -1075,6 +1090,24 @@ function refreshSystemInfo() {
             else { bar.style.width = '90%'; txt.textContent = 'Restarting container...'; }
         } else {
             if (progressBar) progressBar.style.display = 'none';
+        }
+
+        // Show changelog if available
+        var changelogContainer = document.getElementById('sys-changelog');
+        var changelogContent = document.getElementById('sys-changelog-content');
+        if (changelogContainer && data.changelog && data.update_available) {
+            changelogContainer.style.display = 'block';
+            var html = data.changelog
+                .replace(/### (.*)/g, '<strong style="display:block;margin-top:8px;">$1</strong>')
+                .replace(/## (.*)/g, '<strong style="display:block;margin-top:10px;font-size:14px;">$1</strong>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/`(.*?)`/g, '<code style="background:rgba(139,148,158,0.15);padding:1px 4px;border-radius:3px;font-size:12px;">$1</code>')
+                .replace(/^\* (.*)/gm, '<li style="margin-left:16px;">$1</li>')
+                .replace(/^- (.*)/gm, '<li style="margin-left:16px;">$1</li>')
+                .replace(/\n/g, '<br>');
+            changelogContent.innerHTML = html;
+        } else if (changelogContainer) {
+            changelogContainer.style.display = 'none';
         }
     })
     .catch(function() {});
