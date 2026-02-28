@@ -465,8 +465,134 @@ class TestLoadManager:
         assert configs[0]["power_w"] == 1200
         assert configs[0]["priority_class"] == 3
 
+    @pytest.mark.asyncio
+    async def test_set_load_override_turns_on(self) -> None:
+        manager = LoadManager(AppConfig())
+        ctrl = FakeLoadController("load_1", "Load 1")
+        manager.register(ctrl)
+
+        success = await manager.set_load_override("load_1", "on", timeout_seconds=3600)
+        assert success is True
+        status = await ctrl.get_status()
+        assert status.state == LoadState.ON
+
+    @pytest.mark.asyncio
+    async def test_set_load_override_turns_off(self) -> None:
+        manager = LoadManager(AppConfig())
+        ctrl = FakeLoadController("load_1", "Load 1")
+        ctrl._state = LoadState.ON
+        manager.register(ctrl)
+
+        success = await manager.set_load_override("load_1", "off", timeout_seconds=3600)
+        assert success is True
+        status = await ctrl.get_status()
+        assert status.state == LoadState.OFF
+
+    @pytest.mark.asyncio
+    async def test_load_override_unknown_id_returns_false(self) -> None:
+        manager = LoadManager(AppConfig())
+        success = await manager.set_load_override("nonexistent", "on")
+        assert success is False
+
+    def test_get_load_override_returns_active(self) -> None:
+        from power_master.loads.manager import LoadOverride
+        manager = LoadManager(AppConfig())
+        manager._load_overrides["load_1"] = LoadOverride(
+            load_id="load_1", state="on", timeout_seconds=3600
+        )
+        override = manager.get_load_override("load_1")
+        assert override is not None
+        assert override.state == "on"
+
+    def test_get_load_override_returns_none_for_unknown(self) -> None:
+        manager = LoadManager(AppConfig())
+        assert manager.get_load_override("unknown") is None
+
+    def test_clear_load_override(self) -> None:
+        from power_master.loads.manager import LoadOverride
+        manager = LoadManager(AppConfig())
+        manager._load_overrides["load_1"] = LoadOverride(
+            load_id="load_1", state="on", timeout_seconds=3600
+        )
+        manager.clear_load_override("load_1")
+        assert manager.get_load_override("load_1") is None
+
+    @pytest.mark.asyncio
+    async def test_execute_schedule_respects_override(self) -> None:
+        """When a load is in manual override, execute_schedule should not change its state."""
+        from power_master.loads.manager import LoadOverride
+        manager = LoadManager(AppConfig())
+        ctrl = FakeLoadController("load_1", "Load 1")
+        manager.register(ctrl)
+
+        # Set load to manual OFF override
+        manager._load_overrides["load_1"] = LoadOverride(
+            load_id="load_1", state="off", timeout_seconds=3600
+        )
+
+        # Schedule says load should be ON in slot 0
+        scheduled = [
+            ScheduledLoad(
+                load_id="load_1",
+                name="Load 1",
+                power_w=500,
+                priority_class=5,
+                assigned_slots=[0],
+            ),
+        ]
+        # Execute with the override active — load should stay OFF
+        commands = await manager.execute_schedule(scheduled, current_slot_index=0)
+        status = await ctrl.get_status()
+        assert status.state == LoadState.OFF
+
+    def test_get_command_history_for_load(self) -> None:
+        import time
+        from power_master.loads.manager import LoadCommand
+        manager = LoadManager(AppConfig())
+        cmd1 = LoadCommand(load_id="load_1", action="on", reason="scheduled")
+        cmd2 = LoadCommand(load_id="load_2", action="off", reason="scheduled")
+        cmd3 = LoadCommand(load_id="load_1", action="off", reason="manual")
+        manager._command_history = [cmd1, cmd2, cmd3]
+
+        history = manager.get_command_history_for_load("load_1")
+        assert len(history) == 2
+        assert history[0].action == "on"
+        assert history[1].action == "off"
+
+    def test_get_active_override_load_ids(self) -> None:
+        from power_master.loads.manager import LoadOverride
+        manager = LoadManager(AppConfig())
+        manager._load_overrides["load_1"] = LoadOverride(
+            load_id="load_1", state="on", timeout_seconds=3600
+        )
+        ids = manager.get_active_override_load_ids()
+        assert "load_1" in ids
+
 
 # ── Load Scheduler Tests ──────────────────────────────────────
+
+
+class TestLoadSchedulerOverride:
+    def test_manual_override_ids_skipped(self) -> None:
+        plan = _make_plan(n_slots=4)
+        loads = [
+            {"id": "pump", "name": "Pump", "power_w": 500, "priority_class": 3, "min_runtime_minutes": 30},
+        ]
+        result = schedule_loads(plan, loads, manual_override_load_ids={"pump"})
+        assert len(result) == 0
+
+    def test_non_overridden_loads_still_scheduled(self) -> None:
+        plan = _make_plan(n_slots=4)
+        loads = [
+            {"id": "pump", "name": "Pump", "power_w": 500, "priority_class": 3, "min_runtime_minutes": 30},
+            {"id": "heater", "name": "Heater", "power_w": 1000, "priority_class": 4, "min_runtime_minutes": 30},
+        ]
+        result = schedule_loads(plan, loads, manual_override_load_ids={"pump"})
+        ids = [s.load_id for s in result]
+        assert "pump" not in ids
+        assert "heater" in ids
+
+
 
 
 class TestLoadScheduler:

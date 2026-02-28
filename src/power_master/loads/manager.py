@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
@@ -12,6 +13,8 @@ from power_master.loads.base import LoadController, LoadState, LoadStatus
 from power_master.optimisation.load_scheduler import ScheduledLoad
 
 logger = logging.getLogger(__name__)
+
+MANUAL_LOAD_OVERRIDE_SECONDS = 3600  # 60 minutes
 
 
 @dataclass
@@ -23,6 +26,26 @@ class LoadCommand:
     reason: str
     issued_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     success: bool = False
+
+
+@dataclass
+class LoadOverride:
+    """A manual override for a specific load."""
+
+    load_id: str
+    state: str  # "on" or "off"
+    set_at: float = field(default_factory=time.monotonic)
+    timeout_seconds: float = MANUAL_LOAD_OVERRIDE_SECONDS
+    source: str = "user"
+
+    @property
+    def is_expired(self) -> bool:
+        return (time.monotonic() - self.set_at) >= self.timeout_seconds
+
+    @property
+    def remaining_seconds(self) -> float:
+        remaining = self.timeout_seconds - (time.monotonic() - self.set_at)
+        return max(0.0, remaining)
 
 
 class LoadManager:
@@ -41,6 +64,7 @@ class LoadManager:
         self._controllers: dict[str, LoadController] = {}
         self._command_history: list[LoadCommand] = []
         self._shed_loads: set[str] = set()  # Loads currently shed for spike
+        self._load_overrides: dict[str, LoadOverride] = {}  # Manual load overrides
 
         # Runtime tracking: detect state transitions and accumulate ON time
         self._last_known_state: dict[str, LoadState] = {}
@@ -88,10 +112,92 @@ class LoadManager:
                 statuses.append(result)
         return statuses
 
+    # ── Manual Load Overrides ────────────────────────────────
+
+    async def set_load_override(
+        self,
+        load_id: str,
+        state: str,
+        timeout_seconds: float = MANUAL_LOAD_OVERRIDE_SECONDS,
+        source: str = "user",
+    ) -> bool:
+        """Set a manual override for a load and apply it immediately.
+
+        Args:
+            load_id: The load controller ID.
+            state: "on" or "off".
+            timeout_seconds: How long the override lasts (default 60 min).
+            source: Who set the override.
+
+        Returns:
+            True if the load command was applied successfully.
+        """
+        controller = self._controllers.get(load_id)
+        if controller is None:
+            logger.warning("set_load_override: unknown load_id '%s'", load_id)
+            return False
+
+        override = LoadOverride(
+            load_id=load_id,
+            state=state,
+            set_at=time.monotonic(),
+            timeout_seconds=timeout_seconds,
+            source=source,
+        )
+        self._load_overrides[load_id] = override
+
+        if state == "on":
+            success = await controller.turn_on()
+        else:
+            success = await controller.turn_off()
+
+        cmd = LoadCommand(
+            load_id=load_id,
+            action=state,
+            reason=f"manual_override_{source}",
+            success=success,
+        )
+        self._command_history.append(cmd)
+        logger.info(
+            "Manual load override set: load=%s state=%s timeout=%ds source=%s success=%s",
+            load_id, state, timeout_seconds, source, success,
+        )
+        return success
+
+    def clear_load_override(self, load_id: str) -> None:
+        """Remove a manual override for a load."""
+        if load_id in self._load_overrides:
+            del self._load_overrides[load_id]
+            logger.info("Manual load override cleared for '%s'", load_id)
+
+    def get_load_override(self, load_id: str) -> LoadOverride | None:
+        """Return the active override for a load, or None if not overridden / expired."""
+        override = self._load_overrides.get(load_id)
+        if override is None:
+            return None
+        if override.is_expired:
+            del self._load_overrides[load_id]
+            logger.info("Manual load override expired for '%s'", load_id)
+            return None
+        return override
+
+    def get_active_override_load_ids(self) -> set[str]:
+        """Return the set of load IDs that have active (non-expired) overrides."""
+        expired = [lid for lid, ov in self._load_overrides.items() if ov.is_expired]
+        for lid in expired:
+            del self._load_overrides[lid]
+        return set(self._load_overrides.keys())
+
+    def get_command_history_for_load(self, load_id: str, limit: int = 20) -> list[LoadCommand]:
+        """Return recent command history for a specific load."""
+        history = [c for c in self._command_history if c.load_id == load_id]
+        return history[-limit:]
+
     async def execute_schedule(self, scheduled: list[ScheduledLoad], current_slot_index: int) -> list[LoadCommand]:
         """Execute load commands based on the current schedule and slot.
 
         Turns on loads assigned to the current slot, turns off loads not assigned.
+        Manual overrides take precedence over the schedule.
         """
         commands: list[LoadCommand] = []
 
@@ -101,8 +207,30 @@ class LoadManager:
             if current_slot_index in sched.assigned_slots:
                 active_load_ids.add(sched.load_id)
 
+        overridden_ids = self.get_active_override_load_ids()
+
         for load_id, controller in self._controllers.items():
             status = await controller.get_status()
+
+            # Manual override takes precedence — skip scheduler changes
+            if load_id in overridden_ids:
+                override = self.get_load_override(load_id)
+                if override is not None:
+                    desired = LoadState.ON if override.state == "on" else LoadState.OFF
+                    if status.state != desired:
+                        if override.state == "on":
+                            success = await controller.turn_on()
+                        else:
+                            success = await controller.turn_off()
+                        cmd = LoadCommand(
+                            load_id=load_id,
+                            action=override.state,
+                            reason="manual_override",
+                            success=success,
+                        )
+                        commands.append(cmd)
+                        self._command_history.append(cmd)
+                continue
 
             if load_id in active_load_ids:
                 # Should be ON

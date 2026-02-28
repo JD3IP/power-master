@@ -445,3 +445,159 @@ class TestAPI:
         assert "planning" in data
         assert "arbitrage" in data
 
+
+class TestLoadDetailAndOverride:
+    """Tests for load detail and manual override endpoints."""
+
+    @pytest.fixture
+    async def client_with_loads(self, repo, settings_config_manager):
+        """Client with a load manager and a configured shelly device."""
+        from power_master.control.manual_override import ManualOverride
+        from power_master.loads.manager import LoadManager
+        from power_master.config.schema import AppConfig, ShellyDeviceConfig, LoadsConfig
+
+        config = settings_config_manager.config
+        # Add a fake device to the config
+        dev = ShellyDeviceConfig(
+            name="TestPump",
+            host="192.168.1.50",
+            relay_id=0,
+            power_w=1200,
+            priority_class=4,
+        )
+        object.__setattr__(config.loads, "shelly_devices", [dev])
+
+        app = create_app(config, repo, config_manager=settings_config_manager)
+        app.state.manual_override = ManualOverride()
+
+        # Attach a minimal load manager with a fake controller
+        from tests.test_loads.test_loads import FakeLoadController
+        load_manager = LoadManager(config)
+        ctrl = FakeLoadController("shelly_TestPump", "TestPump", power_w=1200, priority_class=4)
+        load_manager.register(ctrl)
+        app.state.load_manager = load_manager
+
+        from httpx import ASGITransport, AsyncClient
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac, load_manager
+
+    @pytest.mark.asyncio
+    async def test_load_detail_not_found(self, client) -> None:
+        resp = await client.get("/api/loads/NonExistent/detail")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "error"
+        assert "not found" in data["message"]
+
+    @pytest.mark.asyncio
+    async def test_load_detail_no_load_manager(self, repo, settings_config_manager) -> None:
+        """Detail endpoint returns 'not found' when no load manager and no config device."""
+        from power_master.control.manual_override import ManualOverride
+        config = settings_config_manager.config
+        app = create_app(config, repo, config_manager=settings_config_manager)
+        app.state.manual_override = ManualOverride()
+        from httpx import ASGITransport, AsyncClient
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            resp = await ac.get("/api/loads/AnyDevice/detail")
+            data = resp.json()
+            assert data["status"] == "error"
+
+    @pytest.mark.asyncio
+    async def test_load_detail_returns_structure(self, client_with_loads) -> None:
+        ac, _ = client_with_loads
+        resp = await ac.get("/api/loads/TestPump/detail")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["name"] == "TestPump"
+        assert "event_history" in data
+        assert "planned_events" in data
+        assert "today_runtime_min" in data
+        assert "override" in data
+
+    @pytest.mark.asyncio
+    async def test_load_override_on(self, client_with_loads) -> None:
+        ac, load_manager = client_with_loads
+        resp = await ac.post(
+            "/api/loads/TestPump/override",
+            json={"state": "on", "timeout_s": 3600},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "ok"
+        assert data["state"] == "on"
+        # Check override is registered
+        override = load_manager.get_load_override("shelly_TestPump")
+        assert override is not None
+        assert override.state == "on"
+
+    @pytest.mark.asyncio
+    async def test_load_override_off(self, client_with_loads) -> None:
+        ac, load_manager = client_with_loads
+        resp = await ac.post(
+            "/api/loads/TestPump/override",
+            json={"state": "off", "timeout_s": 3600},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "ok"
+        assert data["state"] == "off"
+
+    @pytest.mark.asyncio
+    async def test_load_override_invalid_state(self, client_with_loads) -> None:
+        ac, _ = client_with_loads
+        resp = await ac.post(
+            "/api/loads/TestPump/override",
+            json={"state": "maybe"},
+        )
+        data = resp.json()
+        assert data["status"] == "error"
+
+    @pytest.mark.asyncio
+    async def test_load_override_not_found(self, client_with_loads) -> None:
+        ac, _ = client_with_loads
+        resp = await ac.post(
+            "/api/loads/NonExistent/override",
+            json={"state": "on"},
+        )
+        data = resp.json()
+        assert data["status"] == "error"
+        assert "not found" in data["message"]
+
+    @pytest.mark.asyncio
+    async def test_clear_load_override(self, client_with_loads) -> None:
+        ac, load_manager = client_with_loads
+        # First set override
+        await ac.post("/api/loads/TestPump/override", json={"state": "on"})
+        assert load_manager.get_load_override("shelly_TestPump") is not None
+        # Then clear it
+        resp = await ac.delete("/api/loads/TestPump/override")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "ok"
+        assert load_manager.get_load_override("shelly_TestPump") is None
+
+    @pytest.mark.asyncio
+    async def test_load_detail_shows_override(self, client_with_loads) -> None:
+        ac, load_manager = client_with_loads
+        # Set override
+        await ac.post("/api/loads/TestPump/override", json={"state": "on", "timeout_s": 3600})
+        resp = await ac.get("/api/loads/TestPump/detail")
+        data = resp.json()
+        assert data["override"] is not None
+        assert data["override"]["state"] == "on"
+        assert data["override"]["remaining_seconds"] > 0
+
+    @pytest.mark.asyncio
+    async def test_load_override_timeout_capped(self, client_with_loads) -> None:
+        """Override timeout is capped at 60 minutes."""
+        ac, load_manager = client_with_loads
+        resp = await ac.post(
+            "/api/loads/TestPump/override",
+            json={"state": "on", "timeout_s": 99999},
+        )
+        data = resp.json()
+        assert data["timeout_s"] == 3600  # capped at 60 minutes
+
+

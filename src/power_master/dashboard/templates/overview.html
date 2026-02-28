@@ -401,7 +401,7 @@
                     <tbody>
                         {% for dev in devices %}
                         {% set st = dev.current_state|upper %}
-                        <tr>
+                        <tr class="load-row" data-device-name="{{ dev.name }}" style="cursor:pointer;" title="Click to view details and control {{ dev.name }}">
                             <td>{{ dev.name }}</td>
                             <td>{{ dev.power_w }}W</td>
                             <td>
@@ -435,6 +435,42 @@
         </div>
     </div>
     {% endif %}
+
+    <!-- ── Load Control Panel (Modal) ──────────────────────── -->
+    <div id="load-control-modal" class="load-control-modal" style="display:none;" aria-modal="true" role="dialog">
+        <div class="load-control-panel">
+            <div class="load-control-header">
+                <span class="load-control-title" id="load-panel-title">Device Control</span>
+                <button class="load-control-close" id="load-panel-close" aria-label="Close">&times;</button>
+            </div>
+            <div class="load-control-body" id="load-panel-body">
+                <div class="load-panel-section">
+                    <div class="load-panel-status" id="load-panel-status">Loading...</div>
+                </div>
+                <div class="load-panel-section">
+                    <div class="load-panel-section-title">Manual Control</div>
+                    <div class="load-panel-override-info" id="load-panel-override-info" style="display:none;"></div>
+                    <div class="load-panel-buttons">
+                        <button class="load-ctrl-btn load-ctrl-on" id="load-btn-on">Turn ON (60 min)</button>
+                        <button class="load-ctrl-btn load-ctrl-off" id="load-btn-off">Turn OFF (60 min)</button>
+                        <button class="load-ctrl-btn load-ctrl-auto" id="load-btn-auto">Return to Auto</button>
+                    </div>
+                </div>
+                <div class="load-panel-section" id="load-panel-plan-section">
+                    <div class="load-panel-section-title">Planned Events (next 48h)</div>
+                    <div id="load-panel-plan-events" class="load-panel-events"></div>
+                </div>
+                <div class="load-panel-section" id="load-panel-history-section">
+                    <div class="load-panel-section-title">Event History</div>
+                    <div id="load-panel-history" class="load-panel-events"></div>
+                </div>
+                <div class="load-panel-section">
+                    <div class="load-panel-section-title">Runtime (Today)</div>
+                    <div id="load-panel-runtime" class="load-panel-runtime-value">&mdash;</div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- 24h Rolling Chart -->
     <div class="chart-container">
