@@ -20,7 +20,7 @@ services:
 
     volumes:
       - power-master-data:/data
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock
 
     environment:
       - TZ=Australia/Brisbane

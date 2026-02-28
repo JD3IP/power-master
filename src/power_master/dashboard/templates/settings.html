@@ -821,11 +821,14 @@
         </table>
     </div>
 
-    <div style="margin-top: 16px; display: flex; gap: 8px;">
+    <div style="margin-top: 16px; display: flex; gap: 8px; align-items: center;">
         <button type="button" class="btn" id="sys-check-btn" onclick="checkForUpdate()">Check Now</button>
         {% if not is_read_only %}
         <button type="button" class="btn btn-primary" id="sys-update-btn" onclick="triggerUpdate()" style="display:none;">Update Now</button>
         {% endif %}
+        <span id="sys-no-docker" style="display:none; font-size: 12px; color: var(--text-muted);">
+            Self-update unavailable — Docker socket not mounted
+        </span>
     </div>
 
     <div id="sys-changelog" style="display:none; margin-top: 16px;">
@@ -1036,14 +1039,18 @@ function refreshSystemInfo() {
             latV.textContent = 'Not checked yet';
         }
 
+        var noDockerMsg = document.getElementById('sys-no-docker');
         if (data.update_available) {
             badge.style.display = 'inline';
             if (pill) pill.style.display = 'inline';
-            if (updateBtn) updateBtn.style.display = 'inline-block';
+            if (updateBtn && data.docker_available !== false) updateBtn.style.display = 'inline-block';
+            else if (updateBtn) updateBtn.style.display = 'none';
+            if (noDockerMsg) noDockerMsg.style.display = data.docker_available === false ? 'inline' : 'none';
         } else {
             badge.style.display = 'none';
             if (pill) pill.style.display = 'none';
             if (updateBtn) updateBtn.style.display = 'none';
+            if (noDockerMsg) noDockerMsg.style.display = 'none';
         }
 
         if (data.last_check) {

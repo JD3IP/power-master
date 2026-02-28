@@ -96,8 +96,13 @@ sudo docker run -d \
   --network host \
   -e TZ=Australia/Brisbane \
   -v /volume1/docker/power-master-data:/data \
+  -v /var/run/docker.sock:/var/run/docker.sock \
   power-master:2026-02-24-1
 ```
+
+> **Note:** The Docker socket mount (`/var/run/docker.sock`) is required for the
+> in-app self-update feature. Without it, you can still check for updates but
+> must update manually via `docker pull` + `docker compose up -d`.
 
 ---
 
@@ -137,6 +142,7 @@ If you prefer the DSM web interface over SSH:
    - Image: `power-master:2026-02-24-1`
    - Network: `Use same network as Docker host`
    - Volume: Map a local folder to `/data`
+   - Volume: Map `/var/run/docker.sock` to `/var/run/docker.sock` (for self-update)
    - Environment: `TZ=Australia/Brisbane`
    - Restart policy: `Unless stopped`
 6. Apply and start

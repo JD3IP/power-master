@@ -17,8 +17,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-import docker as docker_sdk
 import httpx
+
+try:
+    import docker as docker_sdk
+except ImportError:
+    docker_sdk = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +206,34 @@ class UpdateManager:
             logger.warning("Update check failed: %s", e)
             return False
 
+    def _check_docker_available(self) -> str | None:
+        """Check if Docker SDK and socket are available.
+
+        Returns None if OK, or an error message string.
+        """
+        if docker_sdk is None:
+            return "Docker SDK not installed — self-update unavailable"
+
+        socket_path = Path("/var/run/docker.sock")
+        if not socket_path.exists():
+            return (
+                "Docker socket not found at /var/run/docker.sock. "
+                "Mount it in docker-compose.yml: "
+                "/var/run/docker.sock:/var/run/docker.sock"
+            )
+
+        try:
+            client = docker_sdk.from_env()
+            client.ping()
+            return None
+        except Exception as e:
+            return f"Cannot connect to Docker daemon: {e}"
+
+    @property
+    def docker_available(self) -> bool:
+        """Whether the Docker socket is reachable for self-updates."""
+        return self._check_docker_available() is None
+
     async def execute_update(self) -> dict:
         """Pull the latest image and restart the container.
 
@@ -213,6 +245,14 @@ class UpdateManager:
 
         if self._state.state in ("downloading", "restarting"):
             return {"status": "error", "message": "Update already in progress"}
+
+        # Pre-flight: check Docker access
+        docker_err = self._check_docker_available()
+        if docker_err:
+            logger.error("Update blocked: %s", docker_err)
+            self._state.state = "failed"
+            self._state.error = docker_err
+            return {"status": "error", "message": docker_err}
 
         self._state.state = "downloading"
         self._state.progress_message = "Pulling new image..."
@@ -505,6 +545,7 @@ except Exception as e:
                 "sha": self._state.latest.sha,
             } if self._state.latest else None,
             "update_available": self._state.update_available,
+            "docker_available": self.docker_available,
             "changelog": self._state.changelog,
             "last_check": self._state.last_check_at,
             "last_check_error": self._state.last_check_error,
