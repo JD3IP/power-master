@@ -1,4 +1,4 @@
-"""Fox-ESS KH series inverter adapter via Modbus TCP.
+"""Fox-ESS KH series inverter adapter via Modbus TCP or RTU.
 
 Register map based on the official FoxESS KH Series Modbus PDF.
 See KH_MODBUS_REGISTERS.md for the full register reference.
@@ -17,7 +17,8 @@ import logging
 import time
 from dataclasses import dataclass
 
-from pymodbus.client import AsyncModbusTcpClient
+from pymodbus.client import AsyncModbusSerialClient, AsyncModbusTcpClient
+from pymodbus.framer import FramerType
 
 from power_master.config.schema import FoxESSConfig
 from power_master.hardware.base import (
@@ -84,46 +85,71 @@ MODE_TO_KH: dict[OperatingMode, int] = {
 
 
 class FoxESSAdapter:
-    """Modbus TCP adapter for Fox-ESS KH series inverter.
+    """Modbus TCP/RTU adapter for Fox-ESS KH series inverter.
 
     Implements the InverterAdapter protocol for reading telemetry
-    and sending charge/discharge commands via Modbus TCP.
+    and sending charge/discharge commands via Modbus TCP or RTU (serial).
     """
 
     _MAX_REASONABLE_POWER_W = 50000
 
     def __init__(self, config: FoxESSConfig) -> None:
         self._config = config
-        self._client: AsyncModbusTcpClient | None = None
+        self._client: AsyncModbusTcpClient | AsyncModbusSerialClient | None = None
         self._connected = False
         self._lock = asyncio.Lock()
 
     async def connect(self) -> None:
-        """Establish Modbus TCP connection to the inverter."""
-        self._client = AsyncModbusTcpClient(
-            host=self._config.host,
-            port=self._config.port,
-            timeout=10,
-            retries=3,
-        )
-        connected = await self._client.connect()
-        if not connected:
-            raise ConnectionError(
-                f"Failed to connect to Fox-ESS at {self._config.host}:{self._config.port}"
+        """Establish Modbus connection to the inverter (TCP or RTU)."""
+        if self._config.connection_type == "rtu":
+            self._client = AsyncModbusSerialClient(
+                port=self._config.serial_port,
+                framer=FramerType.RTU,
+                baudrate=self._config.baudrate,
+                bytesize=8,
+                parity="N",
+                stopbits=1,
+                timeout=10,
+                retries=3,
             )
-        self._connected = True
-        logger.info(
-            "Connected to Fox-ESS KH at %s:%d (unit %d)",
-            self._config.host,
-            self._config.port,
-            self._config.unit_id,
-        )
-        if self._config.port != 502:
-            logger.warning(
-                "FoxESS control may be blocked on port %d. KH write control is typically "
-                "available on local Modbus TCP port 502.",
+            connected = await self._client.connect()
+            if not connected:
+                raise ConnectionError(
+                    f"Failed to connect to Fox-ESS via RTU at {self._config.serial_port} "
+                    f"({self._config.baudrate} baud)"
+                )
+            self._connected = True
+            logger.info(
+                "Connected to Fox-ESS KH via RTU at %s (%d baud, unit %d)",
+                self._config.serial_port,
+                self._config.baudrate,
+                self._config.unit_id,
+            )
+        else:
+            self._client = AsyncModbusTcpClient(
+                host=self._config.host,
+                port=self._config.port,
+                timeout=10,
+                retries=3,
+            )
+            connected = await self._client.connect()
+            if not connected:
+                raise ConnectionError(
+                    f"Failed to connect to Fox-ESS at {self._config.host}:{self._config.port}"
+                )
+            self._connected = True
+            logger.info(
+                "Connected to Fox-ESS KH at %s:%d (unit %d)",
+                self._config.host,
                 self._config.port,
+                self._config.unit_id,
             )
+            if self._config.port != 502:
+                logger.warning(
+                    "FoxESS control may be blocked on port %d. KH write control is typically "
+                    "available on local Modbus TCP port 502.",
+                    self._config.port,
+                )
 
     async def disconnect(self) -> None:
         """Close the Modbus TCP connection."""
@@ -365,14 +391,23 @@ class FoxESSAdapter:
         not in blocks, per Fox-ESS Modbus protocol requirements.
         """
         assert self._client is not None
-        logger.info(
-            "Modbus write attempt: host=%s:%d unit=%d addr=%d value=%d",
-            self._config.host,
-            self._config.port,
-            self._config.unit_id,
-            address,
-            value & 0xFFFF,
-        )
+        if self._config.connection_type == "rtu":
+            logger.info(
+                "Modbus write attempt: port=%s unit=%d addr=%d value=%d",
+                self._config.serial_port,
+                self._config.unit_id,
+                address,
+                value & 0xFFFF,
+            )
+        else:
+            logger.info(
+                "Modbus write attempt: host=%s:%d unit=%d addr=%d value=%d",
+                self._config.host,
+                self._config.port,
+                self._config.unit_id,
+                address,
+                value & 0xFFFF,
+            )
         result = await self._client.write_register(
             address, value & 0xFFFF, device_id=self._config.unit_id
         )

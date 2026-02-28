@@ -62,6 +62,55 @@
         {% endif %}
     </div>
 
+    <!-- ── BATTERY Panel ───────────────────────────── -->
+    <div class="dash-panel">
+        <div class="dash-panel-title">Battery</div>
+        <div class="dash-panel-body">
+            {% set soc_pct = "%.0f"|format((telemetry.soc or 0) * 100) %}
+            <table class="battery-panel-table">
+                <tr>
+                    <td class="battery-values-cell">
+                        <div class="dash-row">
+                            <span class="dash-label">Status</span>
+                            <span class="dash-value" id="battery-flow-value">
+                                {% if telemetry %}
+                                    {% set bp = telemetry.battery_power_w or 0 %}
+                                    {% if bp > 0 %}
+                                        <span class="charging">Charging {{ "%.1f"|format(bp / 1000) }} kW</span>
+                                    {% elif bp < 0 %}
+                                        <span class="discharging">Discharging {{ "%.1f"|format((-bp) / 1000) }} kW</span>
+                                    {% else %}
+                                Idle
+                                    {% endif %}
+                                {% endif %}
+                            </span>
+                        </div>
+                        <div class="dash-row">
+                            <span class="dash-label">Cost Basis</span>
+                            <span class="dash-value" id="wacb-value">--c/kWh avg</span>
+                        </div>
+                        <div class="dash-row">
+                            <span class="dash-label">Stored Value</span>
+                            <span class="dash-value" id="wacb-total">$--</span>
+                        </div>
+                    </td>
+                    <td class="battery-graphic-cell">
+                        <div class="battery-3d-row">
+                            <div class="battery-3d-wrap">
+                                <div class="battery-3d battery-high" id="battery-3d">
+                                    <div class="battery-3d-level" id="battery-level-fill" style="width: {{ soc_pct }}%"></div>
+                                    <div class="battery-3d-gloss"></div>
+                                </div>
+                                <div class="battery-3d-cap"></div>
+                            </div>
+                            <span class="dash-soc-pct" id="soc-value">{{ soc_pct }}%</span>
+                        </div>
+                    </td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
     <!-- ── INVERTER Panel ──────────────────────────── -->
     <div class="dash-panel">
         <div class="dash-panel-title">Inverter</div>
@@ -184,55 +233,6 @@
                         </div>
                 </div>
             </div>
-        </div>
-    </div>
-
-    <!-- ── BATTERY Panel ───────────────────────────── -->
-    <div class="dash-panel">
-        <div class="dash-panel-title">Battery</div>
-        <div class="dash-panel-body">
-            {% set soc_pct = "%.0f"|format((telemetry.soc or 0) * 100) %}
-            <table class="battery-panel-table">
-                <tr>
-                    <td class="battery-values-cell">
-                        <div class="dash-row">
-                            <span class="dash-label">Status</span>
-                            <span class="dash-value" id="battery-flow-value">
-                                {% if telemetry %}
-                                    {% set bp = telemetry.battery_power_w or 0 %}
-                                    {% if bp > 0 %}
-                                        <span class="charging">Charging {{ "%.1f"|format(bp / 1000) }} kW</span>
-                                    {% elif bp < 0 %}
-                                        <span class="discharging">Discharging {{ "%.1f"|format((-bp) / 1000) }} kW</span>
-                                    {% else %}
-                                Idle
-                                    {% endif %}
-                                {% endif %}
-                            </span>
-                        </div>
-                        <div class="dash-row">
-                            <span class="dash-label">Cost Basis</span>
-                            <span class="dash-value" id="wacb-value">--c/kWh avg</span>
-                        </div>
-                        <div class="dash-row">
-                            <span class="dash-label">Stored Value</span>
-                            <span class="dash-value" id="wacb-total">$--</span>
-                        </div>
-                    </td>
-                    <td class="battery-graphic-cell">
-                        <div class="battery-3d-row">
-                            <div class="battery-3d-wrap">
-                                <div class="battery-3d battery-high" id="battery-3d">
-                                    <div class="battery-3d-level" id="battery-level-fill" style="width: {{ soc_pct }}%"></div>
-                                    <div class="battery-3d-gloss"></div>
-                                </div>
-                                <div class="battery-3d-cap"></div>
-                            </div>
-                            <span class="dash-soc-pct" id="soc-value">{{ soc_pct }}%</span>
-                        </div>
-                    </td>
-                </tr>
-            </table>
         </div>
     </div>
 

@@ -582,6 +582,19 @@ async def delete_mqtt_load(request: Request, name: str) -> dict:
     return {"status": "ok"}
 
 
+def _foxess_config_info(config) -> dict:
+    """Return connection config for diagnostics, adapting to TCP vs RTU."""
+    foxess = config.hardware.foxess
+    info: dict = {"connection_type": foxess.connection_type, "unit_id": foxess.unit_id}
+    if foxess.connection_type == "rtu":
+        info["serial_port"] = foxess.serial_port
+        info["baudrate"] = foxess.baudrate
+    else:
+        info["host"] = foxess.host
+        info["port"] = foxess.port
+    return info
+
+
 # ── Inverter Diagnostics ────────────────────────────
 
 @router.get("/inverter/diagnostics")
@@ -612,11 +625,7 @@ async def inverter_diagnostics(request: Request) -> dict:
             "connected": False,
             "error": "Not connected to inverter",
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "config": {
-                "host": request.app.state.config.hardware.foxess.host,
-                "port": request.app.state.config.hardware.foxess.port,
-                "unit_id": request.app.state.config.hardware.foxess.unit_id,
-            },
+            "config": _foxess_config_info(request.app.state.config),
         }
 
     # Read all registers individually so we can report per-register status
@@ -713,11 +722,7 @@ async def inverter_diagnostics(request: Request) -> dict:
     return {
         "connected": True,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "config": {
-            "host": request.app.state.config.hardware.foxess.host,
-            "port": request.app.state.config.hardware.foxess.port,
-            "unit_id": request.app.state.config.hardware.foxess.unit_id,
-        },
+        "config": _foxess_config_info(request.app.state.config),
         "work_mode_name": work_mode_name,
         "inverter_state_name": inv_state_name,
         "registers": registers,

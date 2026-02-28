@@ -57,12 +57,37 @@
 <section id="tab-inverter" class="tab-content active">
     <h2>Connection</h2>
     <div class="form-group">
-        <label for="hardware.foxess.host">Inverter IP Address</label>
-        <input type="text" id="hardware.foxess.host" name="hardware.foxess.host" value="{{ config.hardware.foxess.host }}">
+        <label for="hardware.foxess.connection_type">Connection Type</label>
+        <select id="hardware.foxess.connection_type" name="hardware.foxess.connection_type" onchange="toggleConnectionFields()">
+            <option value="tcp" {{ 'selected' if config.hardware.foxess.connection_type == 'tcp' }}>Modbus TCP (Ethernet/Wi-Fi)</option>
+            <option value="rtu" {{ 'selected' if config.hardware.foxess.connection_type == 'rtu' }}>Modbus RTU (USB-to-Serial)</option>
+        </select>
     </div>
-    <div class="form-group">
-        <label for="hardware.foxess.port">Modbus Port</label>
-        <input type="number" id="hardware.foxess.port" name="hardware.foxess.port" value="{{ config.hardware.foxess.port }}">
+    <div id="foxess-tcp-fields">
+        <div class="form-group">
+            <label for="hardware.foxess.host">Inverter IP Address</label>
+            <input type="text" id="hardware.foxess.host" name="hardware.foxess.host" value="{{ config.hardware.foxess.host }}">
+        </div>
+        <div class="form-group">
+            <label for="hardware.foxess.port">Modbus Port</label>
+            <input type="number" id="hardware.foxess.port" name="hardware.foxess.port" value="{{ config.hardware.foxess.port }}">
+        </div>
+    </div>
+    <div id="foxess-rtu-fields">
+        <div class="form-group">
+            <label for="hardware.foxess.serial_port">Serial Port</label>
+            <input type="text" id="hardware.foxess.serial_port" name="hardware.foxess.serial_port" value="{{ config.hardware.foxess.serial_port }}" placeholder="/dev/ttyUSB0">
+        </div>
+        <div class="form-group">
+            <label for="hardware.foxess.baudrate">Baud Rate</label>
+            <select id="hardware.foxess.baudrate" name="hardware.foxess.baudrate">
+                <option value="4800" {{ 'selected' if config.hardware.foxess.baudrate == 4800 }}>4800</option>
+                <option value="9600" {{ 'selected' if config.hardware.foxess.baudrate == 9600 }}>9600</option>
+                <option value="19200" {{ 'selected' if config.hardware.foxess.baudrate == 19200 }}>19200</option>
+                <option value="38400" {{ 'selected' if config.hardware.foxess.baudrate == 38400 }}>38400</option>
+                <option value="115200" {{ 'selected' if config.hardware.foxess.baudrate == 115200 }}>115200</option>
+            </select>
+        </div>
     </div>
     <div class="form-group">
         <label for="hardware.foxess.unit_id">Unit ID (KH default: 247)</label>
@@ -835,6 +860,12 @@
 </style>
 
 <script>
+function toggleConnectionFields() {
+    var connType = document.getElementById('hardware.foxess.connection_type').value;
+    document.getElementById('foxess-tcp-fields').style.display = connType === 'tcp' ? '' : 'none';
+    document.getElementById('foxess-rtu-fields').style.display = connType === 'rtu' ? '' : 'none';
+}
+
 function switchTab(tabId, btn) {
     var targetSection = document.getElementById('tab-' + tabId);
     if (!targetSection) return;
@@ -860,6 +891,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (active && select) {
         select.value = active.id.replace('tab-', '');
     }
+    toggleConnectionFields();
 });
 
 var diagTimer = null;

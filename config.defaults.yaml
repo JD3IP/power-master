@@ -93,8 +93,11 @@ providers:
 hardware:
   adapter: "foxess"
   foxess:
+    connection_type: "tcp"          # "tcp" for Modbus TCP, "rtu" for USB-to-serial (RS485)
     host: "192.168.1.100"
     port: 502
+    serial_port: "/dev/ttyUSB0"     # RTU only: serial device path
+    baudrate: 9600                  # RTU only: 9600 is standard for FoxESS KH
     unit_id: 247
     poll_interval_seconds: 15
     watchdog_refresh_seconds: 20

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -147,8 +149,14 @@ class ProvidersConfig(BaseModel):
 
 
 class FoxESSConfig(BaseModel):
+    connection_type: Literal["tcp", "rtu"] = "tcp"
+    # TCP settings
     host: str = "192.168.1.100"
     port: int = 502
+    # RTU (serial) settings
+    serial_port: str = "/dev/ttyUSB0"
+    baudrate: int = 9600
+    # Shared
     unit_id: int = 247
     poll_interval_seconds: int = 15
     watchdog_timeout_seconds: int = 3600  # Remote control watchdog (seconds); must exceed tick interval

@@ -28,6 +28,10 @@ services:
       - /opt/power-master/data:/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
+    # Uncomment for Modbus RTU via USB-to-serial adapter:
+    # devices:
+    #   - /dev/ttyUSB0:/dev/ttyUSB0
+
     environment:
       - TZ=Australia/Brisbane
 

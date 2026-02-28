@@ -25,6 +25,7 @@ dependencies = [
     "amberelectric>=2.0",
     # Hardware
     "pymodbus>=3.7",
+    "pyserial>=3.5",
     # MQTT
     "aiomqtt>=2.3",
     # Dashboard / Logging
