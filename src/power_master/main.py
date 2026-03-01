@@ -193,10 +193,12 @@ class Application:
             )
             # Buffer for history aggregation
             history.record_telemetry(telemetry)
-            # Sync accounting SOC
-            accounting.sync_soc(telemetry.soc)
 
             # Record energy flows for accounting (power × interval → Wh)
+            # NOTE: sync_soc is called AFTER energy recording so that
+            # record_charge sees the previous tick's stored_wh, not the
+            # already-updated SOC (which would double-count charged energy
+            # and anchor the WACB at its initial value).
             tick_interval_s = self.config.planning.evaluation_interval_seconds
             tick_hours = tick_interval_s / 3600.0
             tariff = getattr(aggregator.state, "tariff", None)
@@ -217,34 +219,37 @@ class Application:
 
             if grid_w > 0:
                 # Grid import
-                import_wh = int(grid_w * tick_hours)
+                import_wh = round(grid_w * tick_hours)
                 if import_wh > 0:
                     accounting.record_grid_import(import_wh, import_rate)
                 # If battery is also charging from grid
                 if battery_w > 0:
                     grid_charge_w = min(battery_w, grid_w)
-                    grid_charge_wh = int(grid_charge_w * tick_hours)
+                    grid_charge_wh = round(grid_charge_w * tick_hours)
                     if grid_charge_wh > 0:
                         accounting.record_grid_charge(grid_charge_wh, import_rate)
             elif grid_w < 0:
                 # Grid export
-                export_wh = int(abs(grid_w) * tick_hours)
+                export_wh = round(abs(grid_w) * tick_hours)
                 if export_wh > 0:
                     accounting.record_grid_export(export_wh, export_rate)
 
             # Solar charging battery
             if battery_w > 0 and solar_w > 0 and grid_w <= 0:
                 solar_charge_w = min(battery_w, solar_w)
-                solar_charge_wh = int(solar_charge_w * tick_hours)
+                solar_charge_wh = round(solar_charge_w * tick_hours)
                 if solar_charge_wh > 0:
                     accounting.record_solar_charge(solar_charge_wh, export_rate)
 
             # Self-consumption: load served by solar/battery (not grid)
             if load_w > 0 and grid_w <= 0:
                 self_consumption_w = min(load_w, solar_w + max(0, -battery_w))
-                self_consumption_wh = int(self_consumption_w * tick_hours)
+                self_consumption_wh = round(self_consumption_w * tick_hours)
                 if self_consumption_wh > 0:
                     accounting.record_self_consumption(self_consumption_wh, import_rate)
+
+            # Sync accounting SOC after energy recording (see note above)
+            accounting.sync_soc(telemetry.soc)
 
             # Health check: inverter success
             health_checker.record_success("inverter")

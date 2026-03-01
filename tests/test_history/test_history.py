@@ -251,8 +251,10 @@ class TestLoadPredictor:
         predictor = LoadPredictor(repo)
         await predictor.rebuild_profile(lookback_days=60)
 
-        # Predict for same day-of-week, 10am
-        predict_dt = now.replace(hour=10, minute=0, second=0, microsecond=0)
+        # Predict for yesterday's weekday at 10am — yesterday's data is fully
+        # in the past so rebuild_profile()'s end-boundary never excludes it.
+        yesterday = now - timedelta(days=1)
+        predict_dt = yesterday.replace(hour=10, minute=0, second=0, microsecond=0)
         result = predictor.predict(predict_dt)
         assert result == 1500.0
 
@@ -344,8 +346,10 @@ class TestSolarPredictor:
         predictor = SolarPredictor(repo)
         await predictor.rebuild_profile(lookback_days=60)
 
-        # Predict for same day-of-week, noon
-        predict_dt = now.replace(hour=12, minute=0, second=0, microsecond=0)
+        # Predict for yesterday's weekday at noon — yesterday's data is fully
+        # in the past so rebuild_profile()'s end-boundary never excludes it.
+        yesterday = now - timedelta(days=1)
+        predict_dt = yesterday.replace(hour=12, minute=0, second=0, microsecond=0)
 
         # Clear sky (0% cloud) should increase estimate
         clear = predictor.predict(predict_dt, cloud_cover_pct=0.0)

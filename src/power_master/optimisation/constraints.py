@@ -156,3 +156,32 @@ def add_spike_constraints(
     """During price spikes: block grid charging."""
     if is_spike:
         prob += charge == 0, f"spike_no_charge_{t}"
+
+
+def add_charge_taper(
+    prob: pulp.LpProblem,
+    t: int,
+    soc: pulp.LpVariable,
+    charge: pulp.LpVariable,
+    in_taper: pulp.LpVariable,
+    taper_start_soc: float,
+    max_charge_w: float,
+    taper_factor: float,
+) -> None:
+    """Reduce charge rate when SOC is in the taper zone.
+
+    Models the CC→CV transition in lithium batteries where the BMS
+    tapers charging current as SOC approaches 100%.  Uses big-M
+    linearization so the constraint remains MILP-compatible.
+
+    When SOC >= taper_start_soc, charge is limited to max_charge_w * taper_factor.
+    """
+    M = 1.0  # SOC is in [0, 1] so M=1 is sufficient
+
+    # Link in_taper binary to SOC threshold
+    prob += soc <= taper_start_soc + M * in_taper, f"taper_link_upper_{t}"
+    prob += soc >= taper_start_soc - M * (1 - in_taper), f"taper_link_lower_{t}"
+
+    # Reduce charge rate when in taper zone
+    reduction = max_charge_w * (1 - taper_factor)
+    prob += charge <= max_charge_w - reduction * in_taper, f"taper_charge_limit_{t}"

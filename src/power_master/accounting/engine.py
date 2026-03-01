@@ -39,7 +39,7 @@ class AccountingEngine:
     Called by the control loop to record energy flows and compute P&L.
     """
 
-    def __init__(self, config: AppConfig, initial_soc: float = 0.5, initial_wacb: float = 10.0) -> None:
+    def __init__(self, config: AppConfig, initial_soc: float = 0.5, initial_wacb: float = 0.0) -> None:
         self._config = config
         self._cost_basis = CostBasisTracker(
             config.battery.capacity_wh, initial_soc, initial_wacb,
@@ -79,7 +79,7 @@ class AccountingEngine:
 
     def record_grid_export(self, energy_wh: int, rate_cents: float) -> AccountingEvent:
         """Record grid export: revenue + P&L calculation."""
-        cost_basis = int(self._cost_basis.record_discharge(energy_wh))
+        cost_basis = round(self._cost_basis.record_discharge(energy_wh))
         event = create_export_event(energy_wh, rate_cents, cost_basis)
         self._events.append(event)
 

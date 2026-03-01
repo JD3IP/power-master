@@ -472,11 +472,17 @@
         </div>
     </div>
 
-    <!-- 24h Rolling Chart -->
+    <!-- Rolling Chart -->
     <div class="chart-container">
         <div class="chart-header">
-            <h3>{{ config.dashboard.rolling_chart_window_hours * 2 }}-Hour View</h3>
-            <span class="chart-subtitle">{{ config.dashboard.rolling_chart_window_hours }}h history | {{ config.dashboard.rolling_chart_window_hours }}h forecast</span>
+            <h3 id="rolling-chart-title">{{ config.dashboard.rolling_chart_window_hours * 2 }}-Hour View</h3>
+            <div class="chart-period-buttons">
+                <button class="chart-period-btn" data-hours="2">4h</button>
+                <button class="chart-period-btn" data-hours="3">6h</button>
+                <button class="chart-period-btn" data-hours="6">12h</button>
+                <button class="chart-period-btn" data-hours="9">18h</button>
+                <button class="chart-period-btn" data-hours="12">24h</button>
+            </div>
         </div>
         <canvas id="rolling-chart" height="300"></canvas>
     </div>

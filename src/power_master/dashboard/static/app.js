@@ -278,6 +278,18 @@ var ROLLING_WINDOW_HOURS = (function() {
     if (!Number.isFinite(v) || v < 1) return 12;
     return Math.round(v);
 })();
+
+function setRollingWindowHours(hours) {
+    ROLLING_WINDOW_HOURS = hours;
+    rollingTimeline = buildRollingTimeline();
+    var titleEl = document.getElementById('rolling-chart-title');
+    if (titleEl) titleEl.textContent = (hours * 2) + '-Hour View';
+    // Highlight active button
+    document.querySelectorAll('.chart-period-btn').forEach(function(btn) {
+        btn.classList.toggle('active', Number(btn.dataset.hours) === hours);
+    });
+    loadRollingChartData();
+}
 var ROLLING_STEP_MINUTES = 30;
 var ROLLING_REFRESH_MS = 60000;
 var rollingRefreshTimer = null;
@@ -809,6 +821,18 @@ function formatTimeLabel(isoStr) {
 
 document.addEventListener('DOMContentLoaded', function() {
     initRollingChart();
+
+    // Period selector buttons for rolling chart
+    document.querySelectorAll('.chart-period-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var hours = Number(this.dataset.hours);
+            if (Number.isFinite(hours) && hours > 0) setRollingWindowHours(hours);
+        });
+        // Highlight the default/active button
+        if (Number(btn.dataset.hours) === ROLLING_WINDOW_HOURS) {
+            btn.classList.add('active');
+        }
+    });
 });
 
 function initOverviewLoadToggles() {
@@ -2087,7 +2111,7 @@ document.addEventListener('DOMContentLoaded', function() {
             planEl.innerHTML = data.planned_events.map(function(ev) {
                 var badge = ev.scheduled
                     ? '<span class="load-panel-event-badge scheduled">Planned ON</span>'
-                    : '<span class="load-panel-event-badge off">Not scheduled</span>';
+                    : '<span class="load-panel-event-badge off">Planned OFF</span>';
                 var rate = ev.import_rate_cents != null ? ' &middot; ' + ev.import_rate_cents.toFixed(1) + 'c' : '';
                 return '<div class="load-panel-event-row">' +
                     '<span class="load-panel-event-time">' + ev.time_label + '</span>' +
@@ -2104,10 +2128,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 var badgeClass = ev.action === 'on' ? 'on' : 'off';
                 var label = ev.action.toUpperCase();
                 var ts = ev.issued_at ? ev.issued_at.substring(0, 16).replace('T', ' ') : '';
+                var reason = ev.reason || '';
+                var sourceTag = '';
+                if (reason.toLowerCase().indexOf('schedule') >= 0 || reason.toLowerCase().indexOf('plan') >= 0) {
+                    sourceTag = '<span class="load-panel-event-source planned">Planned</span>';
+                } else if (reason.toLowerCase().indexOf('manual') >= 0 || reason.toLowerCase().indexOf('override') >= 0) {
+                    sourceTag = '<span class="load-panel-event-source manual">Manual</span>';
+                } else if (reason) {
+                    sourceTag = '<span class="load-panel-event-source external">External</span>';
+                }
                 return '<div class="load-panel-event-row">' +
                     '<span class="load-panel-event-time">' + ts + '</span>' +
                     '<span class="load-panel-event-badge ' + badgeClass + '">' + label + '</span>' +
-                    '<span class="load-panel-event-reason">' + (ev.reason || '') + '</span></div>';
+                    sourceTag +
+                    '</div>';
             }).join('');
         } else {
             histEl.innerHTML = '<div class="load-panel-event-empty">No recent events</div>';

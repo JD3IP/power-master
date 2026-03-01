@@ -72,6 +72,9 @@ class LoadManager:
         self._daily_runtime_s: dict[str, float] = {}  # Accumulated seconds today
         self._runtime_date: datetime | None = None  # Date of current accumulation
 
+        # Track loads activated by scheduler vs externally
+        self._scheduler_activated: set[str] = set()  # Loads turned ON by our scheduler
+
     def register(self, controller: LoadController) -> None:
         """Register a load controller."""
         self._controllers[controller.load_id] = controller
@@ -387,9 +390,13 @@ class LoadManager:
                 cmd = LoadCommand(load_id=load_id, action="on", reason="scheduled", success=success)
                 commands.append(cmd)
                 self._command_history.append(cmd)
+                if success:
+                    self._scheduler_activated.add(load_id)
             elif not should_be_on and status.state == LoadState.ON:
-                # Load is ON but not scheduled — turn it off
-                if load_id not in self._shed_loads:
+                # Only turn off loads that WE activated via scheduler.
+                # Externally activated loads (physical button, app) are left
+                # running and their runtime is credited toward minimums.
+                if load_id in self._scheduler_activated and load_id not in self._shed_loads:
                     success = await self._verified_command(
                         controller, "off", "schedule_ended", repo=repo,
                     )
@@ -398,6 +405,13 @@ class LoadManager:
                     )
                     commands.append(cmd)
                     self._command_history.append(cmd)
+                    if success:
+                        self._scheduler_activated.discard(load_id)
+                elif load_id not in self._scheduler_activated:
+                    logger.debug(
+                        "Load '%s' is ON externally — counting runtime, not turning off",
+                        controller.name,
+                    )
 
         return commands
 

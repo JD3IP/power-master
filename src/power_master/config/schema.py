@@ -17,6 +17,8 @@ class BatteryConfig(BaseModel):
     soc_min_soft: float = Field(0.10, ge=0.0, le=1.0)
     soc_max_soft: float = Field(0.90, ge=0.0, le=1.0)
     round_trip_efficiency: float = Field(0.90, ge=0.0, le=1.0)
+    taper_start_soc: float = Field(0.90, ge=0.5, le=1.0)
+    taper_factor: float = Field(0.5, ge=0.1, le=1.0)
 
 
 class LoadProfileConfig(BaseModel):

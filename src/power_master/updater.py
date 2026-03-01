@@ -315,6 +315,7 @@ class UpdateManager:
                 "binds": attrs["HostConfig"].get("Binds") or [],
                 "network_mode": attrs["HostConfig"].get("NetworkMode", "bridge"),
                 "restart_policy": attrs["HostConfig"].get("RestartPolicy") or {},
+                "port_bindings": attrs["HostConfig"].get("PortBindings") or {},
                 "environment": attrs["Config"].get("Env") or [],
                 "labels": attrs["Config"].get("Labels") or {},
             })
@@ -339,6 +340,16 @@ def parse_binds(binds):
             vols[parts[0]] = {"bind": parts[1], "mode": parts[2]}
     return vols
 
+def parse_port_bindings(raw):
+    ports = {}
+    for container_port, bindings in raw.items():
+        if bindings:
+            b = bindings[0]
+            hip = b.get("HostIp", "")
+            hp = b["HostPort"]
+            ports[container_port] = (hip, int(hp)) if hip and hip != "0.0.0.0" else int(hp)
+    return ports
+
 try:
     old = client.containers.get(name)
     old.stop(timeout=30)
@@ -347,14 +358,18 @@ except Exception as e:
     print(f"Warning stopping old container: {e}")
 
 try:
-    client.containers.run(
-        config["image"], name=name, detach=True,
+    run_kwargs = dict(
+        name=name, detach=True,
         environment=config["environment"],
         volumes=parse_binds(config["binds"]),
         network_mode=config["network_mode"],
         restart_policy=config["restart_policy"],
         labels=config["labels"],
     )
+    pb = parse_port_bindings(config.get("port_bindings", {}))
+    if pb:
+        run_kwargs["ports"] = pb
+    client.containers.run(config["image"], **run_kwargs)
     print(f"Container {name} recreated successfully")
     try:
         client.containers.get(name + "-old").remove(force=True)

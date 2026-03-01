@@ -14,6 +14,7 @@ from power_master.config.schema import (
 )
 from power_master.optimisation.constraints import (
     add_arbitrage_gate,
+    add_charge_taper,
     add_daytime_soc_minimum,
     add_energy_balance,
     add_evening_soc_target,
@@ -143,6 +144,11 @@ def solve(
     morning_slack = []
     daytime_slack = []
 
+    # Taper zone binary variables (1 = SOC is above taper threshold)
+    taper_start = config.battery.taper_start_soc
+    taper_factor = config.battery.taper_factor
+    in_taper = [pulp.LpVariable(f"in_taper_{t}", cat="Binary") for t in range(n)]
+
     # ── Constraints per slot ──
     for t in range(n):
         # SOC dynamics
@@ -156,6 +162,12 @@ def solve(
         add_power_limits(
             prob, t, charge[t], discharge[t], is_charging[t],
             config.battery.max_charge_rate_w, config.battery.max_discharge_rate_w,
+        )
+
+        # Battery charge taper (CC→CV transition)
+        add_charge_taper(
+            prob, t, soc[t], charge[t], in_taper[t],
+            taper_start, config.battery.max_charge_rate_w, taper_factor,
         )
 
         # Energy balance
@@ -242,7 +254,11 @@ def solve(
         # Determine mode from solution
         export_val = pulp.value(grid_export[t]) or 0
         import_val = pulp.value(grid_import[t]) or 0
-        mode = _determine_mode(charge_val, discharge_val, export_val, import_val, inputs.is_spike[t])
+        mode = _determine_mode(
+            charge_val, discharge_val, export_val, import_val, inputs.is_spike[t],
+            solar_w=float(inputs.solar_forecast_w[t]),
+            load_w=float(inputs.load_forecast_w[t]),
+        )
         power = _determine_target_power(
             mode=mode,
             discharge_w=discharge_val,
@@ -311,6 +327,7 @@ def _resolve_planner_timezone(config: AppConfig):
 
 def _determine_mode(
     charge_w: float, discharge_w: float, grid_export_w: float, grid_import_w: float, is_spike: bool,
+    solar_w: float = 0.0, load_w: float = 0.0,
 ) -> SlotMode:
     """Determine the operating mode from solver decision variables.
 
@@ -322,6 +339,10 @@ def _determine_mode(
     threshold = 50  # Minimum power to consider active
 
     if charge_w > threshold and grid_import_w > threshold:
+        # If excess solar covers the load, the battery can charge from the
+        # surplus in SELF_USE mode — no need to force-charge from the grid.
+        if solar_w > load_w + threshold:
+            return SlotMode.SELF_USE
         return SlotMode.FORCE_CHARGE
     elif discharge_w > threshold and grid_export_w > threshold:
         # Arbitrage: actively exporting to grid for profit

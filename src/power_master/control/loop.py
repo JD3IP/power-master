@@ -45,8 +45,13 @@ class ControlLoop:
     6. Dispatch command to inverter
     """
 
-    # Modes that use remote power control and need periodic refresh
-    _REMOTE_MODES = frozenset({OperatingMode.FORCE_CHARGE, OperatingMode.FORCE_DISCHARGE})
+    # Modes that use remote power control and need periodic refresh.
+    # The FoxESS KH reverts to self-use when remote commands stop (~30s).
+    _REMOTE_MODES = frozenset({
+        OperatingMode.FORCE_CHARGE,
+        OperatingMode.FORCE_DISCHARGE,
+        OperatingMode.FORCE_CHARGE_ZERO_IMPORT,
+    })
 
     def __init__(
         self,
@@ -228,7 +233,12 @@ class ControlLoop:
             except asyncio.TimeoutError:
                 pass  # Normal — interval elapsed
 
-            cmd = self._last_dispatched_command
+            # Re-evaluate the current desired command from override/plan so
+            # the refresh always reflects the latest state (e.g. override still
+            # active, plan slot changed).  Falls back to last-dispatched if
+            # telemetry is unavailable.
+            telemetry = self._state.last_telemetry
+            cmd = self._determine_command(telemetry) if telemetry else self._last_dispatched_command
             if cmd is None:
                 continue
 
@@ -238,9 +248,10 @@ class ControlLoop:
             try:
                 result = await dispatch_command(self._adapter, cmd)
                 if result.success:
+                    self._last_dispatched_command = cmd
                     logger.debug(
-                        "Command refresh: mode=%s power=%dW latency=%dms",
-                        cmd.mode.name, cmd.power_w, result.latency_ms,
+                        "Command refresh: mode=%s power=%dW source=%s latency=%dms",
+                        cmd.mode.name, cmd.power_w, cmd.source, result.latency_ms,
                     )
                 else:
                     logger.warning(
