@@ -68,6 +68,26 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build release notes from commits
+        if: github.ref == 'refs/heads/main'
+        id: notes
+        run: |
+          # Find the previous release tag (if any)
+          PREV_TAG=$(gh release list --limit 1 --exclude-drafts --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            COMMITS=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s (%h)" --no-merges)
+          else
+            COMMITS=$(git log --pretty=format:"- %s (%h)" --no-merges -20)
+          fi
+          # Write to file to preserve newlines
+          {
+            echo "## What's New"
+            echo ""
+            echo "$COMMITS"
+          } > /tmp/release_notes.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create GitHub Release
         if: github.ref == 'refs/heads/main'
         env:
@@ -75,5 +95,5 @@ jobs:
         run: |
           gh release create "v${{ steps.version.outputs.version }}" \
             --title "v${{ steps.version.outputs.version }}" \
-            --generate-notes \
+            --notes-file /tmp/release_notes.md \
             --latest
