@@ -1121,14 +1121,14 @@ h2:first-child {
     text-shadow: 0 0 10px rgba(88, 166, 255, 0.5);
 }
 
-.hub-arrow-pv { left: 37%; top: 31%; transform: translate(-50%, -50%); }
-.hub-arrow-grid { left: 63%; top: 31%; transform: translate(-50%, -50%); }
-.hub-arrow-load { left: 63%; top: 69%; transform: translate(-50%, -50%); }
-.hub-arrow-batt { left: 37%; top: 69%; transform: translate(-50%, -50%); }
+.hub-arrow-pv { left: 37%; top: 35%; transform: translate(-50%, -50%); }
+.hub-arrow-grid { left: 63%; top: 35%; transform: translate(-50%, -50%); }
+.hub-arrow-load { left: 63%; top: 65%; transform: translate(-50%, -50%); }
+.hub-arrow-batt { left: 37%; top: 65%; transform: translate(-50%, -50%); }
 
 .hub-flow-value {
     position: absolute;
-    font-size: 15px;
+    font-size: 22px;
     font-weight: 700;
     color: var(--text-primary);
     font-variant-numeric: tabular-nums;
@@ -1137,28 +1137,30 @@ h2:first-child {
     text-shadow: 0 0 4px rgba(0, 0, 0, 0.35);
 }
 
+/* Upper icons: text aligned to top (just below icon) */
 .hub-flow-value-pv {
     left: 37%;
-    top: calc(31% + 24px);
-    transform: translate(-50%, -50%);
+    top: calc(24% + 30px);
+    transform: translate(-50%, 0);
 }
 
 .hub-flow-value-grid {
     left: 63%;
-    top: calc(31% + 24px);
-    transform: translate(-50%, -50%);
+    top: calc(24% + 30px);
+    transform: translate(-50%, 0);
 }
 
+/* Lower icons: text aligned above icon area */
 .hub-flow-value-load {
     left: 63%;
-    top: calc(69% + 24px);
-    transform: translate(-50%, -50%);
+    top: calc(65% - 6px);
+    transform: translate(-50%, -100%);
 }
 
 .hub-flow-value-batt {
     left: 37%;
-    top: calc(69% + 24px);
-    transform: translate(-50%, -50%);
+    top: calc(65% - 6px);
+    transform: translate(-50%, -100%);
 }
 
 .hub-node {
@@ -1179,10 +1181,10 @@ h2:first-child {
     transform: translate(-50%, -50%);
 }
 
-.hub-pv { left: 22%; top: 17%; transform: translate(-50%, -50%); }
-.hub-grid { left: 78%; top: 17%; transform: translate(-50%, -50%); }
-.hub-load { left: 78%; top: 83%; transform: translate(-50%, -50%); }
-.hub-batt { left: 22%; top: 90%; transform: translate(-50%, -50%); }
+.hub-pv { left: 22%; top: 22%; transform: translate(-50%, -50%); }
+.hub-grid { left: 78%; top: 22%; transform: translate(-50%, -50%); }
+.hub-load { left: 78%; top: 78%; transform: translate(-50%, -50%); }
+.hub-batt { left: 22%; top: 82%; transform: translate(-50%, -50%); }
 
 .hub-icon {
     display: block;
@@ -1192,8 +1194,8 @@ h2:first-child {
 }
 
 .hub-icon-img {
-    width: 44px;
-    height: 44px;
+    width: 53px;
+    height: 53px;
     display: block;
     margin: 0 auto;
     object-fit: contain;
@@ -1201,8 +1203,8 @@ h2:first-child {
 }
 
 .hub-pv .hub-icon-img {
-    width: 53px;
-    height: 53px;
+    width: 64px;
+    height: 64px;
 }
 
 .hub-center .hub-icon {
@@ -1239,6 +1241,15 @@ h2:first-child {
     height: 7px;
     border-radius: 2px;
     background: rgba(255, 255, 255, 0.45);
+}
+
+.hub-batt-pct {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent-green);
+    text-align: center;
+    margin-top: 2px;
+    font-variant-numeric: tabular-nums;
 }
 
 /* SOC row with bar */
@@ -1582,6 +1593,15 @@ h2:first-child {
 
 .energy-cost-left { padding-right: 10px; }
 .energy-cost-right { padding-left: 10px; }
+
+.energy-cost-heading {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    font-weight: 700;
+    margin-bottom: 6px;
+}
 
 .upcoming-prices { margin-top: 8px; }
 

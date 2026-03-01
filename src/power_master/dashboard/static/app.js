@@ -389,11 +389,21 @@ function initRollingChart() {
                     pointRadius: 0,
                 },
                 {
-                    label: 'Price (c/kWh)',
+                    label: 'Buy Price (c/kWh)',
                     data: [],
                     borderColor: 'rgba(255, 255, 255, 0.3)',
                     borderWidth: 1,
                     borderDash: [4, 4],
+                    yAxisID: 'y-price',
+                    tension: 0.1,
+                    pointRadius: 0,
+                },
+                {
+                    label: 'Sell Price (c/kWh)',
+                    data: [],
+                    borderColor: 'rgba(63, 185, 80, 0.35)',
+                    borderWidth: 1,
+                    borderDash: [2, 3],
                     yAxisID: 'y-price',
                     tension: 0.1,
                     pointRadius: 0,
@@ -690,6 +700,7 @@ function loadRollingChartData() {
     var load = new Array(N).fill(null);
     var grid = new Array(N).fill(null);
     var price = new Array(N).fill(null);
+    var sellPrice = new Array(N).fill(null);
     var planSoc = new Array(N).fill(null);
     var planMode = new Array(N).fill(null);
     var planModeName = new Array(N).fill(null);
@@ -730,6 +741,8 @@ function loadRollingChartData() {
             if (idx < 0 || idx >= nowIdx) return;
             var p = Number(row.import_price_cents);
             if (Number.isFinite(p)) price[idx] = p;
+            var sp = Number(row.export_price_cents);
+            if (Number.isFinite(sp)) sellPrice[idx] = sp;
         });
 
         if (planData && Array.isArray(planData.slots)) {
@@ -746,6 +759,8 @@ function loadRollingChartData() {
                     if (lF !== null) load[idx] = lF;
                     var p = Number(slot.import_rate_cents);
                     if (Number.isFinite(p)) price[idx] = p;
+                    var sp = Number(slot.export_rate_cents);
+                    if (Number.isFinite(sp)) sellPrice[idx] = sp;
                     if (slot.expected_soc !== null && slot.expected_soc !== undefined) {
                         planSoc[idx] = Math.round(Number(slot.expected_soc) * 100);
                     }
@@ -785,14 +800,15 @@ function loadRollingChartData() {
         rollingChart.data.datasets[2].data = load;
         rollingChart.data.datasets[3].data = grid;
         rollingChart.data.datasets[4].data = price;
-        rollingChart.data.datasets[5].data = planSoc;
-        rollingChart.data.datasets[6].data = planModeY2;
-        rollingChart.data.datasets[7].data = planModeY3;
-        rollingChart.data.datasets[8].data = planModeY4;
-        rollingChart.data.datasets[9].data = planModeY5;
+        rollingChart.data.datasets[5].data = sellPrice;
+        rollingChart.data.datasets[6].data = planSoc;
+        rollingChart.data.datasets[7].data = planModeY2;
+        rollingChart.data.datasets[8].data = planModeY3;
+        rollingChart.data.datasets[9].data = planModeY4;
+        rollingChart.data.datasets[10].data = planModeY5;
         // Hidden aggregate used only for debug/compat if needed.
-        rollingChart.data.datasets[10].data = planModeY;
-        for (var d = 6; d <= 9; d++) {
+        rollingChart.data.datasets[11].data = planModeY;
+        for (var d = 7; d <= 10; d++) {
             rollingChart.data.datasets[d].scheduledLoadsData = planScheduledLoads;
             rollingChart.data.datasets[d].modeData = planMode;
         }
@@ -1135,6 +1151,10 @@ function updateTelemetryDisplay(data) {
         setValueTone(flowLoad, 'value-load');
     }
 
+    var flowBattPct = document.getElementById('flow-batt-pct');
+    if (flowBattPct && data.soc !== undefined) {
+        flowBattPct.textContent = Math.round(Number(data.soc) * 100) + '%';
+    }
     var flowBattSocFill = document.getElementById('flow-batt-soc-fill');
     if (flowBattSocFill && data.soc !== undefined) {
         var socMini = Math.max(0, Math.min(100, Number(data.soc) * 100));

@@ -291,6 +291,25 @@
         <small class="form-hint">Fraction of excess above threshold to keep. Applied progressively by horizon: near-term less damped, far-term more damped.</small>
     </div>
 
+    <h2>Price Colour Thresholds</h2>
+    <small class="form-hint" style="margin-bottom:8px;display:block;">Set fixed thresholds for price colour coding. Leave at 0 to use automatic bands based on today's price range.</small>
+    <div class="form-group">
+        <label for="arbitrage.price_color_buy_low_cents">Buy Low (green below, c/kWh)</label>
+        <input type="number" id="arbitrage.price_color_buy_low_cents" name="arbitrage.price_color_buy_low_cents" step="0.1" value="{{ config.arbitrage.price_color_buy_low_cents }}">
+    </div>
+    <div class="form-group">
+        <label for="arbitrage.price_color_buy_high_cents">Buy High (red above, c/kWh)</label>
+        <input type="number" id="arbitrage.price_color_buy_high_cents" name="arbitrage.price_color_buy_high_cents" step="0.1" value="{{ config.arbitrage.price_color_buy_high_cents }}">
+    </div>
+    <div class="form-group">
+        <label for="arbitrage.price_color_sell_low_cents">Sell Low (red below, c/kWh)</label>
+        <input type="number" id="arbitrage.price_color_sell_low_cents" name="arbitrage.price_color_sell_low_cents" step="0.1" value="{{ config.arbitrage.price_color_sell_low_cents }}">
+    </div>
+    <div class="form-group">
+        <label for="arbitrage.price_color_sell_high_cents">Sell High (green above, c/kWh)</label>
+        <input type="number" id="arbitrage.price_color_sell_high_cents" name="arbitrage.price_color_sell_high_cents" step="0.1" value="{{ config.arbitrage.price_color_sell_high_cents }}">
+    </div>
+
     <h2>Fixed Costs</h2>
     <div class="form-group">
         <label for="fixed_costs.monthly_supply_charge_cents">Monthly Supply Charge (cents)</label>

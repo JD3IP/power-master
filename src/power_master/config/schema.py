@@ -81,6 +81,11 @@ class ArbitrageConfig(BaseModel):
     spike_response_mode: str = "aggressive"
     price_dampen_threshold_cents: int = 100
     price_dampen_factor: float = Field(0.5, ge=0.0, le=1.0)
+    # Price colour thresholds (c/kWh).  0 = use automatic tercile bands.
+    price_color_buy_low_cents: float = 0
+    price_color_buy_high_cents: float = 0
+    price_color_sell_low_cents: float = 0
+    price_color_sell_high_cents: float = 0
 
 
 class FixedCostsConfig(BaseModel):

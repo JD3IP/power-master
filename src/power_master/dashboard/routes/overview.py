@@ -324,8 +324,17 @@ async def overview(request: Request) -> HTMLResponse:
                 except Exception:
                     continue
 
-    buy_price_bands = _tercile_bands(today_import_forecast)
-    sell_price_bands = _tercile_bands(today_export_forecast)
+    # Use config thresholds if both low/high are set (non-zero),
+    # otherwise fall back to automatic tercile bands from today's prices.
+    arb = config.arbitrage
+    if arb.price_color_buy_low_cents > 0 and arb.price_color_buy_high_cents > 0:
+        buy_price_bands = {"low": arb.price_color_buy_low_cents, "high": arb.price_color_buy_high_cents}
+    else:
+        buy_price_bands = _tercile_bands(today_import_forecast)
+    if arb.price_color_sell_low_cents > 0 and arb.price_color_sell_high_cents > 0:
+        sell_price_bands = {"low": arb.price_color_sell_low_cents, "high": arb.price_color_sell_high_cents}
+    else:
+        sell_price_bands = _tercile_bands(today_export_forecast)
 
     # Device list from config
     devices = []
