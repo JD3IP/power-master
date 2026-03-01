@@ -300,35 +300,35 @@ class UpdateManager:
 
         A container cannot restart itself directly — ``docker stop`` kills all
         processes inside it.  Instead we spin up a short-lived helper from the
-        NEW image.  The helper: stops the old container → renames it → creates
-        a new container with the same configuration → starts it.  If creation
-        fails the helper restores the old container automatically.
+        NEW image.  The helper: inspects the old container directly via Docker
+        API → stops it → renames it → creates a new container with the same
+        configuration → starts it.  If creation fails the helper restores the
+        old container automatically.
+
+        The helper reads config from Docker API (not from env vars passed by
+        this code) so it is immune to chicken-and-egg issues where an older
+        version of this method doesn't capture a config field.
         """
         try:
             client = docker_sdk.from_env()
-            current = client.containers.get(CONTAINER_NAME)
-            attrs = current.attrs
 
+            # Minimal env: just the container name and target image.
+            # The helper reads everything else from the Docker API directly.
             restart_config = json.dumps({
-                "name": current.name,
+                "name": CONTAINER_NAME,
                 "image": f"{GHCR_IMAGE}:latest",
-                "binds": attrs["HostConfig"].get("Binds") or [],
-                "network_mode": attrs["HostConfig"].get("NetworkMode", "bridge"),
-                "restart_policy": attrs["HostConfig"].get("RestartPolicy") or {},
-                "port_bindings": attrs["HostConfig"].get("PortBindings") or {},
-                "environment": attrs["Config"].get("Env") or [],
-                "labels": attrs["Config"].get("Labels") or {},
             })
 
-            # Python script executed inside the helper container.  It reads the
-            # full container config from the RESTART_CONFIG env-var so there are
-            # no shell-escaping issues.
+            # Python script executed inside the helper container.
+            # It inspects the OLD container via Docker API to read ALL config
+            # (volumes, ports, network, env, etc.) so we never lose settings.
             helper_script = '''
 import docker, json, os, sys, time
 time.sleep(3)
 config = json.loads(os.environ["RESTART_CONFIG"])
 client = docker.from_env()
 name = config["name"]
+new_image = config["image"]
 
 def parse_binds(binds):
     vols = {}
@@ -342,6 +342,8 @@ def parse_binds(binds):
 
 def parse_port_bindings(raw):
     ports = {}
+    if not raw:
+        return ports
     for container_port, bindings in raw.items():
         if bindings:
             b = bindings[0]
@@ -350,29 +352,55 @@ def parse_port_bindings(raw):
             ports[container_port] = (hip, int(hp)) if hip and hip != "0.0.0.0" else int(hp)
     return ports
 
+# Read the full config from the running container via Docker API.
+# This is immune to chicken-and-egg issues because WE (the helper)
+# run from the NEW image and read config directly from Docker.
 try:
     old = client.containers.get(name)
+    attrs = old.attrs
+    host_config = attrs.get("HostConfig", {})
+    container_config = attrs.get("Config", {})
+
+    binds = host_config.get("Binds") or []
+    network_mode = host_config.get("NetworkMode", "bridge")
+    restart_policy = host_config.get("RestartPolicy") or {}
+    port_bindings = host_config.get("PortBindings") or {}
+    environment = container_config.get("Env") or []
+    labels = container_config.get("Labels") or {}
+
+    print(f"Old container config:")
+    print(f"  NetworkMode: {network_mode}")
+    print(f"  PortBindings: {json.dumps(port_bindings)}")
+    print(f"  Binds: {binds}")
+    print(f"  RestartPolicy: {restart_policy}")
+
     old.stop(timeout=30)
     old.rename(name + "-old")
+    print(f"Old container stopped and renamed to {name}-old")
 except Exception as e:
-    print(f"Warning stopping old container: {e}")
+    print(f"ERROR reading/stopping old container: {e}", file=sys.stderr)
+    sys.exit(1)
 
 try:
     run_kwargs = dict(
         name=name, detach=True,
-        environment=config["environment"],
-        volumes=parse_binds(config["binds"]),
-        network_mode=config["network_mode"],
-        restart_policy=config["restart_policy"],
-        labels=config["labels"],
+        environment=environment,
+        volumes=parse_binds(binds),
+        network_mode=network_mode,
+        restart_policy=restart_policy,
+        labels=labels,
     )
-    pb = parse_port_bindings(config.get("port_bindings", {}))
+    pb = parse_port_bindings(port_bindings)
     if pb:
         run_kwargs["ports"] = pb
-    client.containers.run(config["image"], **run_kwargs)
+        print(f"  Applying port bindings: {pb}")
+
+    print(f"Creating new container from {new_image}...")
+    client.containers.run(new_image, **run_kwargs)
     print(f"Container {name} recreated successfully")
     try:
         client.containers.get(name + "-old").remove(force=True)
+        print(f"Old container removed")
     except Exception:
         pass
 except Exception as e:
