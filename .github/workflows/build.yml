@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # full history for release notes git log
 
       - name: Compute version
         id: version
@@ -72,14 +74,20 @@ jobs:
         if: github.ref == 'refs/heads/main'
         id: notes
         run: |
-          # Find the previous release tag (if any)
-          PREV_TAG=$(gh release list --limit 1 --exclude-drafts --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
-          if [ -n "$PREV_TAG" ]; then
+          # Fetch tags created by previous CI runs (lightweight tags on GitHub)
+          git fetch --tags --force
+
+          # Find the previous release tag, skipping the one we're about to create
+          CURRENT="v${{ steps.version.outputs.version }}"
+          PREV_TAG=$(gh release list --limit 10 --exclude-drafts --json tagName \
+            -q "[.[] | select(.tagName != \"${CURRENT}\")][0].tagName" 2>/dev/null || echo "")
+
+          if [ -n "$PREV_TAG" ] && git rev-parse "$PREV_TAG" >/dev/null 2>&1; then
             COMMITS=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s (%h)" --no-merges)
           else
             COMMITS=$(git log --pretty=format:"- %s (%h)" --no-merges -20)
           fi
-          # Write to file to preserve newlines
+
           {
             echo "## What's New"
             echo ""
