@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 # Common deployment fallback when IANA tzdata is unavailable (Windows hosts).
 _FIXED_FALLBACKS: dict[str, tzinfo] = {
+    "UTC": timezone.utc,
     "Australia/Brisbane": timezone(timedelta(hours=10)),
 }
 
