@@ -340,6 +340,129 @@ class LoadManager:
             )
         return commands
 
+    async def execute_current_slot(self, plan, repo=None) -> list[LoadCommand]:
+        """Execute load commands based on the current plan slot.
+
+        Reads the current slot's scheduled_loads list and turns on/off
+        loads accordingly. Manual overrides take precedence.
+        """
+        if plan is None:
+            return []
+
+        slot = plan.get_current_slot()
+        if slot is None:
+            return []
+
+        scheduled_names: set[str] = set(slot.scheduled_loads or [])
+        commands: list[LoadCommand] = []
+        overridden_ids = self.get_active_override_load_ids()
+
+        for load_id, controller in self._controllers.items():
+            # Manual override takes precedence
+            if load_id in overridden_ids:
+                override = self.get_load_override(load_id)
+                if override is not None:
+                    desired = LoadState.ON if override.state == "on" else LoadState.OFF
+                    status = await controller.get_status()
+                    if status.state != desired:
+                        success = await self._verified_command(
+                            controller, override.state, "manual_override", repo=repo,
+                        )
+                        cmd = LoadCommand(
+                            load_id=load_id, action=override.state,
+                            reason="manual_override", success=success,
+                        )
+                        commands.append(cmd)
+                        self._command_history.append(cmd)
+                continue
+
+            # Determine desired state from schedule
+            should_be_on = controller.name in scheduled_names
+            status = await controller.get_status()
+
+            if should_be_on and status.state != LoadState.ON:
+                success = await self._verified_command(
+                    controller, "on", "scheduled", repo=repo,
+                )
+                cmd = LoadCommand(load_id=load_id, action="on", reason="scheduled", success=success)
+                commands.append(cmd)
+                self._command_history.append(cmd)
+            elif not should_be_on and status.state == LoadState.ON:
+                # Load is ON but not scheduled — turn it off
+                if load_id not in self._shed_loads:
+                    success = await self._verified_command(
+                        controller, "off", "schedule_ended", repo=repo,
+                    )
+                    cmd = LoadCommand(
+                        load_id=load_id, action="off", reason="schedule_ended", success=success,
+                    )
+                    commands.append(cmd)
+                    self._command_history.append(cmd)
+
+        return commands
+
+    async def _verified_command(
+        self, controller, action: str, reason: str,
+        retries: int = 1, verify_delay: float = 1.5, repo=None,
+    ) -> bool:
+        """Send a command and verify the state change, retrying on failure."""
+        desired = LoadState.ON if action == "on" else LoadState.OFF
+
+        for attempt in range(1 + retries):
+            if action == "on":
+                cmd_success = await controller.turn_on()
+            else:
+                cmd_success = await controller.turn_off()
+
+            if not cmd_success:
+                logger.warning(
+                    "Command '%s' failed for '%s' (attempt %d/%d)",
+                    action, controller.name, attempt + 1, 1 + retries,
+                )
+                continue
+
+            # Wait and verify
+            await asyncio.sleep(verify_delay)
+            status = await controller.get_status()
+
+            if status.state == desired:
+                if attempt > 0:
+                    logger.info(
+                        "Verified '%s' for '%s' after retry (attempt %d)",
+                        action, controller.name, attempt + 1,
+                    )
+                return True
+
+            logger.warning(
+                "Verification failed for '%s' on '%s': expected %s, got %s (attempt %d/%d)",
+                action, controller.name, desired.value, status.state.value,
+                attempt + 1, 1 + retries,
+            )
+
+        logger.error(
+            "Load command FAILED after %d attempts: '%s' for '%s' (reason: %s)",
+            1 + retries, action, controller.name, reason,
+        )
+        # Persist failure as system event
+        if repo is not None:
+            try:
+                await repo.log_system_event(
+                    event_type="load_command_failed",
+                    source_module="loads.manager",
+                    details={
+                        "load_id": controller.load_id,
+                        "name": controller.name,
+                        "action": action,
+                        "reason": reason,
+                        "attempts": 1 + retries,
+                    },
+                    operating_mode="normal",
+                    severity="warning",
+                )
+            except Exception:
+                pass
+        return False
+
     async def turn_all_off(self, reason: str = "safety") -> list[LoadCommand]:
         """Emergency: turn off all controllable loads."""
         commands: list[LoadCommand] = []
@@ -353,10 +476,11 @@ class LoadManager:
         logger.warning("All loads turned OFF (reason: %s)", reason)
         return commands
 
-    def update_runtime_tracking(self, statuses: list[LoadStatus]) -> None:
+    async def update_runtime_tracking(self, statuses: list[LoadStatus], repo=None) -> None:
         """Detect state transitions and accumulate ON-time for each load.
 
         Call this periodically (e.g. every telemetry poll) with fresh statuses.
+        When repo is provided, persists runtime to historical_data on OFF transitions.
         """
         now = datetime.now(timezone.utc)
 
@@ -390,6 +514,18 @@ class LoadManager:
                         status.name, elapsed, self._daily_runtime_s[lid],
                     )
                     self._on_since.pop(lid, None)
+
+                    # Persist runtime to historical_data for dashboard charts
+                    if repo is not None:
+                        try:
+                            await repo.store_historical(
+                                data_type=f"load_runtime_minutes_{lid}",
+                                value=self._daily_runtime_s[lid] / 60.0,
+                                source="runtime_tracker",
+                                resolution="1day",
+                            )
+                        except Exception:
+                            logger.debug("Failed to persist runtime for '%s'", lid, exc_info=True)
 
             self._last_known_state[lid] = cur_state
 

@@ -667,7 +667,7 @@ async def load_detail(request: Request, name: str) -> dict:
                 prev_scheduled = False
                 continue
 
-            if is_scheduled != prev_scheduled or start_dt >= now_utc:
+            if is_scheduled != prev_scheduled:
                 if start_dt >= now_utc:
                     local_dt = start_dt.astimezone(local_tz)
                     planned_events.append({
@@ -777,6 +777,7 @@ async def clear_load_override(request: Request, name: str) -> dict:
     return {"status": "ok", "load_id": load_id, "name": name}
 
 
+def _foxess_config_info(config):
     """Return connection config for diagnostics, adapting to TCP vs RTU."""
     foxess = config.hardware.foxess
     info: dict = {"connection_type": foxess.connection_type, "unit_id": foxess.unit_id}

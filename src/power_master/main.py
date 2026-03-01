@@ -946,11 +946,23 @@ class Application:
                     except Exception:
                         logger.debug("Poll loop DB store failed", exc_info=True)
 
-                # Poll load device statuses for runtime tracking
+                # Poll load device statuses for runtime tracking + schedule execution
                 if load_manager and (now_mono - last_load_poll) >= load_poll_interval:
                     try:
                         statuses = await load_manager.get_all_statuses()
-                        load_manager.update_runtime_tracking(statuses)
+                        await load_manager.update_runtime_tracking(statuses, repo=repo)
+
+                        # Execute scheduled load commands based on current plan slot
+                        plan = control_loop.state.current_plan
+                        if plan is not None:
+                            load_cmds = await load_manager.execute_current_slot(plan, repo=repo)
+                            if load_cmds:
+                                logger.info(
+                                    "Load schedule: %d commands (%s)",
+                                    len(load_cmds),
+                                    ", ".join(f"{c.load_id}={c.action}" for c in load_cmds),
+                                )
+
                         last_load_poll = now_mono
                     except Exception:
                         logger.debug("Load status poll failed", exc_info=True)
