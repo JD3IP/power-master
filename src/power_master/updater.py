@@ -442,31 +442,88 @@ except Exception as e:
             })
 
     async def _fetch_changelog(self, target_version: str) -> str:
-        """Fetch release notes from GitHub Releases API.
+        """Fetch changelog for the update.
 
-        Tries the exact version tag first, then falls back to the latest release.
-        Returns the release body (markdown) or empty string on failure.
+        Tries GitHub Releases first (exact tag, then latest). If no release
+        exists, falls back to commit messages between the current SHA and
+        the latest SHA so the user always sees what changed.
         """
         headers = {"Accept": "application/vnd.github+json"}
         try:
             async with httpx.AsyncClient(timeout=15) as client:
-                # Try exact version tag
+                # Try GitHub Release notes first
                 resp = await client.get(
                     f"{GITHUB_RELEASES_API}/tags/v{target_version}",
                     headers=headers,
                 )
                 if resp.status_code == 404:
-                    # Fall back to latest release
                     resp = await client.get(
                         f"{GITHUB_RELEASES_API}/latest",
                         headers=headers,
                     )
-                if resp.status_code != 200:
-                    logger.debug("GitHub release fetch failed: %d", resp.status_code)
-                    return ""
-                return resp.json().get("body", "") or ""
+                if resp.status_code == 200:
+                    body = resp.json().get("body", "") or ""
+                    if body.strip():
+                        return body
+
+                # No release found — fall back to commit messages
+                current_sha = self._state.current.sha
+                if current_sha and current_sha != "unknown":
+                    return await self._fetch_commit_changelog(client, current_sha)
+
+                return ""
         except Exception as e:
             logger.debug("Failed to fetch changelog: %s", e)
+            return ""
+
+    async def _fetch_commit_changelog(self, client: httpx.AsyncClient, since_sha: str) -> str:
+        """Fetch commit messages between since_sha and HEAD.
+
+        Uses GitHub Compare API to get all commits, then formats
+        the commit messages as a readable changelog.
+        """
+        headers = {"Accept": "application/vnd.github+json"}
+        compare_url = (
+            f"https://api.github.com/repos/JD3IP/power-master"
+            f"/compare/{since_sha}...main"
+        )
+        try:
+            resp = await client.get(compare_url, headers=headers)
+            if resp.status_code != 200:
+                # Fall back to recent commits
+                resp = await client.get(
+                    "https://api.github.com/repos/JD3IP/power-master/commits",
+                    params={"sha": "main", "per_page": 10},
+                    headers=headers,
+                )
+                if resp.status_code != 200:
+                    return ""
+                commits = resp.json()
+            else:
+                commits = resp.json().get("commits", [])
+
+            if not commits:
+                return ""
+
+            lines = []
+            for commit in commits:
+                msg = commit.get("commit", {}).get("message", "")
+                if not msg:
+                    continue
+                # Use the first line as the summary; skip Co-Authored-By lines
+                summary = msg.split("\n")[0].strip()
+                if summary.startswith("Co-Authored-By"):
+                    continue
+                sha_short = commit.get("sha", "")[:7]
+                lines.append(f"- {summary} ({sha_short})")
+
+            if not lines:
+                return ""
+
+            return "## Changes\n\n" + "\n".join(lines)
+
+        except Exception as e:
+            logger.debug("Failed to fetch commit changelog: %s", e)
             return ""
 
     async def _fetch_remote_labels(self) -> dict | None:
