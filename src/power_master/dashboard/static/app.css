@@ -1165,10 +1165,10 @@ h2:first-child {
     text-shadow: 0 0 10px rgba(88, 166, 255, 0.5);
 }
 
-.hub-arrow-pv { left: 37%; top: 35%; transform: translate(-50%, -50%); }
-.hub-arrow-grid { left: 63%; top: 35%; transform: translate(-50%, -50%); }
-.hub-arrow-load { left: 63%; top: 65%; transform: translate(-50%, -50%); }
-.hub-arrow-batt { left: 37%; top: 65%; transform: translate(-50%, -50%); }
+.hub-arrow-pv { left: 35%; top: 35%; transform: translate(-50%, -50%); }
+.hub-arrow-grid { left: 65%; top: 35%; transform: translate(-50%, -50%); }
+.hub-arrow-load { left: 65%; top: 65%; transform: translate(-50%, -50%); }
+.hub-arrow-batt { left: 35%; top: 65%; transform: translate(-50%, -50%); }
 
 .hub-flow-value {
     position: absolute;
@@ -1181,27 +1181,27 @@ h2:first-child {
     text-shadow: 0 0 4px rgba(0, 0, 0, 0.35);
 }
 
-/* Value labels: beside nodes, aligned with arrow positions toward center */
+/* Value labels: between nodes and hub, at arrow horizontal positions */
 .hub-flow-value-pv {
-    left: 37%;
+    left: 35%;
     top: 22%;
     transform: translate(-50%, -50%);
 }
 
 .hub-flow-value-grid {
-    left: 63%;
+    left: 65%;
     top: 22%;
     transform: translate(-50%, -50%);
 }
 
 .hub-flow-value-load {
-    left: 63%;
+    left: 65%;
     top: 78%;
     transform: translate(-50%, -50%);
 }
 
 .hub-flow-value-batt {
-    left: 37%;
+    left: 35%;
     top: 80%;
     transform: translate(-50%, -50%);
 }
@@ -1224,10 +1224,10 @@ h2:first-child {
     transform: translate(-50%, -50%);
 }
 
-.hub-pv { left: 22%; top: 22%; transform: translate(-50%, -50%); }
-.hub-grid { left: 78%; top: 22%; transform: translate(-50%, -50%); }
-.hub-load { left: 78%; top: 78%; transform: translate(-50%, -50%); }
-.hub-batt { left: 22%; top: 82%; transform: translate(-50%, -50%); }
+.hub-pv { left: 12%; top: 22%; transform: translate(-50%, -50%); }
+.hub-grid { left: 88%; top: 22%; transform: translate(-50%, -50%); }
+.hub-load { left: 88%; top: 78%; transform: translate(-50%, -50%); }
+.hub-batt { left: 12%; top: 82%; transform: translate(-50%, -50%); }
 
 .hub-icon {
     display: block;
@@ -1587,6 +1587,12 @@ h2:first-child {
 @media (max-width: 480px) {
     .hub-flow-3d {
         height: clamp(180px, 56vw, 240px) !important;
+    }
+    .hub-flow-value {
+        font-size: 16px;
+    }
+    .hub-arrow {
+        font-size: 26px;
     }
     .upcoming-prices-table {
         min-width: 300px;
