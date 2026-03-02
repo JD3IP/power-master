@@ -23,7 +23,7 @@ def config():
 @pytest.fixture
 def config_manager(tmp_path: Path):
     defaults = tmp_path / "config.defaults.yaml"
-    defaults.write_text("db:\n  path: ':memory:'\n")
+    defaults.write_text("setup_completed: true\ndb:\n  path: ':memory:'\n")
     user = tmp_path / "config.yaml"
     mgr = ConfigManager(defaults_path=defaults, user_path=user)
     mgr.load()

@@ -161,7 +161,7 @@ def _find_eligible_slots(plan: OptimisationPlan, load_config: dict) -> list[int]
             # Overnight window (e.g. 22:00-06:00).
             in_window = slot_time >= start_time or slot_time < end_time
 
-        if in_window:
+        if in_window and not slot.ignored:
             eligible.append(i)
 
     return eligible

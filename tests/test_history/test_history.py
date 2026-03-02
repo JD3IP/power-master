@@ -262,8 +262,10 @@ class TestLoadPredictor:
     async def test_predict_with_profile_local_timezone_mapping(self, repo) -> None:
         # Store values keyed to local noon in Brisbane (02:00 UTC)
         # and verify prediction converts query time to local hour.
+        # Use offsets 1-7 (not 0-6) so records are always in the past even
+        # when the test runs between 00:00-02:00 UTC.
         now = _now()
-        for day_offset in range(7):
+        for day_offset in range(1, 8):
             base = (now - timedelta(days=day_offset)).replace(
                 hour=2, minute=0, second=0, microsecond=0
             )

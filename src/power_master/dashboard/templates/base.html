@@ -9,10 +9,10 @@
     <link rel="stylesheet" href="/static/app.css?v=50">
 </head>
 <body class="app">
-    <!-- Mobile Header -->
-    <header class="mobile-header">
+    <!-- Mobile Header (entire bar is clickable to toggle menu) -->
+    <header class="mobile-header" onclick="toggleSidebar()" role="button" tabindex="0" aria-label="Toggle navigation menu" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleSidebar();}">
         <div class="logo">&#9889; Power Master</div>
-        <button class="menu-toggle" onclick="toggleSidebar()">&#9776;</button>
+        <span class="menu-toggle" aria-hidden="true">&#9776;</span>
     </header>
 
     <div class="app-layout">

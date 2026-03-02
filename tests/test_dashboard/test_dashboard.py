@@ -17,7 +17,7 @@ from power_master.dashboard.app import create_app
 def settings_config_manager(tmp_path: Path) -> ConfigManager:
     """Config manager that writes to a real tmp directory for settings tests."""
     defaults = tmp_path / "config.defaults.yaml"
-    defaults.write_text("db:\n  path: ':memory:'\n")
+    defaults.write_text("setup_completed: true\ndb:\n  path: ':memory:'\n")
     user = tmp_path / "config.yaml"
     mgr = ConfigManager(defaults_path=defaults, user_path=user)
     mgr.load()
@@ -237,7 +237,7 @@ class TestSettingsPost:
     @pytest.mark.asyncio
     async def test_settings_no_config_manager(self, repo) -> None:
         """POST without config_manager returns error redirect."""
-        config = AppConfig()
+        config = AppConfig(setup_completed=True)
         app = create_app(config, repo, config_manager=None)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:

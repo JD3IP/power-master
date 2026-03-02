@@ -278,6 +278,7 @@ class DBConfig(BaseModel):
 class AppConfig(BaseModel):
     """Root configuration model containing all system settings."""
 
+    setup_completed: bool = False  # Set True after initial setup wizard completes
     battery: BatteryConfig = BatteryConfig()
     load_profile: LoadProfileConfig = LoadProfileConfig()
     planning: PlanningConfig = PlanningConfig()

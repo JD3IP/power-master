@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+{% set active_page = "setup" %}
+
+{% block title %}Initial Setup - Power Master{% endblock %}
+
+{% block content %}
+<h1>Initial Setup</h1>
+<p class="hint" style="margin-bottom:16px;">Configure the essential parameters to get Power Master running. You can skip any step and configure it later in Settings.</p>
+
+<div id="setup-wizard">
+    <div class="setup-progress">
+        <span class="setup-step active" data-step="1">1. Account</span>
+        <span class="setup-step" data-step="2">2. Inverter</span>
+        <span class="setup-step" data-step="3">3. Location</span>
+        <span class="setup-step" data-step="4">4. Providers</span>
+        <span class="setup-step" data-step="5">5. Battery</span>
+    </div>
+
+    <!-- Step 1: Account -->
+    <div class="setup-panel" id="setup-step-1">
+        <h2>Create Admin Account</h2>
+        <p class="hint">Set up credentials to secure your dashboard. Skip to leave authentication disabled.</p>
+        <div class="form-group">
+            <label for="setup-username">Username</label>
+            <input type="text" id="setup-username" placeholder="admin" value="{{ config.dashboard.auth.users[0].username if config.dashboard.auth.users else '' }}">
+        </div>
+        <div class="form-group">
+            <label for="setup-password">Password</label>
+            <input type="password" id="setup-password" placeholder="Choose a strong password">
+        </div>
+        <div class="setup-nav">
+            <span></span>
+            <div>
+                <button type="button" class="btn" onclick="setupSkip()">Skip</button>
+                <button type="button" class="btn btn-primary" onclick="setupNext()">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 2: Inverter Connection -->
+    <div class="setup-panel" id="setup-step-2" style="display:none;">
+        <h2>Inverter Connection</h2>
+        <p class="hint">Configure how Power Master connects to your FoxESS inverter.</p>
+        <div class="form-group">
+            <label for="setup-conn-type">Connection Type</label>
+            <select id="setup-conn-type" onchange="toggleConnFields()">
+                <option value="tcp" {% if config.hardware.foxess.connection_type == 'tcp' %}selected{% endif %}>TCP (Ethernet/WiFi)</option>
+                <option value="rtu" {% if config.hardware.foxess.connection_type == 'rtu' %}selected{% endif %}>RTU (Serial/USB)</option>
+            </select>
+        </div>
+        <div id="setup-tcp-fields">
+            <div class="form-group">
+                <label for="setup-inv-host">Inverter IP Address</label>
+                <input type="text" id="setup-inv-host" value="{{ config.hardware.foxess.host }}" placeholder="192.168.1.100">
+            </div>
+            <div class="form-group">
+                <label for="setup-inv-port">Modbus Port</label>
+                <input type="number" id="setup-inv-port" value="{{ config.hardware.foxess.port }}" placeholder="502">
+            </div>
+        </div>
+        <div id="setup-rtu-fields" style="display:none;">
+            <div class="form-group">
+                <label for="setup-serial-port">Serial Port</label>
+                <input type="text" id="setup-serial-port" value="{{ config.hardware.foxess.serial_port }}" placeholder="/dev/ttyUSB0">
+            </div>
+            <div class="form-group">
+                <label for="setup-baudrate">Baud Rate</label>
+                <input type="number" id="setup-baudrate" value="{{ config.hardware.foxess.baudrate }}" placeholder="9600">
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="setup-unit-id">Modbus Unit ID</label>
+            <input type="number" id="setup-unit-id" value="{{ config.hardware.foxess.unit_id }}" placeholder="247">
+        </div>
+        <div class="setup-nav">
+            <button type="button" class="btn" onclick="setupPrev()">Back</button>
+            <div>
+                <button type="button" class="btn" onclick="setupSkip()">Skip</button>
+                <button type="button" class="btn btn-primary" onclick="setupNext()">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 3: Location -->
+    <div class="setup-panel" id="setup-step-3" style="display:none;">
+        <h2>Location</h2>
+        <p class="hint">Search your address to set coordinates for solar and weather forecasts.</p>
+        <div class="form-group" style="display:flex; gap:6px; align-items:flex-end;">
+            <div style="flex:1;">
+                <label for="setup-address">Street Address</label>
+                <input type="text" id="setup-address" placeholder="e.g. 123 Main St, Brisbane QLD">
+            </div>
+            <button type="button" class="btn btn-primary" onclick="setupGeocode()" style="white-space:nowrap;">Search</button>
+        </div>
+        <div id="setup-geocode-results" style="margin-bottom:10px;"></div>
+        <div style="display:flex; gap:12px;">
+            <div class="form-group" style="flex:1;">
+                <label for="setup-lat">Latitude</label>
+                <input type="number" id="setup-lat" step="0.000001" value="{{ config.providers.solar.latitude }}">
+            </div>
+            <div class="form-group" style="flex:1;">
+                <label for="setup-lon">Longitude</label>
+                <input type="number" id="setup-lon" step="0.000001" value="{{ config.providers.solar.longitude }}">
+            </div>
+        </div>
+        <div class="setup-nav">
+            <button type="button" class="btn" onclick="setupPrev()">Back</button>
+            <div>
+                <button type="button" class="btn" onclick="setupSkip()">Skip</button>
+                <button type="button" class="btn btn-primary" onclick="setupNext()">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 4: Provider API Keys -->
+    <div class="setup-panel" id="setup-step-4" style="display:none;">
+        <h2>Provider API Keys</h2>
+        <p class="hint">Enter API keys for your energy tariff provider. Other providers use free APIs.</p>
+        <h3>Amber Electric</h3>
+        <div class="form-group">
+            <label for="setup-amber-key">Amber API Key</label>
+            <input type="password" id="setup-amber-key" value="{{ config.providers.tariff.api_key }}" placeholder="Enter your Amber API key">
+        </div>
+        <div class="form-group">
+            <label for="setup-amber-site">Amber Site ID</label>
+            <input type="text" id="setup-amber-site" value="{{ config.providers.tariff.site_id }}" placeholder="Site ID from Amber">
+        </div>
+        <div class="setup-nav">
+            <button type="button" class="btn" onclick="setupPrev()">Back</button>
+            <div>
+                <button type="button" class="btn" onclick="setupSkip()">Skip</button>
+                <button type="button" class="btn btn-primary" onclick="setupNext()">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 5: Battery -->
+    <div class="setup-panel" id="setup-step-5" style="display:none;">
+        <h2>Battery Configuration</h2>
+        <p class="hint">Set your battery capacity and charge/discharge limits.</p>
+        <div class="form-group">
+            <label for="setup-capacity">Battery Capacity (Wh)</label>
+            <input type="number" id="setup-capacity" value="{{ config.battery.capacity_wh }}" min="0">
+        </div>
+        <div class="form-group">
+            <label for="setup-charge-rate">Max Charge Rate (W)</label>
+            <input type="number" id="setup-charge-rate" value="{{ config.battery.max_charge_rate_w }}" min="0">
+        </div>
+        <div class="form-group">
+            <label for="setup-discharge-rate">Max Discharge Rate (W)</label>
+            <input type="number" id="setup-discharge-rate" value="{{ config.battery.max_discharge_rate_w }}" min="0">
+        </div>
+        <div class="form-group">
+            <label for="setup-pv-size">PV System Size (kWp)</label>
+            <input type="number" id="setup-pv-size" step="0.1" min="0.1" value="{{ config.providers.solar.kwp }}">
+        </div>
+        <div class="setup-nav">
+            <button type="button" class="btn" onclick="setupPrev()">Back</button>
+            <div>
+                <button type="button" class="btn btn-primary" onclick="setupFinish()">Finish Setup</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="setup-status" style="margin-top:10px; font-size:13px;"></div>
+</div>
+
+<script>
+var currentStep = 1;
+var totalSteps = 5;
+
+function showStep(n) {
+    for (var i = 1; i <= totalSteps; i++) {
+        var panel = document.getElementById('setup-step-' + i);
+        var dot = document.querySelector('.setup-step[data-step="' + i + '"]');
+        if (panel) panel.style.display = (i === n) ? 'block' : 'none';
+        if (dot) {
+            dot.classList.toggle('active', i === n);
+            dot.classList.toggle('done', i < n);
+        }
+    }
+    currentStep = n;
+}
+
+function setupNext() { if (currentStep < totalSteps) showStep(currentStep + 1); }
+function setupPrev() { if (currentStep > 1) showStep(currentStep - 1); }
+function setupSkip() { setupNext(); }
+
+function toggleConnFields() {
+    var type = document.getElementById('setup-conn-type').value;
+    document.getElementById('setup-tcp-fields').style.display = type === 'tcp' ? 'block' : 'none';
+    document.getElementById('setup-rtu-fields').style.display = type === 'rtu' ? 'block' : 'none';
+}
+
+function setupGeocode() {
+    var q = document.getElementById('setup-address').value.trim();
+    var results = document.getElementById('setup-geocode-results');
+    if (!q || q.length < 3) { if (results) results.innerHTML = '<small style="color:var(--text-muted)">Enter at least 3 characters.</small>'; return; }
+    if (results) results.innerHTML = '<small style="color:var(--text-muted)">Searching...</small>';
+    fetch('/api/geocode?q=' + encodeURIComponent(q))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (!data.length) { results.innerHTML = '<small style="color:var(--accent-yellow)">No results found.</small>'; return; }
+        var html = '<div class="geocode-list">';
+        data.forEach(function(r) {
+            html += '<div class="geocode-item" onclick="applySetupGeocode(' + r.lat + ',' + r.lon + ',this)">';
+            html += '<span class="geocode-name">' + r.display_name + '</span>';
+            html += '<span class="geocode-coords">' + r.lat.toFixed(4) + ', ' + r.lon.toFixed(4) + '</span>';
+            html += '</div>';
+        });
+        html += '</div>';
+        results.innerHTML = html;
+    })
+    .catch(function() { if (results) results.innerHTML = '<small style="color:var(--accent-red)">Search failed.</small>'; });
+}
+
+function applySetupGeocode(lat, lon, el) {
+    document.getElementById('setup-lat').value = lat.toFixed(6);
+    document.getElementById('setup-lon').value = lon.toFixed(6);
+    var items = document.querySelectorAll('#setup-geocode-results .geocode-item');
+    items.forEach(function(item) { item.classList.remove('selected'); });
+    if (el) el.classList.add('selected');
+}
+
+function setupFinish() {
+    var status = document.getElementById('setup-status');
+    if (status) { status.textContent = 'Saving...'; status.style.color = 'var(--text-muted)'; }
+
+    var config = {setup_completed: true};
+
+    // Step 1: Account
+    var username = document.getElementById('setup-username').value.trim();
+    var password = document.getElementById('setup-password').value;
+    if (username && password) {
+        config['dashboard'] = {auth: {users: [{username: username, password_hash: password, role: 'admin'}]}};
+    }
+
+    // Step 2: Inverter
+    var connType = document.getElementById('setup-conn-type').value;
+    var hw = {foxess: {connection_type: connType, unit_id: parseInt(document.getElementById('setup-unit-id').value) || 247}};
+    if (connType === 'tcp') {
+        hw.foxess.host = document.getElementById('setup-inv-host').value || '192.168.1.100';
+        hw.foxess.port = parseInt(document.getElementById('setup-inv-port').value) || 502;
+    } else {
+        hw.foxess.serial_port = document.getElementById('setup-serial-port').value || '/dev/ttyUSB0';
+        hw.foxess.baudrate = parseInt(document.getElementById('setup-baudrate').value) || 9600;
+    }
+    config['hardware'] = hw;
+
+    // Step 3: Location
+    var lat = parseFloat(document.getElementById('setup-lat').value);
+    var lon = parseFloat(document.getElementById('setup-lon').value);
+    if (!isNaN(lat) && !isNaN(lon)) {
+        config['providers'] = {
+            solar: {latitude: lat, longitude: lon},
+            weather: {latitude: lat, longitude: lon},
+        };
+    }
+
+    // Step 4: Providers
+    var amberKey = document.getElementById('setup-amber-key').value.trim();
+    var amberSite = document.getElementById('setup-amber-site').value.trim();
+    if (amberKey || amberSite) {
+        if (!config['providers']) config['providers'] = {};
+        config.providers.tariff = {};
+        if (amberKey) config.providers.tariff.api_key = amberKey;
+        if (amberSite) config.providers.tariff.site_id = amberSite;
+    }
+
+    // Step 5: Battery
+    var capacity = parseInt(document.getElementById('setup-capacity').value);
+    var chargeRate = parseInt(document.getElementById('setup-charge-rate').value);
+    var dischargeRate = parseInt(document.getElementById('setup-discharge-rate').value);
+    var pvSize = parseFloat(document.getElementById('setup-pv-size').value);
+    config['battery'] = {};
+    if (!isNaN(capacity)) config.battery.capacity_wh = capacity;
+    if (!isNaN(chargeRate)) config.battery.max_charge_rate_w = chargeRate;
+    if (!isNaN(dischargeRate)) config.battery.max_discharge_rate_w = dischargeRate;
+    if (!isNaN(pvSize) && config['providers'] && config.providers.solar) {
+        config.providers.solar.kwp = pvSize;
+    }
+
+    fetch('/api/setup/save', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(config),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.error) {
+            if (status) { status.textContent = 'Error: ' + data.error; status.style.color = 'var(--accent-red)'; }
+        } else {
+            if (status) { status.textContent = 'Setup complete! Redirecting...'; status.style.color = 'var(--accent-green)'; }
+            setTimeout(function() { window.location.href = '/'; }, 1500);
+        }
+    })
+    .catch(function(err) {
+        if (status) { status.textContent = 'Save failed: ' + err; status.style.color = 'var(--accent-red)'; }
+    });
+}
+
+toggleConnFields();
+</script>
+{% endblock %}

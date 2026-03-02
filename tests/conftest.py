@@ -27,14 +27,14 @@ def event_loop():
 @pytest.fixture
 def config() -> AppConfig:
     """Provide a default test configuration."""
-    return AppConfig()
+    return AppConfig(setup_completed=True)
 
 
 @pytest.fixture
 def config_manager(tmp_path: Path) -> ConfigManager:
     """Provide a config manager with test paths."""
     defaults = tmp_path / "config.defaults.yaml"
-    defaults.write_text("db:\n  path: ':memory:'\n")
+    defaults.write_text("setup_completed: true\ndb:\n  path: ':memory:'\n")
     user = tmp_path / "config.yaml"
     mgr = ConfigManager(defaults_path=defaults, user_path=user)
     mgr.load()

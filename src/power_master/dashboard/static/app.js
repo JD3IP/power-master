@@ -2056,6 +2056,78 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
+// ── Geocode Search (Address → Coordinates) ──────────
+function geocodeSearch() {
+    var q = document.getElementById('geocode-search').value.trim();
+    var results = document.getElementById('geocode-results');
+    if (!q || q.length < 3) { if (results) results.innerHTML = '<small style="color:var(--text-muted)">Enter at least 3 characters.</small>'; return; }
+    if (results) results.innerHTML = '<small style="color:var(--text-muted)">Searching...</small>';
+    fetch('/api/geocode?q=' + encodeURIComponent(q))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (!data.length) { results.innerHTML = '<small style="color:var(--accent-yellow)">No results found.</small>'; return; }
+        var html = '<div class="geocode-list">';
+        data.forEach(function(r) {
+            html += '<div class="geocode-item" onclick="applyGeocode(' + r.lat + ',' + r.lon + ',this)" title="Click to fill coordinates">';
+            html += '<span class="geocode-name">' + r.display_name + '</span>';
+            html += '<span class="geocode-coords">' + r.lat.toFixed(4) + ', ' + r.lon.toFixed(4) + '</span>';
+            html += '</div>';
+        });
+        html += '</div>';
+        results.innerHTML = html;
+    })
+    .catch(function(err) { if (results) results.innerHTML = '<small style="color:var(--accent-red)">Search failed.</small>'; });
+}
+
+function applyGeocode(lat, lon, el) {
+    var fields = [
+        ['providers.solar.latitude', 'providers.solar.longitude'],
+        ['providers.weather.latitude', 'providers.weather.longitude'],
+    ];
+    fields.forEach(function(pair) {
+        var latEl = document.getElementById(pair[0]);
+        var lonEl = document.getElementById(pair[1]);
+        if (latEl) latEl.value = lat.toFixed(6);
+        if (lonEl) lonEl.value = lon.toFixed(6);
+    });
+    // Also fill setup wizard fields if present
+    var wLat = document.getElementById('setup-lat');
+    var wLon = document.getElementById('setup-lon');
+    if (wLat) wLat.value = lat.toFixed(6);
+    if (wLon) wLon.value = lon.toFixed(6);
+    var items = document.querySelectorAll('.geocode-item');
+    items.forEach(function(item) { item.classList.remove('selected'); });
+    if (el) el.classList.add('selected');
+}
+
+// ── WACB Reset (Battery Cost Basis) ─────────────────
+function resetWACB() {
+    var wacb = parseFloat(document.getElementById('wacb_reset_cents').value);
+    var stored = parseFloat(document.getElementById('wacb_reset_value').value);
+    var status = document.getElementById('wacb-reset-status');
+    if (isNaN(wacb) || isNaN(stored)) {
+        if (status) status.textContent = 'Please enter both values.';
+        return;
+    }
+    fetch('/api/accounting/reset-wacb', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({wacb_cents: wacb, stored_value_cents: stored}),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.error) {
+            if (status) status.textContent = 'Error: ' + data.error;
+        } else {
+            if (status) status.textContent = 'Reset OK — WACB: ' + data.wacb_cents + 'c/kWh, Value: ' + data.stored_value_cents + 'c';
+            if (status) status.style.color = 'var(--accent-green)';
+        }
+    })
+    .catch(function(err) {
+        if (status) status.textContent = 'Failed: ' + err;
+    });
+}
+
 // ── Load Control Panel ──────────────────────────────
 (function() {
     var modal = null;

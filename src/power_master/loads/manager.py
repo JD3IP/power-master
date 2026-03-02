@@ -356,6 +356,10 @@ class LoadManager:
         if slot is None:
             return []
 
+        # Ignored slots: skip all scheduler actions, leave loads as-is
+        if slot.ignored:
+            return []
+
         scheduled_names: set[str] = set(slot.scheduled_loads or [])
         commands: list[LoadCommand] = []
         overridden_ids = self.get_active_override_load_ids()

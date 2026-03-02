@@ -6,6 +6,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
+import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -285,6 +286,54 @@ async def plan_history(request: Request) -> list:
     return await repo.get_plan_history()
 
 
+@router.post("/plan/slot/{slot_index}/ignore")
+async def toggle_slot_ignored(request: Request, slot_index: int) -> dict:
+    """Toggle the ignored flag on a plan slot.
+
+    When a slot is ignored the controller makes no changes for that slot,
+    regardless of what the optimiser planned.
+    """
+    control_loop = getattr(request.app.state, "control_loop", None)
+    if control_loop is None or control_loop.state.current_plan is None:
+        return {"error": "No active plan"}
+    plan = control_loop.state.current_plan
+    if slot_index < 0 or slot_index >= len(plan.slots):
+        return {"error": "Invalid slot index"}
+    slot = plan.slots[slot_index]
+    slot.ignored = not slot.ignored
+    return {"slot_index": slot_index, "ignored": slot.ignored}
+
+
+# ── Geocoding ────────────────────────────────────────
+
+@router.get("/geocode")
+async def geocode_address(request: Request, q: str = "") -> list:
+    """Search for an address and return coordinates using OpenStreetMap Nominatim."""
+    if not q or len(q) < 3:
+        return []
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                "https://nominatim.openstreetmap.org/search",
+                params={"q": q, "format": "json", "limit": 5, "addressdetails": 1},
+                headers={"User-Agent": "PowerMaster/1.0"},
+            )
+            resp.raise_for_status()
+            results = resp.json()
+        return [
+            {
+                "display_name": r.get("display_name", ""),
+                "lat": float(r["lat"]),
+                "lon": float(r["lon"]),
+            }
+            for r in results
+            if "lat" in r and "lon" in r
+        ]
+    except Exception as e:
+        logger.warning("Geocode lookup failed: %s", e)
+        return []
+
+
 # ── Tariff ───────────────────────────────────────────
 
 @router.get("/tariff/history")
@@ -388,6 +437,26 @@ async def accounting_summary(request: Request) -> dict:
             "days_remaining": summary.cycle.days_remaining,
         }
     return data
+
+
+@router.post("/accounting/reset-wacb")
+async def reset_wacb(request: Request) -> dict:
+    """Reset battery cost basis and stored value to user-specified values."""
+    accounting_engine = getattr(request.app.state, "accounting", None)
+    if not accounting_engine:
+        return {"error": "Accounting engine not available"}
+    body = await request.json()
+    new_wacb = float(body.get("wacb_cents", 0))
+    new_stored_value = float(body.get("stored_value_cents", 0))
+    tracker = accounting_engine.cost_basis
+    tracker._state.wacb_cents = new_wacb
+    # Back-calculate stored_wh from stored_value and wacb
+    if new_wacb > 0:
+        tracker._state.stored_wh = (new_stored_value / new_wacb) * 1000
+    return {
+        "wacb_cents": round(tracker.wacb_cents, 1),
+        "stored_value_cents": round(tracker.stored_value_cents, 1),
+    }
 
 
 # ── Loads ────────────────────────────────────────────

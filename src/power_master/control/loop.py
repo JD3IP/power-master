@@ -276,6 +276,9 @@ class ControlLoop:
         if plan is not None:
             slot = plan.get_current_slot()
             if slot is not None:
+                if slot.ignored:
+                    logger.debug("Slot %d is ignored — no command", slot.index)
+                    return None
                 return command_from_slot(slot)
 
         # Default: self-use

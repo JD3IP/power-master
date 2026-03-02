@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -69,6 +70,21 @@ def create_app(
         templates.env.globals["user_role"] = user_role
         return await call_next(request)
 
+    # Redirect to setup wizard on first run
+    @app.middleware("http")
+    async def setup_redirect(request: Request, call_next):
+        cfg = request.app.state.config
+        path = request.url.path
+        if (
+            not cfg.setup_completed
+            and not path.startswith("/setup")
+            and not path.startswith("/static")
+            and not path.startswith("/api/")
+            and not path.startswith("/login")
+        ):
+            return RedirectResponse("/setup", status_code=307)
+        return await call_next(request)
+
     # Mount static files
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -84,6 +100,7 @@ def create_app(
     from power_master.dashboard.routes.overview import router as overview_router
     from power_master.dashboard.routes.plans import router as plans_router
     from power_master.dashboard.routes.settings import router as settings_router
+    from power_master.dashboard.routes.setup import router as setup_router
     from power_master.dashboard.routes.sse import router as sse_router
 
     app.include_router(overview_router)
@@ -92,6 +109,7 @@ def create_app(
     app.include_router(graphs_router)
     app.include_router(logs_router)
     app.include_router(settings_router)
+    app.include_router(setup_router)
     app.include_router(api_router, prefix="/api")
     app.include_router(sse_router, prefix="/api")
 
