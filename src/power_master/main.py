@@ -48,6 +48,8 @@ class Application:
         self._control_loop = None
         self._providers: list = []  # providers with .close() methods
         self._server = None
+        self._load_manager = None
+        self._repo = None
 
     async def start(self) -> None:
         """Start all application components in dependency order."""
@@ -133,6 +135,9 @@ class Application:
 
         load_manager = LoadManager(self.config)
         self._register_loads(load_manager)
+        self._load_manager = load_manager
+        self._repo = repo
+        await load_manager.restore_daily_runtime(repo)
 
         # ── 10. MQTT ─────────────────────────────────────────
         mqtt_client = None
@@ -465,6 +470,13 @@ class Application:
                     await provider.close()
                 except Exception:
                     pass
+
+        # Persist load runtime before closing DB
+        if self._load_manager and self._repo:
+            try:
+                await self._load_manager.persist_daily_runtime(self._repo)
+            except Exception:
+                logger.debug("Failed to persist load runtime on shutdown", exc_info=True)
 
         await close_db()
         self._server = None

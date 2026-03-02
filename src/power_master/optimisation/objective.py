@@ -29,6 +29,9 @@ class ObjectiveWeights:
     daytime_soc_shortfall: float = 20.0  # Applied per-slot across many hours → strong cumulative effect
     # Small reward for self-consumption (cents/kWh equivalent)
     self_consume_reward: float = 0.5
+    # Early-charge bias: small cost per slot index to prefer charging earlier
+    # in the horizon when prices are equal (cents/kWh per slot position)
+    early_charge_bias: float = 0.02
 
 
 def build_objective(
@@ -71,6 +74,9 @@ def build_objective(
         cost_terms.append(-export_rate[t] * grid_export[t] * kwh)
         # Self-consumption reward
         cost_terms.append(-w.self_consume_reward * self_consumed_solar[t] * kwh)
+        # Early-charge bias: penalise later grid imports slightly so the solver
+        # prefers to charge earlier in the window when prices are otherwise equal
+        cost_terms.append(w.early_charge_bias * t * grid_import[t] * kwh)
 
     # Penalty terms
     for t in range(n_slots):

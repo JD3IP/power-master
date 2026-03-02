@@ -547,6 +547,22 @@ class LoadManager:
 
             self._last_known_state[lid] = cur_state
 
+        # Periodic checkpoint: persist accumulated runtime so it survives restarts
+        if repo is not None and self._daily_runtime_s:
+            for lid, secs in self._daily_runtime_s.items():
+                total = secs
+                if lid in self._on_since:
+                    total += (now - self._on_since[lid]).total_seconds()
+                try:
+                    await repo.store_historical(
+                        data_type=f"load_runtime_checkpoint_{lid}",
+                        value=total,
+                        source="runtime_tracker",
+                        resolution="1day",
+                    )
+                except Exception:
+                    pass
+
     def get_runtime_minutes(self, load_id: str) -> float:
         """Get accumulated runtime in minutes for a load today.
 
@@ -561,6 +577,68 @@ class LoadManager:
     def get_all_runtime_minutes(self) -> dict[str, float]:
         """Get runtime in minutes for all tracked loads today."""
         return {lid: self.get_runtime_minutes(lid) for lid in self._last_known_state}
+
+    async def persist_daily_runtime(self, repo) -> None:
+        """Persist current daily runtime to DB so it survives restarts."""
+        if not self._daily_runtime_s and not self._on_since:
+            return
+        now = datetime.now(timezone.utc)
+        for lid, secs in self._daily_runtime_s.items():
+            # Include currently-running time
+            if lid in self._on_since:
+                secs += (now - self._on_since[lid]).total_seconds()
+            try:
+                await repo.store_historical(
+                    data_type=f"load_runtime_checkpoint_{lid}",
+                    value=secs,
+                    source="runtime_tracker",
+                    resolution="1day",
+                )
+            except Exception:
+                logger.debug("Failed to persist runtime checkpoint for '%s'", lid, exc_info=True)
+        # Also persist loads that are ON but have no accumulated time yet
+        for lid in self._on_since:
+            if lid not in self._daily_runtime_s:
+                elapsed = (now - self._on_since[lid]).total_seconds()
+                try:
+                    await repo.store_historical(
+                        data_type=f"load_runtime_checkpoint_{lid}",
+                        value=elapsed,
+                        source="runtime_tracker",
+                        resolution="1day",
+                    )
+                except Exception:
+                    logger.debug("Failed to persist runtime checkpoint for '%s'", lid, exc_info=True)
+        logger.info("Persisted daily runtime for %d loads", len(self._daily_runtime_s) + len(self._on_since))
+
+    async def restore_daily_runtime(self, repo) -> None:
+        """Restore daily runtime from DB after restart."""
+        from datetime import date as date_type
+
+        today = datetime.now(timezone.utc).date()
+        today_start = datetime(today.year, today.month, today.day, tzinfo=timezone.utc).isoformat()
+        today_end = datetime.now(timezone.utc).isoformat()
+
+        # Look for checkpoint records from today
+        restored = 0
+        for controller in self._controllers.values():
+            lid = controller.load_id
+            try:
+                records = await repo.get_historical(
+                    f"load_runtime_checkpoint_{lid}", today_start, today_end,
+                    resolution="1day",
+                )
+                if records:
+                    # Take the most recent checkpoint
+                    latest = max(records, key=lambda r: r["recorded_at"])
+                    self._daily_runtime_s[lid] = float(latest["value"])
+                    restored += 1
+            except Exception:
+                logger.debug("Failed to restore runtime for '%s'", lid, exc_info=True)
+
+        if restored:
+            self._runtime_date = today
+            logger.info("Restored daily runtime for %d loads from DB", restored)
 
     def get_load_configs(self) -> list[dict]:
         """Build load config dicts for the load scheduler."""

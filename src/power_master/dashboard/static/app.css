@@ -1181,30 +1181,29 @@ h2:first-child {
     text-shadow: 0 0 4px rgba(0, 0, 0, 0.35);
 }
 
-/* Upper icons: text on outer side (above icons) */
+/* Value labels: beside nodes, aligned with arrow positions toward center */
 .hub-flow-value-pv {
-    left: 22%;
-    top: calc(22% - 44px);
-    transform: translate(-50%, 0);
+    left: 37%;
+    top: 22%;
+    transform: translate(-50%, -50%);
 }
 
 .hub-flow-value-grid {
-    left: 78%;
-    top: calc(22% - 44px);
-    transform: translate(-50%, 0);
+    left: 63%;
+    top: 22%;
+    transform: translate(-50%, -50%);
 }
 
-/* Lower icons: text on outer side (below icons) */
 .hub-flow-value-load {
-    left: 78%;
-    top: calc(78% + 26px);
-    transform: translate(-50%, 0);
+    left: 63%;
+    top: 78%;
+    transform: translate(-50%, -50%);
 }
 
 .hub-flow-value-batt {
-    left: 22%;
-    top: calc(82% + 26px);
-    transform: translate(-50%, 0);
+    left: 37%;
+    top: 80%;
+    transform: translate(-50%, -50%);
 }
 
 .hub-node {
