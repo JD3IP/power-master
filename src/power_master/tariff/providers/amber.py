@@ -137,18 +137,23 @@ class AmberProvider(TariffProvider):
         slots = []
         for start_str, imp in sorted(import_by_time.items()):
             try:
-                start = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                raw_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
                 # Normalize to UTC for consistent comparisons with plan slots
-                if start.tzinfo is not None:
-                    start = start.astimezone(timezone.utc)
+                if raw_dt.tzinfo is not None:
+                    raw_dt = raw_dt.astimezone(timezone.utc)
                 else:
-                    start = start.replace(tzinfo=timezone.utc)
+                    raw_dt = raw_dt.replace(tzinfo=timezone.utc)
                     logger.warning("Amber returned naive datetime %s — assuming UTC", start_str)
             except (ValueError, AttributeError) as e:
                 logger.warning("Failed to parse Amber startTime %r: %s", start_str, e)
                 continue
 
-            end = start + timedelta(minutes=30)
+            # Amber's startTime is the NEM dispatch timestamp (end-of-interval)
+            # expressed in UTC, not the true start.  NEM convention labels
+            # intervals by their end time, so subtract 30 minutes to get the
+            # actual period start.
+            start = raw_dt - timedelta(minutes=30)
+            end = raw_dt
 
             # Amber prices are in c/kWh (including all fees)
             import_price = imp.get("perKwh", 0.0)
