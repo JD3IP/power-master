@@ -24,7 +24,6 @@
                 <th>Buy</th>
                 <th>Sell</th>
                 <th>Devices</th>
-                <th>Ignore</th>
             </tr>
         </thead>
         <tbody>
@@ -42,9 +41,6 @@
                 <td>{{ slot.import_rate_cents_fmt }}c</td>
                 <td>{{ slot.export_rate_cents_fmt }}c</td>
                 <td>{% if slot.scheduled_loads %}{{ slot.scheduled_loads|join(', ') }}{% endif %}</td>
-                <td>
-                    <button class="btn-ignore-slot" data-slot="{{ slot.slot_index }}" onclick="toggleIgnoreSlot({{ slot.slot_index }}, this)" title="Ignore this slot — controller will make no changes">&#x2716;</button>
-                </td>
             </tr>
             {% endfor %}
         </tbody>
@@ -76,23 +72,4 @@
     </div>
 </section>
 
-<script>
-function toggleIgnoreSlot(idx, btn) {
-    fetch('/api/plan/slot/' + idx + '/ignore', {method: 'POST'})
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-        if (data.error) { alert(data.error); return; }
-        var row = document.getElementById('plan-slot-' + idx);
-        if (data.ignored) {
-            btn.classList.add('ignored');
-            btn.title = 'Slot ignored — click to restore';
-            if (row) row.classList.add('slot-ignored');
-        } else {
-            btn.classList.remove('ignored');
-            btn.title = 'Ignore this slot — controller will make no changes';
-            if (row) row.classList.remove('slot-ignored');
-        }
-    });
-}
-</script>
 {% endblock %}

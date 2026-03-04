@@ -286,24 +286,6 @@ async def plan_history(request: Request) -> list:
     return await repo.get_plan_history()
 
 
-@router.post("/plan/slot/{slot_index}/ignore")
-async def toggle_slot_ignored(request: Request, slot_index: int) -> dict:
-    """Toggle the ignored flag on a plan slot.
-
-    When a slot is ignored the controller makes no changes for that slot,
-    regardless of what the optimiser planned.
-    """
-    control_loop = getattr(request.app.state, "control_loop", None)
-    if control_loop is None or control_loop.state.current_plan is None:
-        return {"error": "No active plan"}
-    plan = control_loop.state.current_plan
-    if slot_index < 0 or slot_index >= len(plan.slots):
-        return {"error": "Invalid slot index"}
-    slot = plan.slots[slot_index]
-    slot.ignored = not slot.ignored
-    return {"slot_index": slot_index, "ignored": slot.ignored}
-
-
 # ── Geocoding ────────────────────────────────────────
 
 @router.get("/geocode")

@@ -32,7 +32,6 @@ class PlanSlot:
     load_forecast_w: float = 0.0
     scheduled_loads: list[str] | None = None
     constraint_flags: list[str] | None = None
-    ignored: bool = False  # User-set: controller makes no changes for this slot
 
 
 @dataclass
