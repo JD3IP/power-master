@@ -396,6 +396,17 @@ class LoadManager:
                 self._command_history.append(cmd)
                 if success:
                     self._scheduler_activated.add(load_id)
+                    # Persist immediately so we can turn off after restart
+                    if repo is not None:
+                        try:
+                            await repo.store_historical(
+                                data_type=f"load_scheduler_activated_{load_id}",
+                                value=1.0,
+                                source="runtime_tracker",
+                                resolution="1day",
+                            )
+                        except Exception:
+                            pass
             elif not should_be_on and status.state == LoadState.ON:
                 # Only turn off loads that WE activated via scheduler.
                 # Externally activated loads (physical button, app) are left
@@ -411,6 +422,17 @@ class LoadManager:
                     self._command_history.append(cmd)
                     if success:
                         self._scheduler_activated.discard(load_id)
+                        # Clear persisted flag
+                        if repo is not None:
+                            try:
+                                await repo.store_historical(
+                                    data_type=f"load_scheduler_activated_{load_id}",
+                                    value=0.0,
+                                    source="runtime_tracker",
+                                    resolution="1day",
+                                )
+                            except Exception:
+                                pass
                 elif load_id not in self._scheduler_activated:
                     logger.debug(
                         "Load '%s' is ON externally — counting runtime, not turning off",
@@ -579,10 +601,23 @@ class LoadManager:
         return {lid: self.get_runtime_minutes(lid) for lid in self._last_known_state}
 
     async def persist_daily_runtime(self, repo) -> None:
-        """Persist current daily runtime to DB so it survives restarts."""
+        """Persist current daily runtime and scheduler-activated state to DB."""
+        now = datetime.now(timezone.utc)
+
+        # Persist scheduler-activated set so we can turn loads off after restart
+        for lid in self._scheduler_activated:
+            try:
+                await repo.store_historical(
+                    data_type=f"load_scheduler_activated_{lid}",
+                    value=1.0,
+                    source="runtime_tracker",
+                    resolution="1day",
+                )
+            except Exception:
+                logger.debug("Failed to persist scheduler_activated for '%s'", lid, exc_info=True)
+
         if not self._daily_runtime_s and not self._on_since:
             return
-        now = datetime.now(timezone.utc)
         for lid, secs in self._daily_runtime_s.items():
             # Include currently-running time
             if lid in self._on_since:
@@ -612,33 +647,47 @@ class LoadManager:
         logger.info("Persisted daily runtime for %d loads", len(self._daily_runtime_s) + len(self._on_since))
 
     async def restore_daily_runtime(self, repo) -> None:
-        """Restore daily runtime from DB after restart."""
-        from datetime import date as date_type
-
+        """Restore daily runtime and scheduler-activated state from DB."""
         today = datetime.now(timezone.utc).date()
         today_start = datetime(today.year, today.month, today.day, tzinfo=timezone.utc).isoformat()
         today_end = datetime.now(timezone.utc).isoformat()
 
-        # Look for checkpoint records from today
         restored = 0
         for controller in self._controllers.values():
             lid = controller.load_id
+            # Restore runtime checkpoint
             try:
                 records = await repo.get_historical(
                     f"load_runtime_checkpoint_{lid}", today_start, today_end,
                     resolution="1day",
                 )
                 if records:
-                    # Take the most recent checkpoint
                     latest = max(records, key=lambda r: r["recorded_at"])
                     self._daily_runtime_s[lid] = float(latest["value"])
                     restored += 1
             except Exception:
                 logger.debug("Failed to restore runtime for '%s'", lid, exc_info=True)
 
+            # Restore scheduler-activated flag (value > 0 means activated)
+            try:
+                activated_records = await repo.get_historical(
+                    f"load_scheduler_activated_{lid}", today_start, today_end,
+                    resolution="1day",
+                )
+                if activated_records:
+                    latest_act = max(activated_records, key=lambda r: r["recorded_at"])
+                    if float(latest_act["value"]) > 0:
+                        self._scheduler_activated.add(lid)
+                        logger.debug("Restored scheduler-activated flag for '%s'", controller.name)
+            except Exception:
+                logger.debug("Failed to restore scheduler_activated for '%s'", lid, exc_info=True)
+
         if restored:
             self._runtime_date = today
-            logger.info("Restored daily runtime for %d loads from DB", restored)
+            logger.info(
+                "Restored daily runtime for %d loads, %d scheduler-activated from DB",
+                restored, len(self._scheduler_activated),
+            )
 
     def get_load_configs(self) -> list[dict]:
         """Build load config dicts for the load scheduler."""
