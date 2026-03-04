@@ -67,7 +67,12 @@ def _mode_name(mode: int) -> str:
 
 
 def _build_plan_transition_events(plan_slots: list[dict], local_tz) -> list[dict]:
-    """Build mode/load transition events at slot boundaries."""
+    """Build mode/load transition events at slot boundaries.
+
+    Always emits an event for the first slot (plan start) so that
+    "previous significant event" has a baseline once the plan is active.
+    Subsequent events are emitted when the mode or scheduled loads change.
+    """
     if not plan_slots:
         return []
 
@@ -83,29 +88,44 @@ def _build_plan_transition_events(plan_slots: list[dict], local_tz) -> list[dict
 
         mode = int(slot.get("operating_mode") or 1)
         loads_set = set(_scheduled_load_names(slot))
-        mode_changed = previous_mode is not None and mode != previous_mode
-        loads_changed = previous_mode is not None and loads_set != previous_loads
 
-        if mode_changed or loads_changed:
+        if previous_mode is None:
+            # First slot: always emit an event describing the initial state
             local_dt = start_dt.astimezone(local_tz)
-            parts: list[str] = []
-            if mode_changed:
-                parts.append(f"Mode -> {_mode_name(mode)}")
-            if loads_changed:
-                added = sorted(loads_set - previous_loads)
-                removed = sorted(previous_loads - loads_set)
-                if added:
-                    parts.append("Devices ON -> " + ", ".join(added))
-                if removed:
-                    parts.append("Devices OFF -> " + ", ".join(removed))
-
+            parts: list[str] = [f"Mode -> {_mode_name(mode)}"]
+            if loads_set:
+                parts.append("Devices ON -> " + ", ".join(sorted(loads_set)))
             events.append(
                 {
                     "time_utc": start_dt,
                     "time_label": local_dt.strftime("%a %H:%M"),
-                    "summary": " | ".join(parts) if parts else "Plan update",
+                    "summary": " | ".join(parts),
                 }
             )
+        else:
+            mode_changed = mode != previous_mode
+            loads_changed = loads_set != previous_loads
+
+            if mode_changed or loads_changed:
+                local_dt = start_dt.astimezone(local_tz)
+                parts = []
+                if mode_changed:
+                    parts.append(f"Mode -> {_mode_name(mode)}")
+                if loads_changed:
+                    added = sorted(loads_set - previous_loads)
+                    removed = sorted(previous_loads - loads_set)
+                    if added:
+                        parts.append("Devices ON -> " + ", ".join(added))
+                    if removed:
+                        parts.append("Devices OFF -> " + ", ".join(removed))
+
+                events.append(
+                    {
+                        "time_utc": start_dt,
+                        "time_label": local_dt.strftime("%a %H:%M"),
+                        "summary": " | ".join(parts) if parts else "Plan update",
+                    }
+                )
 
         previous_mode = mode
         previous_loads = loads_set

@@ -441,32 +441,57 @@ except Exception as e:
                 "error": "Container restart failed",
             })
 
+    @staticmethod
+    def _parse_version_tuple(version_str: str) -> tuple[int, ...]:
+        """Parse a version string like '1.2.3' into a comparable tuple."""
+        cleaned = version_str.lstrip("v")
+        parts: list[int] = []
+        for segment in cleaned.split("."):
+            try:
+                parts.append(int(segment))
+            except ValueError:
+                break
+        return tuple(parts) if parts else (0,)
+
     async def _fetch_changelog(self, target_version: str) -> str:
         """Fetch changelog for the update.
 
-        Tries GitHub Releases first (exact tag, then latest). If no release
-        exists, falls back to commit messages between the current SHA and
-        the latest SHA so the user always sees what changed.
+        Fetches all GitHub Releases newer than the currently running version
+        so users who are multiple versions behind see every change.  Falls
+        back to commit messages when no releases are found.
         """
         headers = {"Accept": "application/vnd.github+json"}
+        current_ver = self._parse_version_tuple(self._state.current.version)
+
         try:
             async with httpx.AsyncClient(timeout=15) as client:
-                # Try GitHub Release notes first
+                # Fetch up to 50 most recent releases (covers most upgrade gaps)
                 resp = await client.get(
-                    f"{GITHUB_RELEASES_API}/tags/v{target_version}",
+                    GITHUB_RELEASES_API,
+                    params={"per_page": 50},
                     headers=headers,
                 )
-                if resp.status_code == 404:
-                    resp = await client.get(
-                        f"{GITHUB_RELEASES_API}/latest",
-                        headers=headers,
-                    )
                 if resp.status_code == 200:
-                    body = resp.json().get("body", "") or ""
-                    if body.strip():
-                        return body
+                    releases = resp.json()
+                    # Filter to releases newer than current, sort newest-first
+                    newer: list[dict] = []
+                    for rel in releases:
+                        tag = rel.get("tag_name", "")
+                        body = (rel.get("body") or "").strip()
+                        if not body:
+                            continue
+                        rel_ver = self._parse_version_tuple(tag)
+                        if rel_ver > current_ver:
+                            newer.append({"tag": tag, "body": body, "ver": rel_ver})
 
-                # No release found — fall back to commit messages
+                    if newer:
+                        newer.sort(key=lambda r: r["ver"], reverse=True)
+                        sections = [
+                            f"## {r['tag']}\n\n{r['body']}" for r in newer
+                        ]
+                        return "\n\n---\n\n".join(sections)
+
+                # No matching releases — fall back to commit messages
                 current_sha = self._state.current.sha
                 if current_sha and current_sha != "unknown":
                     return await self._fetch_commit_changelog(client, current_sha)

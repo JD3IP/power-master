@@ -11,7 +11,7 @@
 <body class="app">
     <!-- Mobile Header (entire bar is clickable to toggle menu) -->
     <header class="mobile-header" onclick="toggleSidebar()" role="button" tabindex="0" aria-label="Toggle navigation menu" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleSidebar();}">
-        <div class="logo">&#9889; Power Master</div>
+        <a href="/" class="logo" onclick="event.stopPropagation();" style="text-decoration:none;color:inherit;">&#9889; Power Master</a>
         <span class="menu-toggle" aria-hidden="true">&#9776;</span>
     </header>
 
@@ -19,9 +19,9 @@
         <!-- Sidebar Navigation -->
         <nav class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                <div class="sidebar-logo" role="button" tabindex="0" onclick="toggleSidebar()" onkeydown="if(event.key==='Enter' || event.key===' '){event.preventDefault();toggleSidebar();}" aria-label="Toggle sidebar">
+                <a href="/" class="sidebar-logo" style="text-decoration:none;color:inherit;" aria-label="Go to overview">
                     <span class="logo-icon">&#9889;</span><span class="logo-text">Power Master</span>
-                </div>
+                </a>
             </div>
             <ul class="nav-list">
                 <li><a href="/" class="nav-link {% if active_page == 'overview' %}active{% endif %}">
