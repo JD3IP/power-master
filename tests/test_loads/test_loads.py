@@ -794,3 +794,92 @@ class TestLoadScheduler:
         idx = result[0].assigned_slots[0]
         assert plan.slots[idx].scheduled_loads is not None
         assert "Pump" in plan.slots[idx].scheduled_loads
+
+    def test_schedule_with_nonzero_timezone_offset(self) -> None:
+        """Loads scheduled correctly when timezone is not UTC (e.g. Australia/Brisbane UTC+10)."""
+        # Plan starts at 04:00 UTC = 14:00 AEST.  Load window is 08:00–16:00 AEST.
+        # Today (AEST) only has 2h left in the window (14:00–16:00 = 4 slots).
+        # Tomorrow (AEST) has the full 8h window (08:00–16:00 = 16 slots).
+        base = datetime(2026, 3, 5, 4, 0, tzinfo=timezone.utc)  # 04:00 UTC = 14:00 AEST
+        slots = []
+        for i in range(96):  # 48h
+            start = base + timedelta(minutes=30 * i)
+            end = start + timedelta(minutes=30)
+            slots.append(PlanSlot(
+                index=i, start=start, end=end,
+                mode=SlotMode.SELF_USE,
+                solar_forecast_w=3000.0 if 22 <= (i % 48) <= 33 else 0.0,
+                load_forecast_w=500.0,
+                import_rate_cents=10.0,
+            ))
+        plan = OptimisationPlan(
+            version=1, created_at=base, trigger_reason="periodic",
+            horizon_start=base, horizon_end=base + timedelta(hours=48),
+            slots=slots, objective_score=0.0, solver_time_ms=10,
+        )
+
+        loads = [
+            {
+                "id": "hot_water",
+                "name": "Hot Water",
+                "power_w": 3600,
+                "priority_class": 3,
+                "min_runtime_minutes": 60,
+                "prefer_solar": True,
+                "timezone": "Australia/Brisbane",
+                "days_of_week": [0, 1, 2, 3, 4, 5, 6],
+                "earliest_start": "08:00",
+                "latest_end": "16:00",
+            },
+        ]
+
+        result = schedule_loads(plan, loads)
+        assert len(result) == 1, "Load must be scheduled"
+        assert len(result[0].assigned_slots) >= 2, "At least 2 slots (60min)"
+        # Verify all assigned slots are within the local time window
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Australia/Brisbane")
+        for idx in result[0].assigned_slots:
+            local_start = plan.slots[idx].start.astimezone(tz)
+            assert 8 <= local_start.hour < 16, f"Slot at {local_start} outside window"
+
+    def test_schedule_with_partial_runtime_credit(self) -> None:
+        """Load with partial runtime credit gets reduced slot count."""
+        plan = _make_plan(n_slots=16)
+        loads = [
+            {
+                "id": "pump", "name": "Pump", "power_w": 1200, "priority_class": 4,
+                "min_runtime_minutes": 120, "prefer_solar": False,
+            },
+        ]
+
+        # 30 min already run → 90 min remaining = 3 slots
+        result = schedule_loads(plan, loads, actual_runtime_minutes={"pump": 30.0})
+        assert len(result) == 1
+        assert len(result[0].assigned_slots) == 3
+
+    def test_schedule_with_full_runtime_credit(self) -> None:
+        """Load with fully satisfied runtime gets no slots."""
+        plan = _make_plan(n_slots=16)
+        loads = [
+            {
+                "id": "pump", "name": "Pump", "power_w": 1200, "priority_class": 4,
+                "min_runtime_minutes": 60, "prefer_solar": False,
+            },
+        ]
+
+        result = schedule_loads(plan, loads, actual_runtime_minutes={"pump": 60.0})
+        assert len(result) == 0, "Load already satisfied should not be scheduled"
+
+    def test_schedule_empty_dict_runtime_does_not_block(self) -> None:
+        """Empty runtime dict (startup scenario) should not prevent scheduling."""
+        plan = _make_plan(n_slots=8)
+        loads = [
+            {
+                "id": "pump", "name": "Pump", "power_w": 500, "priority_class": 5,
+                "min_runtime_minutes": 30, "prefer_solar": False,
+            },
+        ]
+
+        result = schedule_loads(plan, loads, actual_runtime_minutes={})
+        assert len(result) == 1, "Empty runtime dict must not block scheduling"

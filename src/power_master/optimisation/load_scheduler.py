@@ -53,21 +53,26 @@ def schedule_loads(
     # Sort loads by priority (lower = more important)
     sorted_loads = sorted(available_loads, key=lambda l: l.get("priority_class", 5))
 
+    if not sorted_loads:
+        logger.info("Load scheduler: no loads configured")
+
     for load_config in sorted_loads:
+        load_name = load_config.get("name", "?")
         priority = load_config.get("priority_class", 5)
 
         # During spike, defer non-essential loads
         if spike_active and priority > 2:
-            logger.info("Deferring load '%s' (priority %d) due to spike", load_config["name"], priority)
+            logger.info("Deferring load '%s' (priority %d) due to spike", load_name, priority)
             continue
 
         if not load_config.get("enabled", True):
+            logger.info("Load '%s' skipped — disabled", load_name)
             continue
 
         # Skip loads currently under manual override — they are controlled by the user
         load_id = load_config.get("id", load_config["name"])
         if load_id in overridden_ids:
-            logger.info("Skipping load '%s' — manual override active", load_config["name"])
+            logger.info("Skipping load '%s' — manual override active", load_name)
             continue
 
         slot_minutes = _slot_duration_minutes(plan)
@@ -81,7 +86,7 @@ def schedule_loads(
                 if runtime_minutes <= 0:
                     logger.info(
                         "Load '%s' already satisfied minimum (%.0f min actual)",
-                        load_config["name"], actual,
+                        load_name, actual,
                     )
                     continue
 
@@ -93,6 +98,15 @@ def schedule_loads(
         eligible = _find_eligible_slots(plan, load_config)
 
         if not eligible:
+            logger.info(
+                "Load '%s' — no eligible slots (window=%s–%s, tz=%s, days=%s, plan has %d slots)",
+                load_name,
+                load_config.get("earliest_start", "00:00"),
+                load_config.get("latest_end", "23:59"),
+                load_config.get("timezone", "UTC"),
+                load_config.get("days_of_week", "all"),
+                len(plan.slots),
+            )
             continue
 
         # Score all eligible slots once
@@ -106,9 +120,23 @@ def schedule_loads(
             scored = [(idx, score_by_index[idx]) for idx in day_indices]
             scored.sort(key=lambda x: x[1])  # Lower score = better
             day_assigned = _assign_consecutive(scored, duration_slots)
+            if not day_assigned:
+                logger.info(
+                    "Load '%s' — day group has %d eligible slots but needs %d consecutive (duration=%dmin)",
+                    load_name, len(day_indices), duration_slots, runtime_minutes,
+                )
             assigned.extend(day_assigned)
 
         if assigned:
+            slot_times = [
+                plan.slots[idx].start.strftime("%a %H:%M") for idx in assigned[:4]
+            ]
+            logger.info(
+                "Load '%s' scheduled into %d slots: %s%s",
+                load_name, len(assigned),
+                ", ".join(slot_times),
+                "..." if len(assigned) > 4 else "",
+            )
             scheduled.append(ScheduledLoad(
                 load_id=load_id,
                 name=load_config["name"],
@@ -122,6 +150,13 @@ def schedule_loads(
                 if plan.slots[idx].scheduled_loads is None:
                     plan.slots[idx].scheduled_loads = []
                 plan.slots[idx].scheduled_loads.append(load_config["name"])
+        else:
+            logger.info(
+                "Load '%s' — %d eligible slots across %d days but no consecutive run found (need %d slots = %dmin)",
+                load_name, len(eligible),
+                len(list(_group_indices_by_local_day(plan, eligible, load_config))),
+                duration_slots, runtime_minutes,
+            )
 
     logger.info("Scheduled %d loads across plan", len(scheduled))
     return scheduled
