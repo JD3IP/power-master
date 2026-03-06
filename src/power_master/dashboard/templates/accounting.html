@@ -132,8 +132,9 @@ function loadAccountingEvents(days) {
         var body = document.getElementById('accounting-events-body');
         if (!rows.length) { body.innerHTML = '<tr><td colspan="5">No events in this period.</td></tr>'; return; }
         body.innerHTML = rows.map(function(r) {
-            var time = r.timestamp || r.created_at || '--';
-            if (time.length > 16) time = time.substring(0, 16).replace('T', ' ');
+            var rawTime = r.timestamp || r.created_at || '';
+            var time = '--';
+            if (rawTime) { try { var d = new Date(rawTime); time = d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch(e) { time = rawTime.substring(0, 16).replace('T', ' '); } }
             return '<tr><td>' + time +
                 '</td><td>' + (r.event_type || '--') +
                 '</td><td>' + ((r.energy_kwh || 0)).toFixed(3) +

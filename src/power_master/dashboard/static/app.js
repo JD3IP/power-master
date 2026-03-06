@@ -2219,7 +2219,7 @@ function resetWACB() {
             histEl.innerHTML = data.event_history.map(function(ev) {
                 var badgeClass = ev.action === 'on' ? 'on' : 'off';
                 var label = ev.action.toUpperCase();
-                var ts = ev.issued_at ? ev.issued_at.substring(0, 16).replace('T', ' ') : '';
+                var ts = ev.issued_at ? formatTimeLabel(ev.issued_at) : '';
                 var reason = ev.reason || '';
                 var sourceTag = '';
                 if (reason.toLowerCase().indexOf('schedule') >= 0 || reason.toLowerCase().indexOf('plan') >= 0) {
