@@ -125,6 +125,21 @@ class Application:
 
         accounting = AccountingEngine(self.config)
 
+        # ── 7b. Notification event bus + manager ───────────────
+        from power_master.notifications.bus import EventBus
+        from power_master.notifications.manager import NotificationManager
+
+        event_bus = EventBus()
+        notification_manager = NotificationManager(self.config.notifications, event_bus)
+
+        # Wire log forwarding if notifications enabled
+        if self.config.notifications.enabled:
+            from power_master.notifications.manager import NotificationLogHandler
+            log_handler = NotificationLogHandler(
+                event_bus, min_level=self.config.notifications.log_min_level,
+            )
+            logging.getLogger().addHandler(log_handler)
+
         # ── 8. Rebuild evaluator ─────────────────────────────
         from power_master.optimisation.rebuild_evaluator import RebuildEvaluator
 
@@ -256,6 +271,27 @@ class Application:
             # Sync accounting SOC after energy recording (see note above)
             accounting.sync_soc(telemetry.soc)
 
+            # Notification: battery SOC thresholds
+            if self.config.notifications.enabled:
+                from power_master.notifications.bus import Event as _NEvent
+                soc = telemetry.soc
+                if soc <= self.config.notifications.battery_low_threshold:
+                    await event_bus.publish(_NEvent(
+                        name="battery_low",
+                        severity="warning",
+                        title="Battery Low",
+                        message=f"Battery SOC is {soc*100:.0f}%",
+                        data={"soc": soc},
+                    ))
+                elif soc >= self.config.notifications.battery_full_threshold:
+                    await event_bus.publish(_NEvent(
+                        name="battery_full",
+                        severity="info",
+                        title="Battery Full",
+                        message=f"Battery SOC is {soc*100:.0f}%",
+                        data={"soc": soc},
+                    ))
+
             # Health check: inverter success
             health_checker.record_success("inverter")
             # Publish to MQTT
@@ -338,7 +374,7 @@ class Application:
 
         # Fast telemetry polling for live dashboard updates
         self._tasks.append(asyncio.create_task(
-            self._telemetry_poll_loop(adapter, control_loop, repo=repo, load_manager=load_manager),
+            self._telemetry_poll_loop(adapter, control_loop, repo=repo, load_manager=load_manager, event_bus=event_bus),
             name="telemetry_poller",
         ))
 
@@ -360,7 +396,7 @@ class Application:
 
         # Resilience evaluator
         self._tasks.append(asyncio.create_task(
-            self._resilience_loop(resilience_mgr),
+            self._resilience_loop(resilience_mgr, event_bus=event_bus),
             name="resilience_evaluator",
         ))
 
@@ -396,6 +432,8 @@ class Application:
         app.state.resilience_mgr = resilience_mgr
         app.state.manual_override = manual_override
         app.state.updater = updater
+        app.state.event_bus = event_bus
+        app.state.notification_manager = notification_manager
 
         import uvicorn
 
@@ -521,6 +559,12 @@ class Application:
         if "mqtt" in changed_sections:
             await self._reload_mqtt(app)
 
+        # 7. Rebuild notification channels if config changed
+        if "notifications" in changed_sections:
+            nm = getattr(app.state, "notification_manager", None)
+            if nm is not None:
+                nm.reload(new_config.notifications)
+
         logger.info("Config reloaded: changed=%s", list(changed_sections))
 
     async def _reload_providers(self, old_config, new_config, app) -> None:
@@ -604,7 +648,9 @@ class Application:
         except Exception:
             logger.warning(
                 "Fox-ESS connection failed — running in degraded mode "
-                "(no inverter telemetry or control)"
+                "(no inverter telemetry or control). "
+                "Poll loop will auto-reconnect every 30s.",
+                exc_info=True,
             )
         return adapter
 
@@ -827,11 +873,30 @@ class Application:
                         trigger=rebuild_result.trigger, load_manager=load_manager,
                     )
 
-                    # Handle spike load shedding
+                    # Handle spike load shedding + notifications
                     if rebuild_result.trigger == "price_spike":
                         await load_manager.shed_for_spike()
+                        if self.config.notifications.enabled:
+                            from power_master.notifications.bus import Event as _NEvent
+                            spike = aggregator.spike_detector.current_spike
+                            price_str = f"{spike.price_cents:.0f}c/kWh" if spike else "high"
+                            await event_bus.publish(_NEvent(
+                                name="price_spike",
+                                severity="critical",
+                                title="Price Spike Detected",
+                                message=f"Electricity price spiked to {price_str}. Shedding loads and maximising discharge.",
+                                data={"price_cents": spike.price_cents if spike else 0},
+                            ))
                     elif not aggregator.spike_detector.is_spike_active:
                         await load_manager.restore_after_spike()
+                        if self.config.notifications.enabled:
+                            from power_master.notifications.bus import Event as _NEvent
+                            await event_bus.publish(_NEvent(
+                                name="price_spike_end",
+                                severity="info",
+                                title="Price Spike Ended",
+                                message="Electricity price has returned to normal. Restoring loads.",
+                            ))
 
                 # Check if control loop flagged urgent SOC deviation
                 if self._soc_rebuild_needed.is_set():
@@ -877,7 +942,7 @@ class Application:
             await history.flush_telemetry()
             await checkpoint_wal()
 
-    async def _resilience_loop(self, resilience_mgr):
+    async def _resilience_loop(self, resilience_mgr, event_bus=None):
         """Periodically evaluate resilience level."""
         interval = self.config.resilience.health_check_interval_seconds
         while not self._stop_event.is_set():
@@ -888,6 +953,7 @@ class Application:
                 break
             except asyncio.TimeoutError:
                 pass
+            old_level = resilience_mgr.level
             changed = resilience_mgr.evaluate()
             if changed:
                 logger.warning(
@@ -895,8 +961,27 @@ class Application:
                     resilience_mgr.level.value,
                     resilience_mgr.state.unhealthy_providers,
                 )
+                if event_bus and self.config.notifications.enabled:
+                    from power_master.notifications.bus import Event as _NEvent
+                    from power_master.resilience.manager import ResilienceLevel
+                    new_level = resilience_mgr.level
+                    if new_level.value > old_level.value:
+                        await event_bus.publish(_NEvent(
+                            name="resilience_degraded",
+                            severity="warning",
+                            title=f"System Degraded: {new_level.value}",
+                            message=f"Unhealthy providers: {', '.join(resilience_mgr.state.unhealthy_providers)}",
+                            data={"level": new_level.value},
+                        ))
+                    elif new_level == ResilienceLevel.NORMAL:
+                        await event_bus.publish(_NEvent(
+                            name="resilience_recovered",
+                            severity="info",
+                            title="System Recovered",
+                            message="All providers are healthy. Resilience level: NORMAL.",
+                        ))
 
-    async def _telemetry_poll_loop(self, adapter, control_loop, repo=None, load_manager=None) -> None:
+    async def _telemetry_poll_loop(self, adapter, control_loop, repo=None, load_manager=None, event_bus=None) -> None:
         """Poll inverter telemetry frequently for responsive dashboard updates.
 
         Also stores to DB every 60s so historical charts have continuous
@@ -914,6 +999,7 @@ class Application:
         last_db_store = 0.0
         last_load_poll = 0.0
         last_reconnect_attempt = 0.0
+        _was_connected = True  # assume connected at startup
         logger.info("Telemetry poll loop starting (interval: %ds)", interval)
         while not self._stop_event.is_set():
             # Always use the latest adapter (may be swapped by config reload)
@@ -924,14 +1010,32 @@ class Application:
 
             # Attempt reconnect if disconnected
             if not await current_adapter.is_connected():
+                if _was_connected and event_bus and self.config.notifications.enabled:
+                    from power_master.notifications.bus import Event as _NEvent
+                    await event_bus.publish(_NEvent(
+                        name="inverter_offline",
+                        severity="critical",
+                        title="Inverter Offline",
+                        message="Lost connection to the inverter. Attempting reconnect.",
+                    ))
+                _was_connected = False
                 now_mono = _time.monotonic()
                 if (now_mono - last_reconnect_attempt) >= reconnect_interval:
                     last_reconnect_attempt = now_mono
                     try:
                         await current_adapter.connect()
                         logger.info("Reconnected to inverter")
+                        _was_connected = True
+                        if event_bus and self.config.notifications.enabled:
+                            from power_master.notifications.bus import Event as _NEvent
+                            await event_bus.publish(_NEvent(
+                                name="inverter_online",
+                                severity="info",
+                                title="Inverter Online",
+                                message="Reconnected to the inverter successfully.",
+                            ))
                     except Exception:
-                        logger.debug("Inverter reconnect failed, will retry in %ds", reconnect_interval)
+                        logger.warning("Inverter reconnect failed, will retry in %ds", reconnect_interval)
                 try:
                     await asyncio.wait_for(self._stop_event.wait(), timeout=interval)
                     break
@@ -985,7 +1089,7 @@ class Application:
                         logger.debug("Load status poll failed", exc_info=True)
 
             except Exception:
-                logger.debug("Telemetry poll read failed", exc_info=True)
+                logger.warning("Telemetry poll read failed", exc_info=True)
 
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=interval)

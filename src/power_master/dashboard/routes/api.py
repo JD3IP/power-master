@@ -1075,6 +1075,25 @@ async def check_update(request: Request) -> dict:
     return {"status": "ok", "update_available": available, **updater.to_dict()}
 
 
+@router.post("/notifications/test/{channel}")
+async def test_notification(request: Request, channel: str) -> dict:
+    """Send a test notification to a specific channel."""
+    denied = require_admin(request)
+    if denied:
+        return denied
+
+    nm = getattr(request.app.state, "notification_manager", None)
+    if nm is None:
+        return {"status": "error", "error": "Notification manager not available"}
+
+    valid = {"telegram", "email", "pushover", "ntfy", "webhook"}
+    if channel not in valid:
+        return {"status": "error", "error": f"Unknown channel: {channel}"}
+
+    result = await nm.send_test(channel)
+    return result
+
+
 @router.post("/system/update")
 async def trigger_update(request: Request) -> dict:
     """Trigger a self-update: pull latest image and restart."""

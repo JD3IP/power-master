@@ -28,6 +28,8 @@ dependencies = [
     "pyserial>=3.5",
     # MQTT
     "aiomqtt>=2.3",
+    # Notifications (email)
+    "aiosmtplib>=3.0",
     # Dashboard / Logging
     "structlog>=25.1",
     "sse-starlette>=2.2",

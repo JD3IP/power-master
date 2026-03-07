@@ -32,6 +32,7 @@
     <button type="button" class="tab" data-tab="oscillation" onclick="switchTab('oscillation', this)">Anti-Oscillation</button>
     <button type="button" class="tab" data-tab="storm" onclick="switchTab('storm', this)">Storm</button>
     <button type="button" class="tab" data-tab="resilience" onclick="switchTab('resilience', this)">Resilience</button>
+    <button type="button" class="tab" data-tab="notifications" onclick="switchTab('notifications', this)">Notifications</button>
     <button type="button" class="tab" data-tab="system" onclick="switchTab('system', this)">System <span id="update-pill" style="display:none;background:#3fb950;color:#0d1117;border-radius:8px;padding:1px 6px;font-size:11px;margin-left:4px;">Update</span></button>
     {% if not auth_enabled or user_role == 'admin' %}
     <button type="button" class="tab" data-tab="users" onclick="switchTab('users', this)">Users</button>
@@ -52,6 +53,7 @@
         <option value="oscillation">Anti-Oscillation</option>
         <option value="storm">Storm</option>
         <option value="resilience">Resilience</option>
+        <option value="notifications">Notifications</option>
         <option value="system">System</option>
         {% if not auth_enabled or user_role == 'admin' %}
         <option value="users">Users</option>
@@ -831,6 +833,195 @@
 </section>
 {% endif %}
 
+<!-- ═══ NOTIFICATIONS TAB ═══ -->
+<section id="tab-notifications" class="tab-content">
+    <h2>Notifications</h2>
+    <div class="form-group">
+        <label for="notifications.enabled">
+            <input type="checkbox" id="notifications.enabled" name="notifications.enabled" {{ 'checked' if config.notifications.enabled }}>
+            Enable Notifications
+        </label>
+    </div>
+
+    <h3>Channels</h3>
+
+    <!-- Telegram -->
+    <fieldset style="border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:12px;">
+        <legend style="font-weight:600;">Telegram</legend>
+        <div class="form-group">
+            <label><input type="checkbox" name="notifications.channels.telegram.enabled" {{ 'checked' if config.notifications.channels.telegram.enabled }}> Enabled</label>
+        </div>
+        <div class="form-group">
+            <label for="notifications.channels.telegram.bot_token">Bot Token</label>
+            <input type="text" name="notifications.channels.telegram.bot_token" value="{{ config.notifications.channels.telegram.bot_token }}" placeholder="123456:ABC-DEF...">
+        </div>
+        <div class="form-group">
+            <label for="notifications.channels.telegram.chat_id">Chat ID</label>
+            <input type="text" name="notifications.channels.telegram.chat_id" value="{{ config.notifications.channels.telegram.chat_id }}" placeholder="-1001234567890">
+        </div>
+        {% if not is_read_only %}
+        <button type="button" class="btn" style="font-size:12px;" onclick="testChannel('telegram')">Test</button>
+        {% endif %}
+    </fieldset>
+
+    <!-- Email -->
+    <fieldset style="border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:12px;">
+        <legend style="font-weight:600;">Email (SMTP)</legend>
+        <div class="form-group">
+            <label><input type="checkbox" name="notifications.channels.email.enabled" {{ 'checked' if config.notifications.channels.email.enabled }}> Enabled</label>
+        </div>
+        <div class="form-group">
+            <label>SMTP Host</label>
+            <input type="text" name="notifications.channels.email.smtp_host" value="{{ config.notifications.channels.email.smtp_host }}" placeholder="smtp.gmail.com">
+        </div>
+        <div class="form-group">
+            <label>SMTP Port</label>
+            <input type="number" name="notifications.channels.email.smtp_port" value="{{ config.notifications.channels.email.smtp_port }}">
+        </div>
+        <div class="form-group">
+            <label>SMTP Username</label>
+            <input type="text" name="notifications.channels.email.smtp_user" value="{{ config.notifications.channels.email.smtp_user }}">
+        </div>
+        <div class="form-group">
+            <label>SMTP Password</label>
+            <input type="password" name="notifications.channels.email.smtp_password" value="{{ config.notifications.channels.email.smtp_password }}">
+        </div>
+        <div class="form-group">
+            <label><input type="checkbox" name="notifications.channels.email.use_tls" {{ 'checked' if config.notifications.channels.email.use_tls }}> Use TLS</label>
+        </div>
+        <div class="form-group">
+            <label>From Address</label>
+            <input type="email" name="notifications.channels.email.from_address" value="{{ config.notifications.channels.email.from_address }}">
+        </div>
+        <div class="form-group">
+            <label>To Address</label>
+            <input type="email" name="notifications.channels.email.to_address" value="{{ config.notifications.channels.email.to_address }}">
+        </div>
+        {% if not is_read_only %}
+        <button type="button" class="btn" style="font-size:12px;" onclick="testChannel('email')">Test</button>
+        {% endif %}
+    </fieldset>
+
+    <!-- Pushover -->
+    <fieldset style="border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:12px;">
+        <legend style="font-weight:600;">Pushover</legend>
+        <div class="form-group">
+            <label><input type="checkbox" name="notifications.channels.pushover.enabled" {{ 'checked' if config.notifications.channels.pushover.enabled }}> Enabled</label>
+        </div>
+        <div class="form-group">
+            <label>API Token</label>
+            <input type="text" name="notifications.channels.pushover.api_token" value="{{ config.notifications.channels.pushover.api_token }}">
+        </div>
+        <div class="form-group">
+            <label>User Key</label>
+            <input type="text" name="notifications.channels.pushover.user_key" value="{{ config.notifications.channels.pushover.user_key }}">
+        </div>
+        {% if not is_read_only %}
+        <button type="button" class="btn" style="font-size:12px;" onclick="testChannel('pushover')">Test</button>
+        {% endif %}
+    </fieldset>
+
+    <!-- ntfy.sh -->
+    <fieldset style="border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:12px;">
+        <legend style="font-weight:600;">ntfy.sh</legend>
+        <div class="form-group">
+            <label><input type="checkbox" name="notifications.channels.ntfy.enabled" {{ 'checked' if config.notifications.channels.ntfy.enabled }}> Enabled</label>
+        </div>
+        <div class="form-group">
+            <label>Server URL</label>
+            <input type="text" name="notifications.channels.ntfy.server_url" value="{{ config.notifications.channels.ntfy.server_url }}" placeholder="https://ntfy.sh">
+        </div>
+        <div class="form-group">
+            <label>Topic</label>
+            <input type="text" name="notifications.channels.ntfy.topic" value="{{ config.notifications.channels.ntfy.topic }}" placeholder="my-power-master">
+        </div>
+        <div class="form-group">
+            <label>Auth Token (optional)</label>
+            <input type="text" name="notifications.channels.ntfy.token" value="{{ config.notifications.channels.ntfy.token }}">
+        </div>
+        {% if not is_read_only %}
+        <button type="button" class="btn" style="font-size:12px;" onclick="testChannel('ntfy')">Test</button>
+        {% endif %}
+    </fieldset>
+
+    <!-- Webhook -->
+    <fieldset style="border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:12px;">
+        <legend style="font-weight:600;">Webhook</legend>
+        <div class="form-group">
+            <label><input type="checkbox" name="notifications.channels.webhook.enabled" {{ 'checked' if config.notifications.channels.webhook.enabled }}> Enabled</label>
+        </div>
+        <div class="form-group">
+            <label>URL</label>
+            <input type="text" name="notifications.channels.webhook.url" value="{{ config.notifications.channels.webhook.url }}" placeholder="https://example.com/webhook">
+        </div>
+        <div class="form-group">
+            <label>HTTP Method</label>
+            <select name="notifications.channels.webhook.method">
+                <option value="POST" {{ 'selected' if config.notifications.channels.webhook.method == 'POST' }}>POST</option>
+                <option value="PUT" {{ 'selected' if config.notifications.channels.webhook.method == 'PUT' }}>PUT</option>
+            </select>
+        </div>
+        {% if not is_read_only %}
+        <button type="button" class="btn" style="font-size:12px;" onclick="testChannel('webhook')">Test</button>
+        {% endif %}
+    </fieldset>
+
+    <h3>Event Rules</h3>
+    <div class="form-group">
+        <label>Battery Low Threshold (%)</label>
+        <input type="number" name="notifications.battery_low_threshold" value="{{ (config.notifications.battery_low_threshold * 100)|int }}" min="0" max="100" step="1">
+    </div>
+    <div class="form-group">
+        <label>Battery Full Threshold (%)</label>
+        <input type="number" name="notifications.battery_full_threshold" value="{{ (config.notifications.battery_full_threshold * 100)|int }}" min="0" max="100" step="1">
+    </div>
+    <div class="form-group">
+        <label>Log Forwarding Min Level</label>
+        <select name="notifications.log_min_level">
+            <option value="WARNING" {{ 'selected' if config.notifications.log_min_level == 'WARNING' }}>WARNING</option>
+            <option value="ERROR" {{ 'selected' if config.notifications.log_min_level == 'ERROR' }}>ERROR</option>
+            <option value="CRITICAL" {{ 'selected' if config.notifications.log_min_level == 'CRITICAL' }}>CRITICAL</option>
+        </select>
+    </div>
+
+    <div class="settings-table">
+        <table>
+            <thead>
+                <tr><th>Event</th><th>Enabled</th><th>Severity</th><th>Cooldown (s)</th></tr>
+            </thead>
+            <tbody>
+                {% set events = [
+                    ('price_spike', 'Price Spike'),
+                    ('price_spike_end', 'Price Spike End'),
+                    ('battery_low', 'Battery Low'),
+                    ('battery_full', 'Battery Full'),
+                    ('inverter_offline', 'Inverter Offline'),
+                    ('inverter_online', 'Inverter Online'),
+                    ('resilience_degraded', 'System Degraded'),
+                    ('resilience_recovered', 'System Recovered'),
+                    ('log_error', 'Log Error Forward'),
+                ] %}
+                {% for key, label in events %}
+                {% set evt = config.notifications.events[key] %}
+                <tr>
+                    <td>{{ label }}</td>
+                    <td><input type="checkbox" name="notifications.events.{{ key }}.enabled" {{ 'checked' if evt.enabled }}></td>
+                    <td>
+                        <select name="notifications.events.{{ key }}.severity" style="width:auto;">
+                            <option value="info" {{ 'selected' if evt.severity == 'info' }}>Info</option>
+                            <option value="warning" {{ 'selected' if evt.severity == 'warning' }}>Warning</option>
+                            <option value="critical" {{ 'selected' if evt.severity == 'critical' }}>Critical</option>
+                        </select>
+                    </td>
+                    <td><input type="number" name="notifications.events.{{ key }}.cooldown_seconds" value="{{ evt.cooldown_seconds }}" min="0" style="width:80px;"></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div id="notif-test-result" style="margin-top:8px;"></div>
+</section>
+
 <!-- ═══ SUBMIT ═══ -->
 {% if not is_read_only %}
 <div class="form-actions">
@@ -1241,5 +1432,29 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 {% endif %}
+
+function testChannel(channel) {
+    var resultEl = document.getElementById('notif-test-result');
+    if (resultEl) resultEl.textContent = 'Sending test to ' + channel + '...';
+    fetch('/api/notifications/test/' + channel, {method: 'POST'})
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (resultEl) {
+            if (data.status === 'ok') {
+                resultEl.textContent = 'Test sent to ' + channel + ' successfully!';
+                resultEl.style.color = 'var(--success, #3fb950)';
+            } else {
+                resultEl.textContent = 'Test failed: ' + (data.error || 'Unknown error');
+                resultEl.style.color = 'var(--danger, #f85149)';
+            }
+        }
+    })
+    .catch(function(err) {
+        if (resultEl) {
+            resultEl.textContent = 'Test failed: ' + err;
+            resultEl.style.color = 'var(--danger, #f85149)';
+        }
+    });
+}
 </script>
 {% endblock %}

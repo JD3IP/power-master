@@ -36,6 +36,22 @@ CHECKBOX_FIELDS = {
     "storm.enabled",
     "mqtt.enabled",
     "mqtt.ha_discovery_enabled",
+    "notifications.enabled",
+    "notifications.channels.telegram.enabled",
+    "notifications.channels.email.enabled",
+    "notifications.channels.email.use_tls",
+    "notifications.channels.pushover.enabled",
+    "notifications.channels.ntfy.enabled",
+    "notifications.channels.webhook.enabled",
+    "notifications.events.price_spike.enabled",
+    "notifications.events.price_spike_end.enabled",
+    "notifications.events.battery_low.enabled",
+    "notifications.events.battery_full.enabled",
+    "notifications.events.inverter_offline.enabled",
+    "notifications.events.inverter_online.enabled",
+    "notifications.events.resilience_degraded.enabled",
+    "notifications.events.resilience_recovered.enabled",
+    "notifications.events.log_error.enabled",
 }
 
 # Fields typed as list[str] — sent as comma-separated strings from HTML forms
@@ -51,6 +67,8 @@ NULLABLE_FIELDS = {
 # Fields displayed as percentage in UI but stored as 0-1 decimal
 PERCENTAGE_FIELDS = {
     "planning.soc_deviation_tolerance",
+    "notifications.battery_low_threshold",
+    "notifications.battery_full_threshold",
 }
 
 

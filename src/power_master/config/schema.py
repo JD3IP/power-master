@@ -265,6 +265,97 @@ class AccountingConfig(BaseModel):
     currency_code: str = "AUD"
 
 
+class NotificationChannelConfig(BaseModel):
+    """Base fields shared by all notification channels."""
+    enabled: bool = False
+
+
+class TelegramChannelConfig(NotificationChannelConfig):
+    bot_token: str = ""
+    chat_id: str = ""
+
+
+class EmailChannelConfig(NotificationChannelConfig):
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    use_tls: bool = True
+    from_address: str = ""
+    to_address: str = ""
+
+
+class PushoverChannelConfig(NotificationChannelConfig):
+    api_token: str = ""
+    user_key: str = ""
+
+
+class NtfyChannelConfig(NotificationChannelConfig):
+    server_url: str = "https://ntfy.sh"
+    topic: str = ""
+    token: str = ""
+
+
+class WebhookChannelConfig(NotificationChannelConfig):
+    url: str = ""
+    method: str = "POST"
+    headers: dict[str, str] = Field(default_factory=dict)
+
+
+class NotificationChannelsConfig(BaseModel):
+    telegram: TelegramChannelConfig = TelegramChannelConfig()
+    email: EmailChannelConfig = EmailChannelConfig()
+    pushover: PushoverChannelConfig = PushoverChannelConfig()
+    ntfy: NtfyChannelConfig = NtfyChannelConfig()
+    webhook: WebhookChannelConfig = WebhookChannelConfig()
+
+
+class NotificationEventConfig(BaseModel):
+    """Per-event notification rule."""
+    enabled: bool = True
+    severity: Literal["info", "warning", "critical"] = "warning"
+    cooldown_seconds: int = 3600
+
+
+class NotificationEventsConfig(BaseModel):
+    price_spike: NotificationEventConfig = NotificationEventConfig(
+        severity="critical", cooldown_seconds=300,
+    )
+    price_spike_end: NotificationEventConfig = NotificationEventConfig(
+        severity="info", cooldown_seconds=60,
+    )
+    battery_low: NotificationEventConfig = NotificationEventConfig(
+        severity="warning", cooldown_seconds=3600,
+    )
+    battery_full: NotificationEventConfig = NotificationEventConfig(
+        severity="info", cooldown_seconds=3600,
+    )
+    inverter_offline: NotificationEventConfig = NotificationEventConfig(
+        severity="critical", cooldown_seconds=600,
+    )
+    inverter_online: NotificationEventConfig = NotificationEventConfig(
+        severity="info", cooldown_seconds=60,
+    )
+    resilience_degraded: NotificationEventConfig = NotificationEventConfig(
+        severity="warning", cooldown_seconds=600,
+    )
+    resilience_recovered: NotificationEventConfig = NotificationEventConfig(
+        severity="info", cooldown_seconds=60,
+    )
+    log_error: NotificationEventConfig = NotificationEventConfig(
+        severity="warning", cooldown_seconds=300,
+    )
+
+
+class NotificationsConfig(BaseModel):
+    enabled: bool = False
+    battery_low_threshold: float = Field(0.10, ge=0.0, le=1.0)
+    battery_full_threshold: float = Field(0.95, ge=0.0, le=1.0)
+    log_min_level: str = "ERROR"
+    channels: NotificationChannelsConfig = NotificationChannelsConfig()
+    events: NotificationEventsConfig = NotificationEventsConfig()
+
+
 class LoggingConfig(BaseModel):
     level: str = "INFO"
     format: str = "json"
@@ -294,5 +385,6 @@ class AppConfig(BaseModel):
     dashboard: DashboardConfig = DashboardConfig()
     resilience: ResilienceConfig = ResilienceConfig()
     accounting: AccountingConfig = AccountingConfig()
+    notifications: NotificationsConfig = NotificationsConfig()
     logging: LoggingConfig = LoggingConfig()
     db: DBConfig = DBConfig()

@@ -157,6 +157,77 @@ accounting:
   billing_cycle_day: 1                  # Day of month billing cycle starts
   currency_code: "AUD"
 
+notifications:
+  enabled: false
+  battery_low_threshold: 0.10           # SOC below this triggers battery_low event
+  battery_full_threshold: 0.95          # SOC above this triggers battery_full event
+  log_min_level: "ERROR"                # Forward log entries at this level or above
+  channels:
+    telegram:
+      enabled: false
+      bot_token: ""
+      chat_id: ""
+    email:
+      enabled: false
+      smtp_host: ""
+      smtp_port: 587
+      smtp_user: ""
+      smtp_password: ""
+      use_tls: true
+      from_address: ""
+      to_address: ""
+    pushover:
+      enabled: false
+      api_token: ""
+      user_key: ""
+    ntfy:
+      enabled: false
+      server_url: "https://ntfy.sh"
+      topic: ""
+      token: ""
+    webhook:
+      enabled: false
+      url: ""
+      method: "POST"
+      headers: {}
+  events:
+    price_spike:
+      enabled: true
+      severity: "critical"
+      cooldown_seconds: 300
+    price_spike_end:
+      enabled: true
+      severity: "info"
+      cooldown_seconds: 60
+    battery_low:
+      enabled: true
+      severity: "warning"
+      cooldown_seconds: 3600
+    battery_full:
+      enabled: true
+      severity: "info"
+      cooldown_seconds: 3600
+    inverter_offline:
+      enabled: true
+      severity: "critical"
+      cooldown_seconds: 600
+    inverter_online:
+      enabled: true
+      severity: "info"
+      cooldown_seconds: 60
+    resilience_degraded:
+      enabled: true
+      severity: "warning"
+      cooldown_seconds: 600
+    resilience_recovered:
+      enabled: true
+      severity: "info"
+      cooldown_seconds: 60
+    log_error:
+      enabled: true
+      severity: "warning"
+      cooldown_seconds: 300
+
 logging:
   level: "INFO"
   format: "json"                        # json or console
