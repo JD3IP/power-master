@@ -867,12 +867,31 @@ async def inverter_diagnostics(request: Request) -> dict:
         connected = False
 
     if not connected:
-        return {
+        diag: dict = {
             "connected": False,
             "error": "Not connected to inverter",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "config": _foxess_config_info(request.app.state.config),
         }
+        # Add serial port diagnostics for RTU mode
+        foxess = request.app.state.config.hardware.foxess
+        if foxess.connection_type == "rtu":
+            import os
+            port = foxess.serial_port
+            diag["serial_diagnostics"] = {
+                "port": port,
+                "port_exists": os.path.exists(port),
+                "port_readable": os.access(port, os.R_OK) if os.path.exists(port) else False,
+                "port_writable": os.access(port, os.W_OK) if os.path.exists(port) else False,
+                "hint": (
+                    f"Port {port} does not exist — check USB adapter is plugged in"
+                    if not os.path.exists(port)
+                    else f"No write permission on {port} — run 'sudo usermod -a -G dialout $USER'"
+                    if not os.access(port, os.W_OK)
+                    else "Port accessible but connection failed — check baud rate and wiring"
+                ),
+            }
+        return diag
 
     # Read all registers individually so we can report per-register status
     from power_master.hardware.adapters.foxess import Registers, KH_WORK_MODES
