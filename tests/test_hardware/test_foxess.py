@@ -1,6 +1,9 @@
-"""Tests for Fox-ESS KH8 Modbus TCP adapter."""
+"""Tests for Fox-ESS KH8 Modbus TCP/RTU adapter."""
 
 from __future__ import annotations
+
+import os
+import tempfile
 
 import pytest
 
@@ -99,3 +102,20 @@ class TestInferHwMode:
     def test_pv_charging_priority_over_grid(self) -> None:
         # Both solar and battery positive — PV Charging wins over Grid Charging
         assert FoxESSAdapter.infer_hw_mode(500, 500, 500) == "PV Charging"
+
+
+class TestSerialPortValidation:
+    """Test serial port pre-connect validation."""
+
+    def test_nonexistent_port_raises(self) -> None:
+        with pytest.raises(ConnectionError, match="does not exist"):
+            FoxESSAdapter._validate_serial_port("/dev/ttyNONEXISTENT_12345")
+
+    def test_regular_file_raises(self) -> None:
+        with tempfile.NamedTemporaryFile() as f:
+            with pytest.raises(ConnectionError, match="not a character device"):
+                FoxESSAdapter._validate_serial_port(f.name)
+
+    def test_valid_char_device_passes(self) -> None:
+        # /dev/null is a character device available on all Linux systems
+        FoxESSAdapter._validate_serial_port("/dev/null")

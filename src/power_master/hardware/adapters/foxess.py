@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import stat
 import time
 from dataclasses import dataclass
 
@@ -111,6 +113,9 @@ class FoxESSAdapter:
             self._connected = False
 
         if self._config.connection_type == "rtu":
+            # Validate serial port before attempting connection
+            self._validate_serial_port(self._config.serial_port)
+
             self._client = AsyncModbusSerialClient(
                 port=self._config.serial_port,
                 framer=FramerType.RTU,
@@ -120,20 +125,37 @@ class FoxESSAdapter:
                 stopbits=1,
                 timeout=10,
                 retries=3,
+                reconnect_delay=0,  # We handle reconnection ourselves
             )
-            connected = await self._client.connect()
-            if not connected:
-                raise ConnectionError(
-                    f"Failed to connect to Fox-ESS via RTU at {self._config.serial_port} "
-                    f"({self._config.baudrate} baud)"
-                )
-            self._connected = True
             logger.info(
-                "Connected to Fox-ESS KH via RTU at %s (%d baud, unit %d)",
+                "RTU: opening serial port %s (%d baud, 8N1, unit %d)",
                 self._config.serial_port,
                 self._config.baudrate,
                 self._config.unit_id,
             )
+            connected = await self._client.connect()
+            if not connected:
+                raise ConnectionError(
+                    f"Failed to open serial port {self._config.serial_port} "
+                    f"({self._config.baudrate} baud). Check the device is "
+                    f"connected and not in use by another process."
+                )
+            # Verify the transport is active after connect
+            if not self._client.connected:
+                raise ConnectionError(
+                    f"Serial port {self._config.serial_port} opened but transport "
+                    f"is not active. The port may have closed immediately."
+                )
+            self._connected = True
+            logger.info(
+                "RTU: serial port opened successfully at %s (%d baud, unit %d)",
+                self._config.serial_port,
+                self._config.baudrate,
+                self._config.unit_id,
+            )
+
+            # Attempt a test read to verify Modbus communication
+            await self._verify_rtu_communication()
         else:
             self._client = AsyncModbusTcpClient(
                 host=self._config.host,
@@ -365,6 +387,83 @@ class FoxESSAdapter:
             return "Self-Use"
         else:
             return "Idle"
+
+    # ── Serial port validation & verification ─────────────
+
+    @staticmethod
+    def _validate_serial_port(port: str) -> None:
+        """Check that the serial port device exists and is accessible.
+
+        Raises ConnectionError with a helpful message if the port is not usable.
+        """
+        if not os.path.exists(port):
+            raise ConnectionError(
+                f"Serial port {port} does not exist. "
+                f"Check the USB-to-RS485 adapter is connected. "
+                f"If running in Docker, ensure the device is passed through "
+                f"(e.g. devices: ['{port}:{port}'] in docker-compose.yml)."
+            )
+        try:
+            port_stat = os.stat(port)
+        except OSError as e:
+            raise ConnectionError(f"Cannot stat serial port {port}: {e}") from e
+        if not stat.S_ISCHR(port_stat.st_mode):
+            raise ConnectionError(
+                f"{port} is not a character device. "
+                f"Expected a serial port (e.g. /dev/ttyUSB0)."
+            )
+        if not os.access(port, os.R_OK | os.W_OK):
+            raise ConnectionError(
+                f"No read/write permission on {port}. "
+                f"Run 'sudo usermod -a -G dialout $USER' and re-login, "
+                f"or 'sudo chmod 666 {port}' for a quick fix."
+            )
+        logger.info("RTU: serial port %s exists and is accessible", port)
+
+    async def _verify_rtu_communication(self) -> None:
+        """Attempt a test register read to verify the Modbus RTU bus is working.
+
+        Reads inverter state register (31027) as a lightweight probe.
+        Logs result but does not raise on failure — the inverter may be
+        powered off or the register map may differ, but at least TXD activity
+        confirms the serial adapter is transmitting.
+        """
+        assert self._client is not None
+        logger.info(
+            "RTU: sending test read to unit %d (register %d) to verify serial TX...",
+            self._config.unit_id,
+            Registers.INVERTER_STATE,
+        )
+        try:
+            result = await self._client.read_input_registers(
+                Registers.INVERTER_STATE, count=1, device_id=self._config.unit_id
+            )
+            if result.isError():
+                logger.warning(
+                    "RTU: test read got error response: %s. "
+                    "Serial TX is working but the inverter did not respond correctly. "
+                    "Check unit_id (%d), baud rate (%d), and wiring.",
+                    result,
+                    self._config.unit_id,
+                    self._config.baudrate,
+                )
+            else:
+                logger.info(
+                    "RTU: test read successful — inverter state=%d. "
+                    "Serial communication verified.",
+                    result.registers[0],
+                )
+        except Exception as e:
+            logger.warning(
+                "RTU: test read failed: %s. "
+                "Serial port is open but no response from inverter at unit %d. "
+                "Check: (1) RS485 A/B wiring, (2) baud rate %d matches inverter, "
+                "(3) unit_id %d is correct, (4) inverter is powered on.",
+                e,
+                self._config.unit_id,
+                self._config.baudrate,
+                self._config.unit_id,
+            )
 
     # ── Low-level Modbus operations ──────────────────────
 
