@@ -306,8 +306,11 @@ class FoxESSAdapter:
 
                 elif command.mode == OperatingMode.FORCE_CHARGE:
                     charge_w = abs(command.power_w)
-                    # Matches example remote_set(): exactly 3 writes, no extras
-                    # Negative active power = charge from grid
+                    # Set work_mode=3 (Force Charge) as primary mechanism,
+                    # then attempt remote power control for fine-grained control.
+                    # Some firmware versions only respond to WORK_MODE, others
+                    # support the remote registers (44000-44002) as well.
+                    await self._write_register(Registers.WORK_MODE, 3)
                     await self._write_register(Registers.REMOTE_ENABLE, 1)
                     await self._write_register(
                         Registers.REMOTE_TIMEOUT,
@@ -315,16 +318,16 @@ class FoxESSAdapter:
                     )
                     await self._write_s16(Registers.ACTIVE_POWER, -charge_w)
                     logger.info(
-                        "FORCE_CHARGE: remote=1, timeout=%ds, "
+                        "FORCE_CHARGE: work_mode=3, remote=1, timeout=%ds, "
                         "active_power=-%dW (charge from grid)",
                         self._config.watchdog_timeout_seconds, charge_w,
                     )
-                    await self._verify_remote_state(expected_remote=1, expected_active=-charge_w)
 
                 elif command.mode == OperatingMode.FORCE_DISCHARGE:
                     discharge_w = abs(command.power_w)
-                    # Matches example remote_set(): exactly 3 writes, no extras
-                    # Positive active power = discharge to loads
+                    # Set work_mode=4 (Force Discharge) as primary mechanism,
+                    # then attempt remote power control for fine-grained control.
+                    await self._write_register(Registers.WORK_MODE, 4)
                     await self._write_register(Registers.REMOTE_ENABLE, 1)
                     await self._write_register(
                         Registers.REMOTE_TIMEOUT,
@@ -332,11 +335,10 @@ class FoxESSAdapter:
                     )
                     await self._write_register(Registers.ACTIVE_POWER, discharge_w)
                     logger.info(
-                        "FORCE_DISCHARGE: remote=1, timeout=%ds, "
+                        "FORCE_DISCHARGE: work_mode=4, remote=1, timeout=%ds, "
                         "active_power=+%dW (discharge to loads)",
                         self._config.watchdog_timeout_seconds, discharge_w,
                     )
-                    await self._verify_remote_state(expected_remote=1, expected_active=discharge_w)
 
                 elif command.mode == OperatingMode.FORCE_CHARGE_ZERO_IMPORT:
                     # Matches example mode_battery_off_best_effort():
