@@ -117,7 +117,7 @@ class FoxESSAdapter:
             self._validate_serial_port(self._config.serial_port)
 
             self._client = AsyncModbusSerialClient(
-                port=self._config.serial_port,
+                port=port,
                 framer=FramerType.RTU,
                 baudrate=self._config.baudrate,
                 bytesize=8,
@@ -470,20 +470,30 @@ class FoxESSAdapter:
     async def _read_uint16(self, address: int) -> int:
         """Read a single uint16 holding register (function code 3)."""
         assert self._client is not None
-        result = await self._client.read_holding_registers(
-            address, count=1, device_id=self._config.unit_id
-        )
+        try:
+            result = await self._client.read_holding_registers(
+                address, count=1, device_id=self._config.unit_id
+            )
+        except Exception:
+            self._connected = False
+            raise
         if result.isError():
+            self._connected = False
             raise IOError(f"Modbus read error at holding register {address}: {result}")
         return result.registers[0]
 
     async def _read_input_uint16(self, address: int) -> int:
         """Read a single uint16 input register (function code 4)."""
         assert self._client is not None
-        result = await self._client.read_input_registers(
-            address, count=1, device_id=self._config.unit_id
-        )
+        try:
+            result = await self._client.read_input_registers(
+                address, count=1, device_id=self._config.unit_id
+            )
+        except Exception:
+            self._connected = False
+            raise
         if result.isError():
+            self._connected = False
             raise IOError(f"Modbus read error at input register {address}: {result}")
         return result.registers[0]
 
@@ -516,10 +526,15 @@ class FoxESSAdapter:
                 address,
                 value & 0xFFFF,
             )
-        result = await self._client.write_register(
-            address, value & 0xFFFF, device_id=self._config.unit_id
-        )
+        try:
+            result = await self._client.write_register(
+                address, value & 0xFFFF, device_id=self._config.unit_id
+            )
+        except Exception:
+            self._connected = False
+            raise
         if result.isError():
+            self._connected = False
             raise IOError(f"Modbus write error at register {address}: {result}")
         logger.info(
             "Modbus write ok: addr=%d value=%d",

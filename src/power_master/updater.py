@@ -365,6 +365,7 @@ try:
     network_mode = host_config.get("NetworkMode", "bridge")
     restart_policy = host_config.get("RestartPolicy") or {}
     port_bindings = host_config.get("PortBindings") or {}
+    devices = host_config.get("Devices") or []
     environment = container_config.get("Env") or []
     labels = container_config.get("Labels") or {}
 
@@ -372,6 +373,7 @@ try:
     print(f"  NetworkMode: {network_mode}")
     print(f"  PortBindings: {json.dumps(port_bindings)}")
     print(f"  Binds: {binds}")
+    print(f"  Devices: {devices}")
     print(f"  RestartPolicy: {restart_policy}")
 
     old.stop(timeout=30)
@@ -394,6 +396,10 @@ try:
     if pb:
         run_kwargs["ports"] = pb
         print(f"  Applying port bindings: {pb}")
+    if devices:
+        dev_list = [f"{d['PathOnHost']}:{d['PathInContainer']}" for d in devices]
+        run_kwargs["devices"] = dev_list
+        print(f"  Applying devices: {dev_list}")
 
     print(f"Creating new container from {new_image}...")
     client.containers.run(new_image, **run_kwargs)

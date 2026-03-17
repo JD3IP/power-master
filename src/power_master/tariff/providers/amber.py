@@ -24,18 +24,37 @@ class AmberProvider(TariffProvider):
 
     def __init__(self, config: TariffProviderConfig) -> None:
         self._config = config
+        self._resolved_site_id: str | None = None
         self._client = httpx.AsyncClient(
             base_url=BASE_URL,
             headers={"Authorization": f"Bearer {config.api_key}"},
             timeout=30.0,
         )
 
+    async def _resolve_site_id(self) -> str:
+        """Return configured site_id, or auto-discover from account."""
+        if self._config.site_id:
+            return self._config.site_id
+        if self._resolved_site_id:
+            return self._resolved_site_id
+        site_id = await self.get_site_id()
+        if not site_id:
+            raise ValueError(
+                "No Amber site_id configured and no sites found on account. "
+                "Set site_id in config or check your Amber API key."
+            )
+        logger.info("Auto-resolved Amber site ID: %s", site_id)
+        self._resolved_site_id = site_id
+        # Write back so the settings UI shows the resolved value
+        self._config.site_id = site_id
+        return site_id
+
     async def fetch_prices(self) -> TariffSchedule:
         """Fetch current and forecast prices from Amber.
 
         Returns both current and forecast prices for the next ~48 hours.
         """
-        site_id = self._config.site_id
+        site_id = await self._resolve_site_id()
 
         # Fetch current + 48h forecast (96 x 30-min intervals)
         resp = await self._client.get(
@@ -67,7 +86,7 @@ class AmberProvider(TariffProvider):
 
         Amber supports up to 12 months of historical data.
         """
-        site_id = self._config.site_id
+        site_id = await self._resolve_site_id()
 
         # Amber API accepts date range
         resp = await self._client.get(

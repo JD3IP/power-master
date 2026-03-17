@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import os
 import tempfile
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 
+from power_master.config.schema import FoxESSConfig
 from power_master.hardware.adapters.foxess import FoxESSAdapter, Registers
 from power_master.hardware.base import InverterCommand, OperatingMode
 from power_master.hardware.telemetry import Telemetry
@@ -119,3 +121,110 @@ class TestSerialPortValidation:
     def test_valid_char_device_passes(self) -> None:
         # /dev/null is a character device available on all Linux systems
         FoxESSAdapter._validate_serial_port("/dev/null")
+
+
+def _make_adapter(connection_type: str = "tcp") -> FoxESSAdapter:
+    """Create an adapter with a mocked Modbus client for unit testing."""
+    config = FoxESSConfig(connection_type=connection_type, host="127.0.0.1", port=502)
+    adapter = FoxESSAdapter(config)
+    mock_client = AsyncMock()
+    type(mock_client).connected = PropertyMock(return_value=True)
+    adapter._client = mock_client
+    adapter._connected = True
+    return adapter
+
+
+class TestDisconnectOnError:
+    """Verify that _connected is set to False when Modbus ops fail,
+    so the reconnect logic in the poll loop will trigger."""
+
+    @pytest.mark.asyncio
+    async def test_read_holding_exception_marks_disconnected(self) -> None:
+        adapter = _make_adapter()
+        adapter._client.read_holding_registers.side_effect = OSError("serial timeout")
+
+        with pytest.raises(OSError):
+            await adapter._read_uint16(31000)
+
+        assert adapter._connected is False
+        assert not await adapter.is_connected()
+
+    @pytest.mark.asyncio
+    async def test_read_input_exception_marks_disconnected(self) -> None:
+        adapter = _make_adapter()
+        adapter._client.read_input_registers.side_effect = OSError("serial timeout")
+
+        with pytest.raises(OSError):
+            await adapter._read_input_uint16(31000)
+
+        assert adapter._connected is False
+
+    @pytest.mark.asyncio
+    async def test_read_holding_modbus_error_marks_disconnected(self) -> None:
+        adapter = _make_adapter()
+        error_result = MagicMock()
+        error_result.isError.return_value = True
+        adapter._client.read_holding_registers.return_value = error_result
+
+        with pytest.raises(IOError):
+            await adapter._read_uint16(31000)
+
+        assert adapter._connected is False
+
+    @pytest.mark.asyncio
+    async def test_read_input_modbus_error_marks_disconnected(self) -> None:
+        adapter = _make_adapter()
+        error_result = MagicMock()
+        error_result.isError.return_value = True
+        adapter._client.read_input_registers.return_value = error_result
+
+        with pytest.raises(IOError):
+            await adapter._read_input_uint16(31000)
+
+        assert adapter._connected is False
+
+    @pytest.mark.asyncio
+    async def test_write_exception_marks_disconnected(self) -> None:
+        adapter = _make_adapter()
+        adapter._client.write_register.side_effect = OSError("serial timeout")
+
+        with pytest.raises(OSError):
+            await adapter._write_register(44000, 1)
+
+        assert adapter._connected is False
+
+    @pytest.mark.asyncio
+    async def test_write_modbus_error_marks_disconnected(self) -> None:
+        adapter = _make_adapter()
+        error_result = MagicMock()
+        error_result.isError.return_value = True
+        adapter._client.write_register.return_value = error_result
+
+        with pytest.raises(IOError):
+            await adapter._write_register(44000, 1)
+
+        assert adapter._connected is False
+
+    @pytest.mark.asyncio
+    async def test_successful_read_stays_connected(self) -> None:
+        adapter = _make_adapter()
+        ok_result = MagicMock()
+        ok_result.isError.return_value = False
+        ok_result.registers = [42]
+        adapter._client.read_holding_registers.return_value = ok_result
+
+        value = await adapter._read_uint16(31000)
+
+        assert value == 42
+        assert adapter._connected is True
+
+    @pytest.mark.asyncio
+    async def test_serial_port_missing_raises_clear_error(self) -> None:
+        config = FoxESSConfig(
+            connection_type="rtu",
+            serial_port="/dev/ttyNONEXISTENT",
+        )
+        adapter = FoxESSAdapter(config)
+
+        with pytest.raises(ConnectionError, match="does not exist"):
+            await adapter.connect()
