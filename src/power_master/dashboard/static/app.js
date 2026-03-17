@@ -216,7 +216,10 @@ function updateModeDisplay(data) {
         var source = data.source || 'default';
         var remaining = data.override_remaining_s || 0;
 
-        if (overrideActive && remaining > 0) {
+        if (data.optimiser_enabled === false && !(overrideActive && remaining > 0)) {
+            indicator.textContent = 'Optimiser: DISABLED (monitor only)';
+            indicator.className = 'mode-source default';
+        } else if (overrideActive && remaining > 0) {
             var mins = Math.ceil(remaining / 60);
             indicator.textContent = 'Manual Override: ' + mins + 'm remaining';
             indicator.className = 'mode-source override';
@@ -243,7 +246,10 @@ function updateModeDisplay(data) {
     // Update status bar — Optimiser and Override
     var statusOpt = document.getElementById('status-optimiser');
     if (statusOpt) {
-        if (data.optimiser_mode_name) {
+        if (data.optimiser_enabled === false) {
+            statusOpt.textContent = 'DISABLED';
+            statusOpt.style.color = 'var(--accent-red, #e74c3c)';
+        } else if (data.optimiser_mode_name) {
             var optName = data.optimiser_mode_name.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
             statusOpt.textContent = optName;
             statusOpt.style.color = 'var(--accent-green)';
@@ -942,6 +948,7 @@ function connectSSE() {
                     user_mode: data.mode.user_mode,
                     user_mode_name: data.mode.user_mode_name,
                     auto_active: data.mode.auto_active,
+                    optimiser_enabled: data.mode.optimiser_enabled,
                 });
             }
 
