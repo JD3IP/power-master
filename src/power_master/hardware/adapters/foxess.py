@@ -509,9 +509,15 @@ class FoxESSAdapter:
 
         Control registers (41xxx, 44xxx) should be written individually,
         not in blocks, per Fox-ESS Modbus protocol requirements.
+        For RTU connections, a 100ms inter-frame delay is enforced to
+        prevent frame collisions on USB-serial adapters.
         """
         assert self._client is not None
         if self._config.connection_type == "rtu":
+            # RTU inter-frame delay: USB-serial adapters can buffer/merge
+            # frames if writes are too rapid, causing the inverter to miss
+            # commands even though pymodbus reports success.
+            await asyncio.sleep(0.1)
             logger.info(
                 "Modbus write attempt: port=%s unit=%d addr=%d value=%d",
                 self._config.serial_port,
