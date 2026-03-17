@@ -117,7 +117,7 @@ class FoxESSAdapter:
             self._validate_serial_port(self._config.serial_port)
 
             self._client = AsyncModbusSerialClient(
-                port=port,
+                port=self._config.serial_port,
                 framer=FramerType.RTU,
                 baudrate=self._config.baudrate,
                 bytesize=8,
