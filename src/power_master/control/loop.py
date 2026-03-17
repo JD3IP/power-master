@@ -161,6 +161,11 @@ class ControlLoop:
         if command is None:
             return None
 
+        # 2b. Skip dispatch if optimiser is disabled and this isn't a manual override
+        if not self._config.planning.optimiser_enabled and command.source != "manual":
+            logger.debug("Tick %d: optimiser disabled, skipping auto command", self._state.tick_count)
+            return None
+
         # 3. Apply hierarchy
         hierarchy_result = evaluate_hierarchy(
             plan_command=command,
@@ -240,6 +245,10 @@ class ControlLoop:
             telemetry = self._state.last_telemetry
             cmd = self._determine_command(telemetry) if telemetry else self._last_dispatched_command
             if cmd is None:
+                continue
+
+            # Skip refresh if optimiser disabled and not a manual command
+            if not self._config.planning.optimiser_enabled and cmd.source != "manual":
                 continue
 
             if cmd.mode not in self._REMOTE_MODES:

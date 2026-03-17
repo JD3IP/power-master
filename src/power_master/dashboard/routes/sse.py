@@ -124,6 +124,9 @@ async def event_stream(request: Request) -> StreamingResponse:
                     if display_mode == _OM.AUTO:
                         display_mode = _OM.SELF_USE
 
+                    config = getattr(request.app.state, "config", None)
+                    optimiser_enabled = config.planning.optimiser_enabled if config else True
+
                     data["mode"] = {
                         "current": display_mode.value,
                         "name": display_mode.name,
@@ -137,6 +140,7 @@ async def event_stream(request: Request) -> StreamingResponse:
                         "user_mode": user_mode,
                         "user_mode_name": user_mode_name,
                         "auto_active": not override_active,
+                        "optimiser_enabled": optimiser_enabled,
                     }
 
                 # Include update status if updater is available

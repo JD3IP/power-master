@@ -54,6 +54,7 @@ class LoadProfileConfig(BaseModel):
 
 
 class PlanningConfig(BaseModel):
+    optimiser_enabled: bool = True
     horizon_hours: int = 48
     slot_duration_minutes: int = 30
     evaluation_interval_seconds: int = 300

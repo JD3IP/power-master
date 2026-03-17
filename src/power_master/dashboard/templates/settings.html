@@ -240,6 +240,13 @@
 <section id="tab-planning" class="tab-content">
     <h2>Planning</h2>
     <div class="form-group">
+        <label for="planning.optimiser_enabled">
+            <input type="checkbox" id="planning.optimiser_enabled" name="planning.optimiser_enabled" {% if config.planning.optimiser_enabled %}checked{% endif %}>
+            Optimiser Enabled
+        </label>
+        <small>When disabled, the system reads telemetry and collects data but does not send automatic commands to the inverter. Manual control still works.</small>
+    </div>
+    <div class="form-group">
         <label for="planning.horizon_hours">Horizon (hours)</label>
         <input type="number" id="planning.horizon_hours" name="planning.horizon_hours" value="{{ config.planning.horizon_hours }}">
     </div>

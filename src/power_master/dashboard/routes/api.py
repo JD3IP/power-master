@@ -108,6 +108,9 @@ async def get_mode(request: Request) -> dict:
     if display_mode == OperatingMode.AUTO:
         display_mode = OperatingMode.SELF_USE
 
+    config = getattr(request.app.state, "config", None)
+    optimiser_enabled = config.planning.optimiser_enabled if config else True
+
     return {
         "current_mode": display_mode.value,
         "mode_name": display_mode.name,
@@ -119,6 +122,7 @@ async def get_mode(request: Request) -> dict:
         "user_mode": user_mode,
         "user_mode_name": user_mode_name,
         "auto_active": not override_active,
+        "optimiser_enabled": optimiser_enabled,
     }
 
 
