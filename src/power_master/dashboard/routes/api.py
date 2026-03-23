@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from power_master.dashboard.auth import require_admin
@@ -1065,6 +1065,29 @@ async def get_logs(request: Request, limit: int = 200, level: str = "") -> dict:
 
     records = log_buffer.get_records(limit=min(limit, 1000), level=level or None)
     return {"records": records}
+
+
+@router.get("/logs/export")
+async def export_logs(request: Request, level: str = "") -> Response:
+    """Export all buffered log entries as a CSV download."""
+    import csv
+    import io
+
+    from power_master.dashboard.log_buffer import log_buffer
+
+    records = log_buffer.get_records(limit=10000, level=level or None)
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["Timestamp", "Level", "Logger", "Message"])
+    for r in records:
+        writer.writerow([r["timestamp"], r["level"], r["logger"], r["message"]])
+
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=power_master_logs.csv"},
+    )
 
 
 # ── Config ───────────────────────────────────────────

@@ -384,6 +384,7 @@ class Application:
                 aggregator, storm_monitor, health_checker,
                 history, accounting, rebuild_evaluator,
                 control_loop, repo, load_manager, mqtt_publisher,
+                event_bus=event_bus,
             ),
             name="forecast_updater",
         ))
@@ -775,6 +776,7 @@ class Application:
         self, aggregator, storm_monitor, health_checker,
         history, accounting, rebuild_evaluator,
         control_loop, repo, load_manager, mqtt_publisher,
+        event_bus=None,
     ):
         """Periodically update forecasts and trigger plan rebuilds."""
         tariff_interval = self.config.providers.tariff.update_interval_seconds
@@ -876,7 +878,7 @@ class Application:
                     # Handle spike load shedding + notifications
                     if rebuild_result.trigger == "price_spike":
                         await load_manager.shed_for_spike()
-                        if self.config.notifications.enabled:
+                        if event_bus and self.config.notifications.enabled:
                             from power_master.notifications.bus import Event as _NEvent
                             spike = aggregator.spike_detector.current_spike
                             price_str = f"{spike.price_cents:.0f}c/kWh" if spike else "high"
@@ -889,7 +891,7 @@ class Application:
                             ))
                     elif not aggregator.spike_detector.is_spike_active:
                         await load_manager.restore_after_spike()
-                        if self.config.notifications.enabled:
+                        if event_bus and self.config.notifications.enabled:
                             from power_master.notifications.bus import Event as _NEvent
                             await event_bus.publish(_NEvent(
                                 name="price_spike_end",

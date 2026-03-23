@@ -20,6 +20,7 @@
     </div>
     <div class="logs-actions">
         <button type="button" class="btn btn-sm" onclick="refreshLogs()">Refresh</button>
+        <button type="button" class="btn btn-sm" onclick="exportLogs()">Export CSV</button>
         <label style="font-size: 12px; color: var(--text-muted); margin-left: 8px;">
             <input type="checkbox" id="log-auto-refresh" checked> Auto-refresh (5s)
         </label>
@@ -111,6 +112,13 @@ function startLogPoll() {
         var auto = document.getElementById('log-auto-refresh');
         if (auto && auto.checked) refreshLogs();
     }, 5000);
+}
+
+function exportLogs() {
+    var level = document.getElementById('log-level-filter').value;
+    var url = '/api/logs/export';
+    if (level) url += '?level=' + encodeURIComponent(level);
+    window.location.href = url;
 }
 
 document.addEventListener('DOMContentLoaded', startLogPoll);

@@ -560,13 +560,28 @@ class FoxESSAdapter:
 
         Some gateways/inverter firmwares report REMOTE_ENABLE as 0 even while
         ACTIVE_POWER is honored. Treat REMOTE_ENABLE mismatch as warning-only.
+        The inverter may clamp ACTIVE_POWER to its rated maximum — treat a
+        same-sign, lower-magnitude readback as accepted (clamped).
         """
         remote = await self._read_uint16(Registers.REMOTE_ENABLE)
         active_raw = await self._read_uint16(Registers.ACTIVE_POWER)
         active = active_raw - 0x10000 if active_raw >= 0x8000 else active_raw
         timeout = await self._read_uint16(Registers.REMOTE_TIMEOUT)
 
-        if active != expected_active:
+        # Check if inverter clamped to its rated power (same sign, lower magnitude)
+        clamped = (
+            active != expected_active
+            and expected_active != 0
+            and (active > 0) == (expected_active > 0)
+            and abs(active) < abs(expected_active)
+        )
+        if clamped:
+            logger.warning(
+                "Inverter clamped active power: requested=%d, applied=%d "
+                "(rated power limit), timeout=%d",
+                expected_active, active, timeout,
+            )
+        elif active != expected_active:
             raise IOError(
                 "Remote control write not applied "
                 f"(remote={remote}, active={active}, timeout={timeout}, "
