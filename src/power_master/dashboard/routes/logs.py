@@ -12,4 +12,4 @@ router = APIRouter()
 async def logs_page(request: Request) -> HTMLResponse:
     """Render the logs viewer page."""
     templates = request.app.state.templates
-    return templates.TemplateResponse("logs.html", {"request": request})
+    return templates.TemplateResponse(request, "logs.html", {})

@@ -17,8 +17,9 @@ async def setup_page(request: Request) -> HTMLResponse:
     templates = request.app.state.templates
     config = request.app.state.config
     return templates.TemplateResponse(
+        request,
         "setup.html",
-        {"request": request, "config": config},
+        {"config": config},
     )
 
 

@@ -198,9 +198,9 @@ auth_router = APIRouter()
 async def login_page(request: Request) -> HTMLResponse:
     templates = request.app.state.templates
     return templates.TemplateResponse(
+        request,
         "login.html",
         {
-            "request": request,
             "error": request.query_params.get("error", ""),
             "next": request.query_params.get("next", "/"),
         },
@@ -260,9 +260,9 @@ async def logout() -> RedirectResponse:
 async def change_password_page(request: Request) -> HTMLResponse:
     templates = request.app.state.templates
     return templates.TemplateResponse(
+        request,
         "change_password.html",
         {
-            "request": request,
             "success": request.query_params.get("success", ""),
             "error": request.query_params.get("error", ""),
         },

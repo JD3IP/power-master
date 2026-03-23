@@ -86,9 +86,9 @@ async def plans_page(request: Request) -> HTMLResponse:
         active_slots = [_format_slot_for_display(s) for s in raw_slots]
 
     return templates.TemplateResponse(
+        request,
         "plans.html",
         {
-            "request": request,
             "plans": plans,
             "active_plan": active,
             "active_slots": active_slots,

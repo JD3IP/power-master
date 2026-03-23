@@ -21,9 +21,9 @@ async def accounting_page(request: Request) -> HTMLResponse:
         billing_cycle = summary.cycle
 
     return templates.TemplateResponse(
+        request,
         "accounting.html",
         {
-            "request": request,
             "billing_cycle": billing_cycle,
         },
     )

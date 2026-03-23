@@ -93,9 +93,9 @@ async def settings_page(request: Request) -> HTMLResponse:
     error = request.query_params.get("error")
 
     return templates.TemplateResponse(
+        request,
         "settings.html",
         {
-            "request": request,
             "config": config,
             "saved": saved == "1",
             "error": error or "",

@@ -14,6 +14,7 @@ async def graphs_page(request: Request) -> HTMLResponse:
     templates = request.app.state.templates
 
     return templates.TemplateResponse(
+        request,
         "graphs.html",
-        {"request": request},
+        {},
     )

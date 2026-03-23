@@ -437,9 +437,9 @@ async def overview(request: Request) -> HTMLResponse:
     prev_plan_event, next_plan_event = _prev_next_significant_plan_events(plan_slots, now_utc, local_tz)
 
     return templates.TemplateResponse(
+        request,
         "overview.html",
         {
-            "request": request,
             "telemetry": telemetry,
             "plan": active_plan,
             "billing_cycle": billing_cycle,

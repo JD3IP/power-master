@@ -292,9 +292,9 @@ async def optimiser_lab_page(request: Request) -> HTMLResponse:
         loaded_params = loaded_experiment["params"]
         loaded_results = loaded_experiment["results"]
         return templates.TemplateResponse(
+            request,
             "optimiser_lab.html",
             {
-                "request": request,
                 "config": loaded_config,
                 "results": loaded_results,
                 "saved_kind": request.query_params.get("saved", ""),
@@ -319,9 +319,9 @@ async def optimiser_lab_page(request: Request) -> HTMLResponse:
     job = _LAB_JOBS.get(job_id) if job_id else None
     if job and job.status == "done" and job.results and job.config and job.params:
         return templates.TemplateResponse(
+            request,
             "optimiser_lab.html",
             {
-                "request": request,
                 "config": job.config,
                 "results": job.results,
                 "saved_kind": request.query_params.get("saved", ""),
@@ -342,9 +342,9 @@ async def optimiser_lab_page(request: Request) -> HTMLResponse:
             },
         )
     return templates.TemplateResponse(
+        request,
         "optimiser_lab.html",
         {
-            "request": request,
             "config": default_config,
             "results": None,
             "saved_kind": request.query_params.get("saved", ""),
@@ -629,9 +629,9 @@ async def optimiser_lab_run(request: Request) -> Any:
             "improved": delta_cents < 0,
         }
         return templates.TemplateResponse(
+            request,
             "optimiser_lab.html",
             {
-                "request": request,
                 "config": candidate_config,
                 "results": results,
                 "saved_kind": "",
@@ -653,9 +653,9 @@ async def optimiser_lab_run(request: Request) -> Any:
         )
     except Exception as exc:
         return templates.TemplateResponse(
+            request,
             "optimiser_lab.html",
             {
-                "request": request,
                 "config": base_config,
                 "results": None,
                 "saved_kind": "",
