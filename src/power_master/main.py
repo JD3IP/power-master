@@ -242,7 +242,7 @@ class Application:
                 # Grid import
                 import_wh = round(grid_w * tick_hours)
                 if import_wh > 0:
-                    accounting.record_grid_import(import_wh, import_rate)
+                    await accounting.record_grid_import(import_wh, import_rate)
                 # If battery is also charging from grid
                 if battery_w > 0:
                     grid_charge_w = min(battery_w, grid_w)
@@ -253,7 +253,7 @@ class Application:
                 # Grid export
                 export_wh = round(abs(grid_w) * tick_hours)
                 if export_wh > 0:
-                    accounting.record_grid_export(export_wh, export_rate)
+                    await accounting.record_grid_export(export_wh, export_rate)
 
             # Solar charging battery
             if battery_w > 0 and solar_w > 0 and grid_w <= 0:
@@ -267,7 +267,7 @@ class Application:
                 self_consumption_w = min(load_w, solar_w + max(0, -battery_w))
                 self_consumption_wh = round(self_consumption_w * tick_hours)
                 if self_consumption_wh > 0:
-                    accounting.record_self_consumption(self_consumption_wh, import_rate)
+                    await accounting.record_self_consumption(self_consumption_wh, import_rate)
 
             # Sync accounting SOC after energy recording (see note above)
             accounting.sync_soc(telemetry.soc)

@@ -185,40 +185,44 @@ class TestAccountingEngine:
         engine.record_grid_charge(2000, 5.0)  # 2kWh at 5c
         assert engine.wacb_cents < 10.0  # Should decrease (cheaper charge)
 
-    def test_engine_records_import(self) -> None:
+    @pytest.mark.asyncio
+    async def test_engine_records_import(self) -> None:
         config = AppConfig()
         engine = AccountingEngine(config, initial_soc=0.5, initial_wacb=10.0)
 
-        event = engine.record_grid_import(2000, 20.0)
+        event = await engine.record_grid_import(2000, 20.0)
         assert event.cost_cents == 40
 
         cycle = engine.billing.current
         assert cycle is not None
         assert cycle.total_import_cost_cents == 40
 
-    def test_engine_records_export_with_pnl(self) -> None:
+    @pytest.mark.asyncio
+    async def test_engine_records_export_with_pnl(self) -> None:
         config = AppConfig()
         engine = AccountingEngine(config, initial_soc=0.5, initial_wacb=10.0)
 
-        event = engine.record_grid_export(1000, 25.0)
+        event = await engine.record_grid_export(1000, 25.0)
 
         # Cost basis: 1kWh * 10c = 10c
         # Revenue: 1kWh * 25c = 25c
         # Profit: 25 - 10 = 15c
         assert event.profit_loss_cents == 15
 
-    def test_engine_records_self_consumption(self) -> None:
+    @pytest.mark.asyncio
+    async def test_engine_records_self_consumption(self) -> None:
         config = AppConfig()
         engine = AccountingEngine(config, initial_soc=0.5, initial_wacb=10.0)
 
-        event = engine.record_self_consumption(5000, 20.0)
+        event = await engine.record_self_consumption(5000, 20.0)
         assert event.cost_cents == -100  # 5kWh * 20c savings
 
-    def test_engine_summary(self) -> None:
+    @pytest.mark.asyncio
+    async def test_engine_summary(self) -> None:
         config = AppConfig()
         engine = AccountingEngine(config, initial_soc=0.5, initial_wacb=10.0)
 
-        engine.record_grid_import(2000, 20.0)
+        await engine.record_grid_import(2000, 20.0)
         summary = engine.get_summary()
 
         assert summary.wacb_cents == 10.0  # Import doesn't change WACB

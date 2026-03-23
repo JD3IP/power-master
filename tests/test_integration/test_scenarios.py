@@ -152,10 +152,11 @@ class TestScenario1NormalSelfUse:
         assert result.overridden is False
         assert result.command.mode == OperatingMode.SELF_USE
 
-    def test_accounting_records_self_consumption(self) -> None:
+    @pytest.mark.asyncio
+    async def test_accounting_records_self_consumption(self) -> None:
         config = AppConfig()
         engine = AccountingEngine(config, initial_soc=0.5, initial_wacb=10.0)
-        event = engine.record_self_consumption(3000, 20.0)
+        event = await engine.record_self_consumption(3000, 20.0)
         assert event.cost_cents == -60  # 3kWh * 20c savings
 
 
@@ -208,10 +209,11 @@ class TestScenario3PeakArbitrage:
         discharge_count = sum(1 for s in plan.slots if s.mode == SlotMode.FORCE_DISCHARGE)
         assert discharge_count > 0
 
-    def test_accounting_computes_arbitrage_profit(self) -> None:
+    @pytest.mark.asyncio
+    async def test_accounting_computes_arbitrage_profit(self) -> None:
         config = AppConfig()
         engine = AccountingEngine(config, initial_soc=0.8, initial_wacb=10.0)
-        event = engine.record_grid_export(2000, 25.0)  # 2kWh at 25c
+        event = await engine.record_grid_export(2000, 25.0)  # 2kWh at 25c
 
         # Revenue: 2 * 25 = 50c, cost basis: 2 * 10 = 20c, profit: 30c
         assert event.profit_loss_cents == 30
@@ -484,12 +486,13 @@ class TestScenario8PriceSpike:
         assert "pump" not in ids
         assert "heater" in ids
 
-    def test_accounting_tracks_spike_discharge(self) -> None:
+    @pytest.mark.asyncio
+    async def test_accounting_tracks_spike_discharge(self) -> None:
         config = AppConfig()
         engine = AccountingEngine(config, initial_soc=0.8, initial_wacb=10.0)
 
         # Discharge 5kWh at spike price of 200c/kWh
-        event = engine.record_grid_export(5000, 200.0)
+        event = await engine.record_grid_export(5000, 200.0)
 
         # Revenue: 5 * 200 = 1000c, cost basis: 5 * 10 = 50c, profit: 950c
         assert event.profit_loss_cents == 950

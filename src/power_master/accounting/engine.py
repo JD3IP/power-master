@@ -34,6 +34,7 @@ class AccountingSummary:
 
 
 KV_WACB_KEY = "wacb_state"
+KV_BILLING_KEY = "billing_cycle_state"
 
 
 class AccountingEngine:
@@ -52,7 +53,7 @@ class AccountingEngine:
         self._repo = None
 
     async def init_persistence(self, repo) -> None:
-        """Load persisted WACB state and wire up auto-save on change."""
+        """Load persisted accounting state and wire up auto-save."""
         self._repo = repo
 
         # Ensure kv_store table exists (handles existing DBs pre-migration)
@@ -65,6 +66,7 @@ class AccountingEngine:
         """)
         await repo.db.commit()
 
+        # ── Restore WACB state ──
         saved = await repo.kv_get(KV_WACB_KEY)
         if saved:
             self._cost_basis.restore_state(
@@ -76,11 +78,50 @@ class AccountingEngine:
         else:
             logger.info("No persisted WACB state found, starting fresh")
 
+        # ── Restore billing cycle totals ──
+        billing_saved = await repo.kv_get(KV_BILLING_KEY)
+        if billing_saved:
+            cycle = self._billing.get_or_create_cycle()
+            saved_start = billing_saved.get("cycle_start", "")
+            # Only restore if we're still in the same billing cycle
+            if saved_start == cycle.cycle_start.isoformat():
+                cycle.total_import_cost_cents = billing_saved.get("total_import_cost_cents", 0)
+                cycle.total_export_revenue_cents = billing_saved.get("total_export_revenue_cents", 0)
+                cycle.total_self_consumption_value_cents = billing_saved.get("total_self_consumption_value_cents", 0)
+                cycle.total_arbitrage_profit_cents = billing_saved.get("total_arbitrage_profit_cents", 0)
+                cycle.total_fixed_costs_cents = billing_saved.get("total_fixed_costs_cents", 0)
+                cycle.net_cost_cents = billing_saved.get("net_cost_cents", 0)
+                logger.info(
+                    "Billing cycle restored: net=%dc import=%dc export=%dc",
+                    cycle.net_cost_cents, cycle.total_import_cost_cents,
+                    cycle.total_export_revenue_cents,
+                )
+            else:
+                logger.info("Billing cycle boundary crossed since last run, starting fresh cycle")
+
+        # ── Restore recent events from DB for today/week calculations ──
+        now = datetime.now(timezone.utc)
+        week_start = (now - timedelta(days=now.weekday())).replace(
+            hour=0, minute=0, second=0, microsecond=0,
+        )
+        db_events = await repo.get_accounting_events_since(week_start.isoformat())
+        for row in reversed(db_events):  # oldest first
+            self._events.append(AccountingEvent(
+                event_type=row["event_type"],
+                energy_wh=row["energy_wh"],
+                rate_cents=row.get("rate_cents", 0) or 0,
+                cost_cents=row.get("cost_cents", 0) or 0,
+                cost_basis_cents=row.get("cost_basis_cents", 0) or 0,
+                profit_loss_cents=row.get("profit_loss_cents", 0) or 0,
+                timestamp=datetime.fromisoformat(row["started_at"]),
+            ))
+        if self._events:
+            logger.info("Restored %d accounting events from this week", len(self._events))
+
+        # ── Wire up WACB auto-save ──
         import asyncio
 
         def _on_wacb_change(state):
-            # Schedule save as a fire-and-forget task on the running loop.
-            # This is always called from the async event loop thread.
             asyncio.ensure_future(self._save_wacb(state))
 
         self._cost_basis.set_on_change(_on_wacb_change)
@@ -99,6 +140,42 @@ class AccountingEngine:
         except Exception:
             logger.warning("Failed to persist WACB state", exc_info=True)
 
+    async def _save_billing_cycle(self) -> None:
+        """Persist current billing cycle totals."""
+        if self._repo is None:
+            return
+        cycle = self._billing.current
+        if cycle is None:
+            return
+        try:
+            await self._repo.kv_set(KV_BILLING_KEY, {
+                "cycle_start": cycle.cycle_start.isoformat(),
+                "total_import_cost_cents": cycle.total_import_cost_cents,
+                "total_export_revenue_cents": cycle.total_export_revenue_cents,
+                "total_self_consumption_value_cents": cycle.total_self_consumption_value_cents,
+                "total_arbitrage_profit_cents": cycle.total_arbitrage_profit_cents,
+                "total_fixed_costs_cents": cycle.total_fixed_costs_cents,
+                "net_cost_cents": cycle.net_cost_cents,
+            })
+        except Exception:
+            logger.warning("Failed to persist billing cycle", exc_info=True)
+
+    async def _persist_event(self, event: AccountingEvent) -> None:
+        """Write an accounting event to the database."""
+        if self._repo is None:
+            return
+        try:
+            await self._repo.store_accounting_event(
+                event_type=event.event_type,
+                energy_wh=event.energy_wh,
+                cost_cents=event.cost_cents,
+                rate_cents=int(event.rate_cents),
+                cost_basis_cents=event.cost_basis_cents,
+                profit_loss_cents=event.profit_loss_cents,
+            )
+        except Exception:
+            logger.warning("Failed to persist accounting event", exc_info=True)
+
     @property
     def wacb_cents(self) -> float:
         return self._cost_basis.wacb_cents
@@ -111,7 +188,7 @@ class AccountingEngine:
     def billing(self) -> BillingCycleManager:
         return self._billing
 
-    def record_grid_import(self, energy_wh: int, rate_cents: float) -> AccountingEvent:
+    async def record_grid_import(self, energy_wh: int, rate_cents: float) -> AccountingEvent:
         """Record grid import: cost to buy + WACB update if charging."""
         event = create_import_event(energy_wh, rate_cents)
         self._events.append(event)
@@ -119,6 +196,8 @@ class AccountingEngine:
         cycle = self._billing.get_or_create_cycle()
         self._billing.record_import(event.cost_cents)
 
+        await self._persist_event(event)
+        await self._save_billing_cycle()
         return event
 
     def record_grid_charge(self, energy_wh: int, rate_cents: float) -> None:
@@ -129,7 +208,7 @@ class AccountingEngine:
         """Record charging from PV — updates WACB using opportunity cost."""
         self._cost_basis.record_charge(energy_wh, feed_in_rate_cents)
 
-    def record_grid_export(self, energy_wh: int, rate_cents: float) -> AccountingEvent:
+    async def record_grid_export(self, energy_wh: int, rate_cents: float) -> AccountingEvent:
         """Record grid export: revenue + P&L calculation."""
         cost_basis = round(self._cost_basis.record_discharge(energy_wh))
         event = create_export_event(energy_wh, rate_cents, cost_basis)
@@ -141,9 +220,11 @@ class AccountingEngine:
         if event.profit_loss_cents > 0:
             self._billing.record_arbitrage_profit(event.profit_loss_cents)
 
+        await self._persist_event(event)
+        await self._save_billing_cycle()
         return event
 
-    def record_self_consumption(self, energy_wh: int, avoided_rate_cents: float) -> AccountingEvent:
+    async def record_self_consumption(self, energy_wh: int, avoided_rate_cents: float) -> AccountingEvent:
         """Record self-consumption: savings from using PV/battery instead of grid."""
         event = create_self_consumption_event(energy_wh, avoided_rate_cents)
         self._events.append(event)
@@ -151,6 +232,8 @@ class AccountingEngine:
         cycle = self._billing.get_or_create_cycle()
         self._billing.record_self_consumption(abs(event.cost_cents))
 
+        await self._persist_event(event)
+        await self._save_billing_cycle()
         return event
 
     def sync_soc(self, soc: float) -> None:
