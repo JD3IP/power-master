@@ -33,6 +33,9 @@ class AccountingSummary:
     week_net_cost_cents: int = 0
 
 
+KV_WACB_KEY = "wacb_state"
+
+
 class AccountingEngine:
     """Orchestrates all financial tracking for the system.
 
@@ -46,6 +49,46 @@ class AccountingEngine:
         )
         self._billing = BillingCycleManager(config.accounting.billing_cycle_day)
         self._events: list[AccountingEvent] = []
+        self._repo = None
+
+    async def init_persistence(self, repo) -> None:
+        """Load persisted WACB state and wire up auto-save on change."""
+        self._repo = repo
+        saved = await repo.kv_get(KV_WACB_KEY)
+        if saved:
+            self._cost_basis.restore_state(
+                wacb_cents=saved.get("wacb_cents", 0.0),
+                stored_wh=saved.get("stored_wh", 0.0),
+                total_charged_wh=saved.get("total_charged_wh", 0.0),
+                total_cost_cents=saved.get("total_cost_cents", 0.0),
+            )
+        else:
+            logger.info("No persisted WACB state found, starting fresh")
+
+        import asyncio
+        loop = asyncio.get_event_loop()
+
+        def _on_wacb_change(state):
+            loop.call_soon_threadsafe(
+                asyncio.ensure_future,
+                self._save_wacb(state),
+            )
+
+        self._cost_basis.set_on_change(_on_wacb_change)
+
+    async def _save_wacb(self, state) -> None:
+        """Persist current WACB state to the database."""
+        if self._repo is None:
+            return
+        try:
+            await self._repo.kv_set(KV_WACB_KEY, {
+                "wacb_cents": state.wacb_cents,
+                "stored_wh": state.stored_wh,
+                "total_charged_wh": state.total_charged_wh,
+                "total_cost_cents": state.total_cost_cents,
+            })
+        except Exception:
+            logger.warning("Failed to persist WACB state", exc_info=True)
 
     @property
     def wacb_cents(self) -> float:

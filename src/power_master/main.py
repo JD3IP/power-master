@@ -124,6 +124,7 @@ class Application:
         from power_master.accounting.engine import AccountingEngine
 
         accounting = AccountingEngine(self.config)
+        await accounting.init_persistence(repo)
 
         # ── 7b. Notification event bus + manager ───────────────
         from power_master.notifications.bus import EventBus

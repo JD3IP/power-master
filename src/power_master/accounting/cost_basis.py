@@ -32,6 +32,27 @@ class CostBasisTracker:
             wacb_cents=initial_wacb,
             stored_wh=initial_soc * capacity_wh,
         )
+        self._on_change = None
+
+    def set_on_change(self, callback) -> None:
+        """Set a callback to be called after each state change (for persistence)."""
+        self._on_change = callback
+
+    def _notify_change(self) -> None:
+        if self._on_change is not None:
+            self._on_change(self._state)
+
+    def restore_state(self, wacb_cents: float, stored_wh: float,
+                      total_charged_wh: float = 0.0, total_cost_cents: float = 0.0) -> None:
+        """Restore state from persisted data."""
+        self._state.wacb_cents = wacb_cents
+        self._state.stored_wh = stored_wh
+        self._state.total_charged_wh = total_charged_wh
+        self._state.total_cost_cents = total_cost_cents
+        logger.info(
+            "WACB state restored: wacb=%.1fc/kWh stored=%.0fWh",
+            wacb_cents, stored_wh,
+        )
 
     @property
     def state(self) -> WACBState:
@@ -75,6 +96,7 @@ class CostBasisTracker:
             "WACB update: charged %.0fWh at %.1fc/kWh → WACB=%.1fc/kWh stored=%.0fWh",
             energy_wh, rate_cents, self._state.wacb_cents, self._state.stored_wh,
         )
+        self._notify_change()
 
     def record_discharge(self, energy_wh: float) -> float:
         """Record a discharge event. Returns the cost basis of discharged energy.
@@ -94,6 +116,7 @@ class CostBasisTracker:
         self._state.stored_wh = max(0, self._state.stored_wh - energy_wh)
 
         # WACB doesn't change on discharge — it represents avg cost of remaining energy
+        self._notify_change()
 
         return cost_basis
 

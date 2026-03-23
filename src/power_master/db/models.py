@@ -311,6 +311,15 @@ TABLES = [
     """,
     "CREATE INDEX IF NOT EXISTS idx_spike_time ON spike_events(started_at)",
 
+    # ── Key-Value Store ──────────────────────────────────
+    """
+    CREATE TABLE IF NOT EXISTS kv_store (
+        key         TEXT PRIMARY KEY,
+        value_json  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    )
+    """,
+
     # ── Schema version tracking ─────────────────────────────
     """
     CREATE TABLE IF NOT EXISTS schema_version (

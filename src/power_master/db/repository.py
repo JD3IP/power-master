@@ -543,3 +543,26 @@ class Repository:
             (state_code, aac),
         )
         await self.db.commit()
+
+    # ── Key-Value Store ──────────────────────────────────
+
+    async def kv_get(self, key: str) -> Any | None:
+        """Get a value from the key-value store. Returns None if not found."""
+        async with self.db.execute(
+            "SELECT value_json FROM kv_store WHERE key = ?", (key,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row is None:
+                return None
+            return json.loads(row[0])
+
+    async def kv_set(self, key: str, value: Any) -> None:
+        """Set a value in the key-value store (upsert)."""
+        await self.db.execute(
+            """INSERT INTO kv_store (key, value_json, updated_at)
+               VALUES (?, ?, ?)
+               ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json,
+                                              updated_at = excluded.updated_at""",
+            (key, json.dumps(value), _now()),
+        )
+        await self.db.commit()

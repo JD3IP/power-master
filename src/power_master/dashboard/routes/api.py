@@ -439,6 +439,7 @@ async def reset_wacb(request: Request) -> dict:
     # Back-calculate stored_wh from stored_value and wacb
     if new_wacb > 0:
         tracker._state.stored_wh = (new_stored_value / new_wacb) * 1000
+    tracker._notify_change()
     return {
         "wacb_cents": round(tracker.wacb_cents, 1),
         "stored_value_cents": round(tracker.stored_value_cents, 1),
