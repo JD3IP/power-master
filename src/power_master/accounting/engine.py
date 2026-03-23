@@ -54,6 +54,17 @@ class AccountingEngine:
     async def init_persistence(self, repo) -> None:
         """Load persisted WACB state and wire up auto-save on change."""
         self._repo = repo
+
+        # Ensure kv_store table exists (handles existing DBs pre-migration)
+        await repo.db.execute("""
+            CREATE TABLE IF NOT EXISTS kv_store (
+                key         TEXT PRIMARY KEY,
+                value_json  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            )
+        """)
+        await repo.db.commit()
+
         saved = await repo.kv_get(KV_WACB_KEY)
         if saved:
             self._cost_basis.restore_state(
@@ -66,13 +77,11 @@ class AccountingEngine:
             logger.info("No persisted WACB state found, starting fresh")
 
         import asyncio
-        loop = asyncio.get_event_loop()
 
         def _on_wacb_change(state):
-            loop.call_soon_threadsafe(
-                asyncio.ensure_future,
-                self._save_wacb(state),
-            )
+            # Schedule save as a fire-and-forget task on the running loop.
+            # This is always called from the async event loop thread.
+            asyncio.ensure_future(self._save_wacb(state))
 
         self._cost_basis.set_on_change(_on_wacb_change)
 
