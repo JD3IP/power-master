@@ -54,6 +54,11 @@ class Registers:
     BATTERY_SOC = 31024     # U16, 0-100 percentage
     INVERTER_STATE = 31027  # U16, 0=Self-Test … 3=Normal … 5=Fault
 
+    # Device information registers (RO)
+    FIRMWARE_MASTER = 30016   # U16
+    FIRMWARE_SLAVE = 30017    # U16
+    FIRMWARE_MANAGER = 30018  # U16
+
     # Holding registers — control (read_holding_registers / write_register, FC 3/6)
     # Addresses verified against working KH firmware v1.55
     WORK_MODE = 41000       # U16 RW: 0=Self-Use, 1=Feed-in, 2=Backup
@@ -102,6 +107,7 @@ class FoxESSAdapter:
         self._client: AsyncModbusTcpClient | AsyncModbusSerialClient | None = None
         self._connected = False
         self._lock = asyncio.Lock()
+        self.firmware: dict[str, str] = {}
 
     async def connect(self) -> None:
         """Establish Modbus connection to the inverter (TCP or RTU)."""
@@ -466,6 +472,32 @@ class FoxESSAdapter:
                 self._config.baudrate,
                 self._config.unit_id,
             )
+
+    async def read_firmware(self) -> dict[str, str]:
+        """Read inverter firmware versions from input registers 30016-30018."""
+        assert self._client is not None
+        try:
+            async with self._lock:
+                master = await self._read_input_uint16(Registers.FIRMWARE_MASTER)
+                slave = await self._read_input_uint16(Registers.FIRMWARE_SLAVE)
+                manager = await self._read_input_uint16(Registers.FIRMWARE_MANAGER)
+            # Format: raw value like 155 → "1.55"
+            def _fmt(v: int) -> str:
+                return f"{v / 100:.2f}" if v > 99 else str(v)
+
+            self.firmware = {
+                "master": _fmt(master),
+                "slave": _fmt(slave),
+                "manager": _fmt(manager),
+            }
+            logger.info(
+                "Inverter firmware: master=%s, slave=%s, manager=%s",
+                self.firmware["master"], self.firmware["slave"], self.firmware["manager"],
+            )
+        except Exception as e:
+            logger.warning("Failed to read firmware versions: %s", e)
+            self.firmware = {"master": "unknown", "slave": "unknown", "manager": "unknown"}
+        return self.firmware
 
     # ── Low-level Modbus operations ──────────────────────
 

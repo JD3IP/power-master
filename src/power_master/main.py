@@ -436,6 +436,7 @@ class Application:
         app.state.updater = updater
         app.state.event_bus = event_bus
         app.state.notification_manager = notification_manager
+        app.state.adapter = adapter
 
         import uvicorn
 
@@ -647,6 +648,7 @@ class Application:
             )
         try:
             await adapter.connect()
+            await adapter.read_firmware()
         except Exception:
             logger.warning(
                 "Fox-ESS connection failed — running in degraded mode "

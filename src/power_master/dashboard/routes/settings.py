@@ -92,6 +92,10 @@ async def settings_page(request: Request) -> HTMLResponse:
     saved = request.query_params.get("saved")
     error = request.query_params.get("error")
 
+    # Get inverter firmware info if available
+    adapter = getattr(request.app.state, "adapter", None)
+    firmware = getattr(adapter, "firmware", {}) if adapter else {}
+
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -100,6 +104,7 @@ async def settings_page(request: Request) -> HTMLResponse:
             "saved": saved == "1",
             "error": error or "",
             "is_read_only": is_read_only,
+            "firmware": firmware,
         },
     )
 

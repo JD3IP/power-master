@@ -114,6 +114,15 @@
         <input type="number" id="hardware.foxess.watchdog_timeout_seconds" name="hardware.foxess.watchdog_timeout_seconds" value="{{ config.hardware.foxess.watchdog_timeout_seconds }}">
     </div>
 
+    {% if firmware %}
+    <h2>Inverter Firmware</h2>
+    <div style="display: flex; gap: 24px; margin-bottom: 16px; font-size: 13px;">
+        <div><strong>Master:</strong> {{ firmware.get('master', 'N/A') }}</div>
+        <div><strong>Slave:</strong> {{ firmware.get('slave', 'N/A') }}</div>
+        <div><strong>Manager:</strong> {{ firmware.get('manager', 'N/A') }}</div>
+    </div>
+    {% endif %}
+
     <h2>Live Diagnostics
         <button type="button" class="btn btn-sm" id="diag-refresh-btn" onclick="refreshDiagnostics()" style="margin-left: 12px;">Refresh Now</button>
         <label style="margin-left: 12px; font-size: 0.8em; font-weight: normal;">
