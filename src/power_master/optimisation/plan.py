@@ -28,10 +28,15 @@ class PlanSlot:
     expected_soc: float = 0.0  # Expected SOC at end of slot
     import_rate_cents: float = 0.0
     export_rate_cents: float = 0.0
-    solar_forecast_w: float = 0.0
-    load_forecast_w: float = 0.0
+    solar_forecast_w: int = 0
+    load_forecast_w: int = 0
     scheduled_loads: list[str] | None = None
     constraint_flags: list[str] | None = None
+
+    def __post_init__(self) -> None:
+        self.solar_forecast_w = round(self.solar_forecast_w)
+        self.load_forecast_w = round(self.load_forecast_w)
+        self.target_power_w = round(self.target_power_w)
 
 
 @dataclass
