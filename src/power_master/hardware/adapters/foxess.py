@@ -177,10 +177,10 @@ class FoxESSAdapter:
                 self._config.port,
                 self._config.unit_id,
             )
-            if self._config.port != 502:
+            if self._config.port not in (502, 8899):
                 logger.warning(
                     "FoxESS control may be blocked on port %d. KH write control is typically "
-                    "available on local Modbus TCP port 502.",
+                    "available on Modbus TCP port 502 (direct) or 8899 (serial gateway).",
                     self._config.port,
                 )
 
