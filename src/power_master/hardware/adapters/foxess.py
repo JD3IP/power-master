@@ -65,7 +65,9 @@ class Registers:
     # Remote power control registers (FC 6)
     REMOTE_ENABLE = 44000   # U16, 0=off, 1=on
     REMOTE_TIMEOUT = 44001  # U16, seconds (watchdog)
-    ACTIVE_POWER = 44002    # I16, watts (negative=charge from grid, positive=discharge)
+    ACTIVE_POWER = 44002    # I16, watts (per FoxESS doc: positive=charge, negative=discharge)
+    # NOTE: The TCP gateway inverts the sign, so TCP code sends positive=discharge.
+    # Direct RTU follows the documented convention: positive=charge, negative=discharge.
 
 
 # KH work mode register values → human-readable names
@@ -511,30 +513,30 @@ class FoxESSAdapter:
         prevent frame collisions on USB-serial adapters.
         """
         assert self._client is not None
+        raw = value & 0xFFFF
+        signed = raw - 0x10000 if raw >= 0x8000 else raw
         if self._config.connection_type == "rtu":
             # RTU inter-frame delay: USB-serial adapters can buffer/merge
             # frames if writes are too rapid, causing the inverter to miss
             # commands even though pymodbus reports success.
             await asyncio.sleep(0.1)
             logger.info(
-                "Modbus write attempt: port=%s unit=%d addr=%d value=%d",
+                "Modbus WRITE: port=%s unit=%d addr=%d raw=%d (0x%04X, signed=%d)",
                 self._config.serial_port,
                 self._config.unit_id,
-                address,
-                value & 0xFFFF,
+                address, raw, raw, signed,
             )
         else:
             logger.info(
-                "Modbus write attempt: host=%s:%d unit=%d addr=%d value=%d",
+                "Modbus WRITE: host=%s:%d unit=%d addr=%d raw=%d (0x%04X, signed=%d)",
                 self._config.host,
                 self._config.port,
                 self._config.unit_id,
-                address,
-                value & 0xFFFF,
+                address, raw, raw, signed,
             )
         try:
             result = await self._client.write_register(
-                address, value & 0xFFFF, device_id=self._config.unit_id
+                address, raw, device_id=self._config.unit_id
             )
         except Exception:
             self._connected = False
@@ -543,9 +545,8 @@ class FoxESSAdapter:
             self._connected = False
             raise IOError(f"Modbus write error at register {address}: {result}")
         logger.info(
-            "Modbus write ok: addr=%d value=%d",
-            address,
-            value & 0xFFFF,
+            "Modbus WRITE OK: addr=%d raw=%d (0x%04X, signed=%d)",
+            address, raw, raw, signed,
         )
 
     async def _write_s16(self, address: int, value: int) -> None:
@@ -568,6 +569,13 @@ class FoxESSAdapter:
         active = active_raw - 0x10000 if active_raw >= 0x8000 else active_raw
         timeout = await self._read_uint16(Registers.REMOTE_TIMEOUT)
 
+        logger.info(
+            "VERIFY readback: remote=%d, active_raw=%d (0x%04X, signed=%d), "
+            "timeout=%d | expected: remote=%d, active=%d",
+            remote, active_raw, active_raw, active,
+            timeout, expected_remote, expected_active,
+        )
+
         # Check if inverter clamped to its rated power (same sign, lower magnitude)
         clamped = (
             active != expected_active
@@ -584,7 +592,8 @@ class FoxESSAdapter:
         elif active != expected_active:
             raise IOError(
                 "Remote control write not applied "
-                f"(remote={remote}, active={active}, timeout={timeout}, "
+                f"(remote={remote}, active_raw={active_raw} (0x{active_raw:04X}), "
+                f"active_signed={active}, timeout={timeout}, "
                 f"expected_remote={expected_remote}, expected_active={expected_active})"
             )
         if remote != expected_remote:

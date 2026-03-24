@@ -194,7 +194,7 @@ register value of 2345 = 234.5 V.
 |---------------------------------|----|------|------|------|---------|-----|-------|
 | Remote power control enable     | RW | U16  | —    | 1    | 44000   | 1   |       |
 | Remote power control timeout    | RW | U16  | s    | 1    | 44001   | 1   | Seconds before reverting |
-| Active power command            | RW | I16  | W    | 1    | 44002   | 1   | Positive=charge, negative=discharge |
+| Active power command            | RW | I16  | W    | 1    | 44002   | 1   | Positive=charge, negative=discharge (native/RTU). TCP gateway may invert sign. |
 | Reactive power command          | RW | I16  | Var  | 1    | 44003   | 1   |       |
 
 ---
