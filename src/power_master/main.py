@@ -793,6 +793,8 @@ class Application:
 
         import time
 
+        spike_was_active = False
+
         while not self._stop_event.is_set():
             try:
                 now = time.monotonic()
@@ -878,6 +880,7 @@ class Application:
 
                     # Handle spike load shedding + notifications
                     if rebuild_result.trigger == "price_spike":
+                        spike_was_active = True
                         await load_manager.shed_for_spike()
                         if event_bus and self.config.notifications.enabled:
                             from power_master.notifications.bus import Event as _NEvent
@@ -890,7 +893,8 @@ class Application:
                                 message=f"Electricity price spiked to {price_str}. Shedding loads and maximising discharge.",
                                 data={"price_cents": spike.price_cents if spike else 0},
                             ))
-                    elif not aggregator.spike_detector.is_spike_active:
+                    elif spike_was_active and not aggregator.spike_detector.is_spike_active:
+                        spike_was_active = False
                         await load_manager.restore_after_spike()
                         if event_bus and self.config.notifications.enabled:
                             from power_master.notifications.bus import Event as _NEvent
