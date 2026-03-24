@@ -473,6 +473,10 @@ class FoxESSAdapter:
                 self._config.unit_id,
             )
 
+    # Minimum firmware versions required for remote control registers (44000-44002)
+    MIN_FIRMWARE_MASTER = 160   # 1.60
+    MIN_FIRMWARE_MANAGER = 158  # 1.58
+
     async def read_firmware(self) -> dict[str, str]:
         """Read inverter firmware versions from input registers 30016-30018."""
         assert self._client is not None
@@ -489,15 +493,41 @@ class FoxESSAdapter:
                 "master": _fmt(master),
                 "slave": _fmt(slave),
                 "manager": _fmt(manager),
+                "master_raw": master,
+                "slave_raw": slave,
+                "manager_raw": manager,
             }
             logger.info(
                 "Inverter firmware: master=%s, slave=%s, manager=%s",
                 self.firmware["master"], self.firmware["slave"], self.firmware["manager"],
             )
+            self._check_firmware_version(master, manager)
         except Exception as e:
             logger.warning("Failed to read firmware versions: %s", e)
             self.firmware = {"master": "unknown", "slave": "unknown", "manager": "unknown"}
         return self.firmware
+
+    def _check_firmware_version(self, master_raw: int, manager_raw: int) -> None:
+        """Warn or raise if firmware is too old for remote control registers."""
+        issues = []
+        if master_raw < self.MIN_FIRMWARE_MASTER:
+            issues.append(
+                f"master {master_raw / 100:.2f} < {self.MIN_FIRMWARE_MASTER / 100:.2f}"
+            )
+        if manager_raw < self.MIN_FIRMWARE_MANAGER:
+            issues.append(
+                f"manager {manager_raw / 100:.2f} < {self.MIN_FIRMWARE_MANAGER / 100:.2f}"
+            )
+        if issues:
+            msg = (
+                f"Inverter firmware too old for remote control: {', '.join(issues)}. "
+                f"Minimum required: master >= {self.MIN_FIRMWARE_MASTER / 100:.2f}, "
+                f"manager >= {self.MIN_FIRMWARE_MANAGER / 100:.2f}. "
+                f"Force charge/discharge commands will not work. "
+                f"Update inverter firmware via the FoxESS installer app."
+            )
+            logger.error(msg)
+            raise ConnectionError(msg)
 
     # ── Low-level Modbus operations ──────────────────────
 
