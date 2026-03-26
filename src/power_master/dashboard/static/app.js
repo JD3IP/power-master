@@ -192,20 +192,18 @@ function updateModeDisplay(data) {
     var optimiserMode = data.optimiser_mode;
     var autoActive = data.auto_active;
 
-    // Apply button highlighting: blue=user, green=optimiser
+    // Apply button highlighting: only ONE button at a time
+    // If manual override is active, highlight only the manually selected mode
+    // If no override (auto mode), highlight only the Auto button
+    var overrideOn = data.override_active && userMode !== null && userMode !== undefined;
     modeButtons.forEach(function(b) {
         var btnMode = parseInt(b.dataset.mode);
         b.classList.remove('active', 'user-active', 'optimiser-active');
 
-        if (userMode !== null && userMode !== undefined && btnMode === userMode) {
+        if (overrideOn && btnMode === userMode) {
             b.classList.add('user-active');
-        } else if (autoActive && btnMode === 0) {
-            // Optimiser is in control — highlight AUTO button in blue
+        } else if (!overrideOn && btnMode === 0) {
             b.classList.add('user-active');
-        }
-
-        if (optimiserMode !== null && optimiserMode !== undefined && btnMode === optimiserMode) {
-            b.classList.add('optimiser-active');
         }
     });
 
