@@ -1091,6 +1091,90 @@ async def export_logs(request: Request, level: str = "") -> Response:
     )
 
 
+@router.get("/logs/export/db")
+async def export_db_logs(request: Request, hours: int = 24, level: str = "") -> Response:
+    """Export DB-backed logs as a CSV download."""
+    import csv
+    import io
+
+    hours = min(max(hours, 1), 168)
+    repo = request.app.state.repo
+
+    # Flush pending logs so export is up-to-date
+    db_log_handler = getattr(request.app.state, "db_log_handler", None)
+    if db_log_handler is not None:
+        try:
+            await db_log_handler.flush_to_db()
+        except Exception:
+            pass
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    records = await repo.get_logs_since(cutoff, level=level or None)
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["Timestamp", "Level", "Logger", "Message"])
+    for r in records:
+        writer.writerow([r["recorded_at"], r["level"], r["logger_name"], r["message"]])
+
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=power_master_db_logs_{hours}h.csv"},
+    )
+
+
+@router.get("/plan/history/export")
+async def export_plan_history(request: Request, hours: int = 24) -> Response:
+    """Export plan history with slot details as a CSV download."""
+    import csv
+    import io
+
+    hours = min(max(hours, 1), 168)
+    repo = request.app.state.repo
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+
+    # Get plans created since the cutoff
+    all_plans = await repo.get_plan_history(limit=10000)
+    plans = [p for p in all_plans if p["created_at"] >= cutoff]
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "PlanVersion", "PlanCreated", "TriggerReason", "ObjectiveScore", "Status",
+        "SlotIndex", "SlotStart", "SlotEnd", "OperatingMode", "TargetPowerW",
+        "ExpectedSOC", "ImportRateCents", "ExportRateCents",
+        "SolarForecastW", "LoadForecastW",
+    ])
+
+    for plan in plans:
+        slots = await repo.get_plan_slots(plan["id"])
+        if not slots:
+            # Write plan row with empty slot columns
+            writer.writerow([
+                plan["version"], plan["created_at"], plan["trigger_reason"],
+                plan["objective_score"], plan["status"],
+                "", "", "", "", "", "", "", "", "", "",
+            ])
+        else:
+            for slot in slots:
+                writer.writerow([
+                    plan["version"], plan["created_at"], plan["trigger_reason"],
+                    plan["objective_score"], plan["status"],
+                    slot["slot_index"], slot["slot_start"], slot["slot_end"],
+                    slot["operating_mode"], slot["target_power_w"],
+                    slot["expected_soc"], slot["import_rate_cents"],
+                    slot["export_rate_cents"], slot["solar_forecast_w"],
+                    slot["load_forecast_w"],
+                ])
+
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=power_master_plan_history_{hours}h.csv"},
+    )
+
+
 # ── Config ───────────────────────────────────────────
 
 @router.get("/config")

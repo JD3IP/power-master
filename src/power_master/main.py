@@ -75,6 +75,13 @@ class Application:
         await self.config_manager.save_version(db)
         logger.info("Database initialised")
 
+        # ── 1b. DB log handler ─────────────────────────────────
+        from power_master.dashboard.log_buffer import DbLogHandler
+
+        self._db_log_handler = DbLogHandler(repo)
+        self._db_log_handler.setFormatter(logging.Formatter("%(message)s"))
+        logging.getLogger().addHandler(self._db_log_handler)
+
         # ── 2. Hardware adapter ──────────────────────────────
         adapter = await self._create_adapter()
         self._adapter = adapter
@@ -396,6 +403,12 @@ class Application:
             name="history_flusher",
         ))
 
+        # DB log flush & prune
+        self._tasks.append(asyncio.create_task(
+            self._db_log_flush_loop(self._db_log_handler, repo),
+            name="db_log_flusher",
+        ))
+
         # Resilience evaluator
         self._tasks.append(asyncio.create_task(
             self._resilience_loop(resilience_mgr, event_bus=event_bus),
@@ -437,6 +450,7 @@ class Application:
         app.state.event_bus = event_bus
         app.state.notification_manager = notification_manager
         app.state.adapter = adapter
+        app.state.db_log_handler = self._db_log_handler
 
         import uvicorn
 
@@ -511,6 +525,13 @@ class Application:
                     await provider.close()
                 except Exception:
                     pass
+
+        # Flush remaining DB logs before closing DB
+        if hasattr(self, "_db_log_handler"):
+            try:
+                await self._db_log_handler.flush_to_db()
+            except Exception:
+                pass
 
         # Persist load runtime before closing DB
         if self._load_manager and self._repo:
@@ -935,6 +956,30 @@ class Application:
                 break
             except asyncio.TimeoutError:
                 pass
+
+    async def _db_log_flush_loop(self, handler, repo):
+        """Flush DB log buffer every 5 seconds; prune logs older than 7 days once per hour."""
+        prune_counter = 0
+        while not self._stop_event.is_set():
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=5)
+                break
+            except asyncio.TimeoutError:
+                pass
+            try:
+                await handler.flush_to_db()
+            except Exception:
+                logger.debug("DB log flush failed", exc_info=True)
+            prune_counter += 1
+            if prune_counter >= 720:  # 720 * 5s = 3600s = 1 hour
+                prune_counter = 0
+                try:
+                    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+                    pruned = await repo.prune_logs(cutoff)
+                    if pruned:
+                        logger.debug("Pruned %d old log entries", pruned)
+                except Exception:
+                    logger.debug("DB log prune failed", exc_info=True)
 
     async def _history_flush_loop(self, history):
         """Flush history buffer and checkpoint WAL every 30 minutes."""

@@ -58,6 +58,46 @@ class RingBufferHandler(logging.Handler):
         return [r.to_dict() for r in records[:limit]]
 
 
+class DbLogHandler(logging.Handler):
+    """Logging handler that queues records for periodic async DB writes."""
+
+    def __init__(self, repository: object) -> None:
+        super().__init__()
+        self._repo = repository
+        self._pending: list[LogRecord] = []
+        self._lock = threading.Lock()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            entry = LogRecord(
+                timestamp=datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+                level=record.levelname,
+                logger_name=record.name,
+                message=self.format(record),
+            )
+            with self._lock:
+                self._pending.append(entry)
+        except Exception:
+            self.handleError(record)
+
+    async def flush_to_db(self) -> int:
+        """Write queued records to the database. Returns count written."""
+        with self._lock:
+            batch = self._pending[:]
+            self._pending.clear()
+        if not batch:
+            return 0
+        for entry in batch:
+            await self._repo.store_log(
+                recorded_at=entry.timestamp,
+                level=entry.level,
+                logger_name=entry.logger_name,
+                message=entry.message,
+            )
+        await self._repo.db.commit()
+        return len(batch)
+
+
 # Singleton instance
 log_buffer = RingBufferHandler(capacity=1000)
 log_buffer.setFormatter(logging.Formatter("%(message)s"))

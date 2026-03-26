@@ -311,6 +311,18 @@ TABLES = [
     """,
     "CREATE INDEX IF NOT EXISTS idx_spike_time ON spike_events(started_at)",
 
+    # ── Application Logs ──────────────────────────────────
+    """
+    CREATE TABLE IF NOT EXISTS application_logs (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        recorded_at TEXT NOT NULL,
+        level       TEXT NOT NULL,
+        logger_name TEXT NOT NULL,
+        message     TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_app_logs_time ON application_logs(recorded_at)",
+
     # ── Key-Value Store ──────────────────────────────────
     """
     CREATE TABLE IF NOT EXISTS kv_store (

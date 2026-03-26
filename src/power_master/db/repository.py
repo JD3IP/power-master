@@ -546,6 +546,52 @@ class Repository:
 
     # ── Key-Value Store ──────────────────────────────────
 
+    # ── Application Logs ────────────────────────────────
+
+    async def store_log(
+        self,
+        recorded_at: str,
+        level: str,
+        logger_name: str,
+        message: str,
+    ) -> None:
+        await self.db.execute(
+            """INSERT INTO application_logs (recorded_at, level, logger_name, message)
+               VALUES (?, ?, ?, ?)""",
+            (recorded_at, level, logger_name, message),
+        )
+
+    async def get_logs_since(
+        self,
+        cutoff_iso: str,
+        level: str | None = None,
+        limit: int = 10000,
+    ) -> list[dict[str, Any]]:
+        if level:
+            query = """SELECT * FROM application_logs
+                       WHERE recorded_at >= ? AND level = ?
+                       ORDER BY recorded_at DESC LIMIT ?"""
+            params: list[Any] = [cutoff_iso, level.upper(), limit]
+        else:
+            query = """SELECT * FROM application_logs
+                       WHERE recorded_at >= ?
+                       ORDER BY recorded_at DESC LIMIT ?"""
+            params = [cutoff_iso, limit]
+        async with self.db.execute(query, params) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+    async def prune_logs(self, cutoff_iso: str) -> int:
+        cursor = await self.db.execute(
+            "DELETE FROM application_logs WHERE recorded_at < ?",
+            (cutoff_iso,),
+        )
+        count = cursor.rowcount
+        await self.db.commit()
+        return count
+
+    # ── Key-Value Store ──────────────────────────────────
+
     async def kv_get(self, key: str) -> Any | None:
         """Get a value from the key-value store. Returns None if not found."""
         async with self.db.execute(
