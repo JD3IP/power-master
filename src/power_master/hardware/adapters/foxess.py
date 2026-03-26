@@ -557,14 +557,6 @@ class FoxESSAdapter:
     async def _read_uint16(self, address: int) -> int:
         """Read a single uint16 holding register (function code 3)."""
         assert self._client is not None
-        self._check_tcp_health(f"read_holding_{address}")
-        if self._config.connection_type == "tcp":
-            transport = getattr(self._client, 'transport', None)
-            connected = self._client.connected if self._client else False
-            logger.debug(
-                "TCP state before read_holding: connected=%s, transport=%s, addr=%d",
-                connected, "open" if transport and not transport.is_closing() else "closed/none", address,
-            )
         try:
             result = await self._client.read_holding_registers(
                 address, count=1, device_id=self._config.unit_id
@@ -587,14 +579,6 @@ class FoxESSAdapter:
     async def _read_input_uint16(self, address: int) -> int:
         """Read a single uint16 input register (function code 4)."""
         assert self._client is not None
-        self._check_tcp_health(f"read_input_{address}")
-        if self._config.connection_type == "tcp":
-            transport = getattr(self._client, 'transport', None)
-            connected = self._client.connected if self._client else False
-            logger.debug(
-                "TCP state before read_input: connected=%s, transport=%s, addr=%d",
-                connected, "open" if transport and not transport.is_closing() else "closed/none", address,
-            )
         try:
             result = await self._client.read_input_registers(
                 address, count=1, device_id=self._config.unit_id
@@ -628,16 +612,8 @@ class FoxESSAdapter:
         prevent frame collisions on USB-serial adapters.
         """
         assert self._client is not None
-        self._check_tcp_health(f"write_{address}")
         raw = value & 0xFFFF
         signed = raw - 0x10000 if raw >= 0x8000 else raw
-        if self._config.connection_type == "tcp":
-            transport = getattr(self._client, 'transport', None)
-            connected = self._client.connected if self._client else False
-            logger.debug(
-                "TCP state before write: connected=%s, transport=%s, addr=%d",
-                connected, "open" if transport and not transport.is_closing() else "closed/none", address,
-            )
         if self._config.connection_type == "rtu":
             # RTU inter-frame delay: USB-serial adapters can buffer/merge
             # frames if writes are too rapid, causing the inverter to miss
