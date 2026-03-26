@@ -76,6 +76,19 @@ class Application:
         logger.info("Database initialised")
 
         # ── 1b. DB log handler ─────────────────────────────────
+        # Ensure application_logs table exists (handles existing DBs pre-migration)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS application_logs (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                recorded_at TEXT NOT NULL,
+                level       TEXT NOT NULL,
+                logger_name TEXT NOT NULL,
+                message     TEXT NOT NULL
+            )
+        """)
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_app_logs_time ON application_logs(recorded_at)")
+        await db.commit()
+
         from power_master.dashboard.log_buffer import DbLogHandler
 
         self._db_log_handler = DbLogHandler(repo)
