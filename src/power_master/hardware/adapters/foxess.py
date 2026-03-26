@@ -183,6 +183,11 @@ class FoxESSAdapter:
                 self._config.port,
                 self._config.unit_id,
             )
+            transport = getattr(self._client, 'transport', None)
+            if transport:
+                peername = transport.get_extra_info('peername')
+                sockname = transport.get_extra_info('sockname')
+                logger.info("TCP transport: local=%s remote=%s", sockname, peername)
             if self._config.port not in (502, 8899):
                 logger.warning(
                     "FoxESS control may be blocked on port %d. KH write control is typically "
@@ -529,17 +534,50 @@ class FoxESSAdapter:
             logger.error(msg)
             raise ConnectionError(msg)
 
+    # ── TCP diagnostics ─────────────────────────────────
+
+    def _check_tcp_health(self, context: str) -> bool:
+        """Check and log whether the underlying TCP transport is healthy."""
+        if self._config.connection_type != "tcp" or self._client is None:
+            return True
+        transport = getattr(self._client, 'transport', None)
+        if transport is None:
+            logger.warning("TCP DIAG [%s]: no transport (connection lost)", context)
+            return False
+        if transport.is_closing():
+            logger.warning("TCP DIAG [%s]: transport is closing", context)
+            return False
+        if not self._client.connected:
+            logger.warning("TCP DIAG [%s]: client reports not connected", context)
+            return False
+        return True
+
     # ── Low-level Modbus operations ──────────────────────
 
     async def _read_uint16(self, address: int) -> int:
         """Read a single uint16 holding register (function code 3)."""
         assert self._client is not None
+        self._check_tcp_health(f"read_holding_{address}")
+        if self._config.connection_type == "tcp":
+            transport = getattr(self._client, 'transport', None)
+            connected = self._client.connected if self._client else False
+            logger.debug(
+                "TCP state before read_holding: connected=%s, transport=%s, addr=%d",
+                connected, "open" if transport and not transport.is_closing() else "closed/none", address,
+            )
         try:
             result = await self._client.read_holding_registers(
                 address, count=1, device_id=self._config.unit_id
             )
         except Exception:
             self._connected = False
+            if self._config.connection_type == "tcp":
+                transport = getattr(self._client, 'transport', None)
+                logger.warning(
+                    "TCP DIAG: connection lost during read_holding_%d, transport=%s, client.connected=%s",
+                    address, "closing" if transport and transport.is_closing() else "none/ok",
+                    self._client.connected if self._client else "no_client",
+                )
             raise
         if result.isError():
             self._connected = False
@@ -549,12 +587,27 @@ class FoxESSAdapter:
     async def _read_input_uint16(self, address: int) -> int:
         """Read a single uint16 input register (function code 4)."""
         assert self._client is not None
+        self._check_tcp_health(f"read_input_{address}")
+        if self._config.connection_type == "tcp":
+            transport = getattr(self._client, 'transport', None)
+            connected = self._client.connected if self._client else False
+            logger.debug(
+                "TCP state before read_input: connected=%s, transport=%s, addr=%d",
+                connected, "open" if transport and not transport.is_closing() else "closed/none", address,
+            )
         try:
             result = await self._client.read_input_registers(
                 address, count=1, device_id=self._config.unit_id
             )
         except Exception:
             self._connected = False
+            if self._config.connection_type == "tcp":
+                transport = getattr(self._client, 'transport', None)
+                logger.warning(
+                    "TCP DIAG: connection lost during read_input_%d, transport=%s, client.connected=%s",
+                    address, "closing" if transport and transport.is_closing() else "none/ok",
+                    self._client.connected if self._client else "no_client",
+                )
             raise
         if result.isError():
             self._connected = False
@@ -575,8 +628,16 @@ class FoxESSAdapter:
         prevent frame collisions on USB-serial adapters.
         """
         assert self._client is not None
+        self._check_tcp_health(f"write_{address}")
         raw = value & 0xFFFF
         signed = raw - 0x10000 if raw >= 0x8000 else raw
+        if self._config.connection_type == "tcp":
+            transport = getattr(self._client, 'transport', None)
+            connected = self._client.connected if self._client else False
+            logger.debug(
+                "TCP state before write: connected=%s, transport=%s, addr=%d",
+                connected, "open" if transport and not transport.is_closing() else "closed/none", address,
+            )
         if self._config.connection_type == "rtu":
             # RTU inter-frame delay: USB-serial adapters can buffer/merge
             # frames if writes are too rapid, causing the inverter to miss
@@ -602,6 +663,13 @@ class FoxESSAdapter:
             )
         except Exception:
             self._connected = False
+            if self._config.connection_type == "tcp":
+                transport = getattr(self._client, 'transport', None)
+                logger.warning(
+                    "TCP DIAG: connection lost during write_%d, transport=%s, client.connected=%s",
+                    address, "closing" if transport and transport.is_closing() else "none/ok",
+                    self._client.connected if self._client else "no_client",
+                )
             raise
         if result.isError():
             self._connected = False
