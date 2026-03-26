@@ -221,25 +221,40 @@ class FoxESSAdapter:
               positive=import, negative=export.
         """
         async with self._lock:
-            # PV power — sum PV1 + PV2
-            pv1_power = await self._read_input_int16(Registers.PV1_POWER)
-            pv2_power = await self._read_input_int16(Registers.PV2_POWER)
+            # Bulk read input registers 31002-31024 (23 registers) in one transaction
+            # instead of 9 individual reads, reducing Modbus traffic significantly.
+            base = Registers.PV1_POWER  # 31002
+            count = Registers.BATTERY_SOC - base + 1  # 31024 - 31002 + 1 = 23
+            try:
+                result = await self._client.read_input_registers(
+                    base, count=count, device_id=self._config.unit_id
+                )
+            except Exception:
+                self._connected = False
+                if self._config.connection_type == "tcp":
+                    transport = getattr(self._client, 'transport', None)
+                    logger.warning(
+                        "TCP DIAG: connection lost during bulk_read_input, transport=%s, client.connected=%s",
+                        "closing" if transport and transport.is_closing() else "none/ok",
+                        self._client.connected if self._client else "no_client",
+                    )
+                raise
+            if result.isError():
+                self._connected = False
+                raise IOError(f"Modbus bulk read error at input registers {base}-{base+count-1}: {result}")
 
-            # Grid meter — KH: positive=export, negative=import
-            grid_power_raw = await self._read_input_int16(Registers.GRID_METER)
+            def _s16(raw: int) -> int:
+                return raw - 0x10000 if raw >= 0x8000 else raw
 
-            # Load power — home consumption
-            load_power_raw = await self._read_input_int16(Registers.LOAD_POWER)
-
-            # Battery power raw — KH: positive=discharge, negative=charge
-            battery_power_raw = await self._read_input_int16(Registers.BATTERY_POWER)
-
-            # Battery SOC — 0-100%
-            soc_pct = await self._read_input_uint16(Registers.BATTERY_SOC)
-
-            # Battery voltage (gain 10) and temperature (gain 10)
-            bat_voltage_raw = await self._read_input_int16(Registers.BATTERY_VOLTAGE)
-            bat_temp_raw = await self._read_input_int16(Registers.BATTERY_TEMP)
+            regs = result.registers
+            pv1_power = _s16(regs[Registers.PV1_POWER - base])
+            pv2_power = _s16(regs[Registers.PV2_POWER - base])
+            grid_power_raw = _s16(regs[Registers.GRID_METER - base])
+            load_power_raw = _s16(regs[Registers.LOAD_POWER - base])
+            bat_voltage_raw = _s16(regs[Registers.BATTERY_VOLTAGE - base])
+            battery_power_raw = _s16(regs[Registers.BATTERY_POWER - base])
+            bat_temp_raw = _s16(regs[Registers.BATTERY_TEMP - base])
+            soc_pct = regs[Registers.BATTERY_SOC - base]
 
             # Read actual work mode from holding register 41000
             work_mode_raw = await self._read_uint16(Registers.WORK_MODE)
@@ -608,17 +623,16 @@ class FoxESSAdapter:
 
         Control registers (41xxx, 44xxx) should be written individually,
         not in blocks, per Fox-ESS Modbus protocol requirements.
-        For RTU connections, a 100ms inter-frame delay is enforced to
-        prevent frame collisions on USB-serial adapters.
+        A 50ms inter-frame delay is enforced for both TCP and RTU to give
+        the gateway/inverter time to process each command.
         """
         assert self._client is not None
         raw = value & 0xFFFF
         signed = raw - 0x10000 if raw >= 0x8000 else raw
+        # Inter-frame delay: prevents overwhelming the gateway/inverter
+        # with rapid sequential writes. 50ms for TCP, 100ms for RTU.
+        await asyncio.sleep(0.1 if self._config.connection_type == "rtu" else 0.05)
         if self._config.connection_type == "rtu":
-            # RTU inter-frame delay: USB-serial adapters can buffer/merge
-            # frames if writes are too rapid, causing the inverter to miss
-            # commands even though pymodbus reports success.
-            await asyncio.sleep(0.1)
             logger.info(
                 "Modbus WRITE: port=%s unit=%d addr=%d raw=%d (0x%04X, signed=%d)",
                 self._config.serial_port,
