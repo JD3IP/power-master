@@ -113,7 +113,10 @@ class ControlLoop:
 
         try:
             while not self._stop_event.is_set():
-                await self._tick()
+                try:
+                    await self._tick()
+                except Exception:
+                    logger.exception("Control loop tick failed (will retry next interval)")
                 try:
                     await asyncio.wait_for(self._stop_event.wait(), timeout=interval)
                     break  # stop_event was set
