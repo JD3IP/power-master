@@ -449,6 +449,62 @@ class TestAPI:
         assert "arbitrage" in data
 
 
+class TestDebugExport:
+    @pytest.mark.asyncio
+    async def test_debug_export_returns_zip(self, client, repo) -> None:
+        import io
+        import json
+        import zipfile
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        await repo.store_telemetry(
+            soc=0.42, battery_power_w=0, solar_power_w=0, grid_power_w=0,
+            load_power_w=0,
+        )
+        await repo.store_historical(
+            "import_price_cents", 9.5, "amber",
+            (now - timedelta(hours=2)).isoformat(),
+        )
+
+        resp = await client.get("/api/debug/export?hours=6")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/zip"
+        assert "power_master_debug_" in resp.headers["content-disposition"]
+
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+            names = set(zf.namelist())
+            assert {"meta.json", "config.json", "plan.json",
+                    "telemetry.json", "prices.json", "logs_db.json"} <= names
+            meta = json.loads(zf.read("meta.json"))
+            assert meta["hours"] == 6
+            assert meta["record_counts"]["telemetry"] >= 1
+            assert meta["record_counts"]["import_prices"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_debug_export_redacts_secrets(self, client, repo, settings_config_manager) -> None:
+        import io
+        import json
+        import zipfile
+
+        cfg = settings_config_manager.config
+        cfg.providers.tariff.api_key = "psk_supersecret"
+        cfg.mqtt.password = "broker-secret"
+        cfg.notifications.channels.telegram.bot_token = "tg-token"
+
+        resp = await client.get("/api/debug/export?hours=1")
+        assert resp.status_code == 200
+
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+            config_json = json.loads(zf.read("config.json"))
+
+        assert config_json["providers"]["tariff"]["api_key"] == "***REDACTED***"
+        assert config_json["mqtt"]["password"] == "***REDACTED***"
+        assert config_json["notifications"]["channels"]["telegram"]["bot_token"] == "***REDACTED***"
+        # non-secret fields survive
+        assert "capacity_wh" in config_json["battery"]
+
+
 class TestLoadDetailAndOverride:
     """Tests for load detail and manual override endpoints."""
 
