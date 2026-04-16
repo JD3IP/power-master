@@ -84,6 +84,48 @@ class TestSolverBasic:
         max_soc = max(s.expected_soc for s in plan.slots)
         assert max_soc > 0.1, f"SOC should rise above initial 0.1, max was {max_soc}"
 
+    def test_force_charge_below_price_override(self) -> None:
+        """When buy price is at/below the override threshold, plan must FORCE_CHARGE.
+
+        Even with abundant solar (which would normally put the slot in SELF_USE),
+        the override should kick in so the battery gets topped up from grid.
+        """
+        config = AppConfig()
+        config.battery_targets.force_charge_below_price_cents = 3.0
+        inputs = _make_inputs(
+            n_slots=4,
+            solar=4000.0,   # Solar covers load — would normally be SELF_USE
+            load=1000.0,
+            import_price=2.0,  # Below the 3c threshold
+            export_price=1.0,
+            soc=0.4,
+        )
+        plan = solve(config, inputs)
+
+        force_charge = [s for s in plan.slots if s.mode == SlotMode.FORCE_CHARGE]
+        assert len(force_charge) == len(plan.slots), (
+            f"Expected every slot to be FORCE_CHARGE when price is below threshold, "
+            f"got {[s.mode for s in plan.slots]}"
+        )
+        for slot in force_charge:
+            assert slot.target_power_w > 0
+
+    def test_force_charge_override_disabled_by_default(self) -> None:
+        """With the override at 0 (disabled), cheap-price slots follow solver logic."""
+        config = AppConfig()
+        assert config.battery_targets.force_charge_below_price_cents == 0.0
+        inputs = _make_inputs(
+            n_slots=4,
+            solar=4000.0,
+            load=1000.0,
+            import_price=2.0,
+            export_price=1.0,
+            soc=0.9,  # Already full — solver has no reason to force-charge
+        )
+        plan = solve(config, inputs)
+        force_charge = [s for s in plan.slots if s.mode == SlotMode.FORCE_CHARGE]
+        assert len(force_charge) == 0
+
     def test_high_export_triggers_force_discharge(self) -> None:
         """When export price is high (above WACB + break-even), should force discharge for arbitrage."""
         config = AppConfig()

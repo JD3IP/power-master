@@ -246,6 +246,8 @@ def solve(
     if inputs.storm_active:
         active_constraints.append("storm_reserve")
 
+    force_charge_threshold = config.battery_targets.force_charge_below_price_cents
+
     for t in range(n):
         charge_val = pulp.value(charge[t]) or 0
         discharge_val = pulp.value(discharge[t]) or 0
@@ -259,6 +261,18 @@ def solve(
             solar_w=float(inputs.solar_forecast_w[t]),
             load_w=float(inputs.load_forecast_w[t]),
         )
+        # Cheap-price override: force grid charging whenever buy price is at or
+        # below the configured threshold, regardless of solver decision.  Skip
+        # during spikes (prices are high, so this is a no-op in practice, but
+        # the guard makes the intent explicit).
+        price_cents = float(inputs.import_rate_cents[t])
+        if (
+            force_charge_threshold > 0
+            and price_cents <= force_charge_threshold
+            and not inputs.is_spike[t]
+            and soc_val < config.battery.soc_max_soft
+        ):
+            mode = SlotMode.FORCE_CHARGE
         power = _determine_target_power(
             mode=mode,
             discharge_w=discharge_val,

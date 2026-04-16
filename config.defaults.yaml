@@ -39,6 +39,7 @@ battery_targets:
   daytime_reserve_start_hour: 8         # Start hour for daytime reserve window
   daytime_reserve_end_hour: 18          # End hour (exclusive) for reserve window
   overnight_charge_threshold_cents: 10  # Charge from grid if price < this (c/kWh)
+  force_charge_below_price_cents: 0     # Hard override: force grid charge when buy price <= this (c/kWh). 0 = disabled
 
 arbitrage:
   break_even_delta_cents: 5             # Minimum sell-buy spread to arbitrage (c/kWh)
