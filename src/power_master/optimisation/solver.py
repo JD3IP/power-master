@@ -258,8 +258,6 @@ def solve(
         import_val = pulp.value(grid_import[t]) or 0
         mode = _determine_mode(
             charge_val, discharge_val, export_val, import_val, inputs.is_spike[t],
-            solar_w=float(inputs.solar_forecast_w[t]),
-            load_w=float(inputs.load_forecast_w[t]),
         )
         # Cheap-price override: force grid charging whenever buy price is at or
         # below the configured threshold, regardless of solver decision.
@@ -336,7 +334,6 @@ def _resolve_planner_timezone(config: AppConfig):
 
 def _determine_mode(
     charge_w: float, discharge_w: float, grid_export_w: float, grid_import_w: float, is_spike: bool,
-    solar_w: float = 0.0, load_w: float = 0.0,
 ) -> SlotMode:
     """Determine the operating mode from solver decision variables.
 
@@ -348,10 +345,6 @@ def _determine_mode(
     threshold = 50  # Minimum power to consider active
 
     if charge_w > threshold and grid_import_w > threshold:
-        # If excess solar covers the load, the battery can charge from the
-        # surplus in SELF_USE mode — no need to force-charge from the grid.
-        if solar_w > load_w + threshold:
-            return SlotMode.SELF_USE
         return SlotMode.FORCE_CHARGE
     elif discharge_w > threshold and grid_export_w > threshold:
         # Arbitrage: actively exporting to grid for profit

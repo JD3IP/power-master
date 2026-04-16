@@ -297,6 +297,63 @@ class TestSolverBasic:
         assert daytime_soc, "Expected daytime slots in plan"
         assert max(daytime_soc) >= 0.48
 
+    def test_grid_charges_when_solar_covers_load_but_cannot_fill_battery(self) -> None:
+        """Planner must still grid-charge during cheap slots when modest solar
+        covers the load but can't fill the battery before peak.
+
+        Regression: a previous bug in _determine_mode flipped FORCE_CHARGE slots
+        to SELF_USE whenever current-slot solar exceeded current-slot load,
+        which defeated daytime-reserve and evening targets whenever any solar
+        was present during cheap periods.
+        """
+        config = AppConfig()
+        config.load_profile.timezone = "UTC"
+        config.battery_targets.evening_soc_target = 0.90
+        config.battery_targets.evening_target_hour = 18
+
+        n = 48
+        start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        starts = [start + timedelta(minutes=30 * i) for i in range(n)]
+
+        solar = []
+        load = []
+        import_prices = []
+        for i in range(n):
+            hour = starts[i].hour
+            # Modest solar 9-15h: covers load but not enough to fill the battery
+            solar.append(1500.0 if 9 <= hour < 15 else 0.0)
+            load.append(1000.0)
+            # Cheap daytime 10-14h, expensive evening peak 18-21h
+            if 10 <= hour < 14:
+                import_prices.append(3.0)
+            elif 18 <= hour < 21:
+                import_prices.append(60.0)
+            else:
+                import_prices.append(25.0)
+
+        inputs = SolverInputs(
+            solar_forecast_w=solar,
+            load_forecast_w=load,
+            import_rate_cents=import_prices,
+            export_rate_cents=[5.0] * n,
+            is_spike=[False] * n,
+            current_soc=0.15,
+            wacb_cents=10.0,
+            slot_start_times=starts,
+        )
+
+        plan = solve(config, inputs)
+
+        cheap_daytime_slots = [
+            slot for slot in plan.slots
+            if 10 <= slot.start.hour < 14
+        ]
+        force_charge = [s for s in cheap_daytime_slots if s.mode == SlotMode.FORCE_CHARGE]
+        assert force_charge, (
+            "Expected FORCE_CHARGE during cheap daytime slots even though "
+            f"solar covers load; got modes {[s.mode for s in cheap_daytime_slots]}"
+        )
+
 
     def test_evening_soc_target_triggers_charging(self) -> None:
         """Even with flat pricing, evening SOC target should force charging."""
