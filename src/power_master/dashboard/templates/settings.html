@@ -215,6 +215,7 @@
             <input type="number" id="battery_targets.evening_soc_target" name="battery_targets.evening_soc_target" step="1" value="{{ (config.battery_targets.evening_soc_target * 100)|round(0)|int }}" min="0" max="100">
             <span class="unit-label">%</span>
         </div>
+        <small class="form-hint">Charging goal: the planner aims to reach this SOC by Evening Target Hour, pulling from cheap daytime slots (grid or solar) as needed.</small>
     </div>
     <div class="form-group">
         <label for="battery_targets.evening_target_hour">Evening Target Hour (0-23)</label>
@@ -233,12 +234,12 @@
     </div>
     <h3>Daytime Reserve</h3>
     <div class="form-group">
-        <label for="battery_targets.daytime_reserve_soc_target">Daytime Reserve SOC Target</label>
+        <label for="battery_targets.daytime_reserve_soc_target">Daytime Reserve SOC Floor</label>
         <div class="input-unit">
             <input type="number" id="battery_targets.daytime_reserve_soc_target" name="battery_targets.daytime_reserve_soc_target" step="1" value="{{ (config.battery_targets.daytime_reserve_soc_target * 100)|round(0)|int }}" min="0" max="100">
             <span class="unit-label">%</span>
         </div>
-        <small class="form-hint">Soft daytime SOC bias for backup readiness (0 disables).</small>
+        <small class="form-hint">Minimum SOC to hold during the daytime window for backup readiness — <strong>not</strong> the charging target. The Evening SOC Target is what the planner charges toward. Set to 0 to disable.</small>
     </div>
     <div class="form-group">
         <label for="battery_targets.daytime_reserve_start_hour">Daytime Reserve Start Hour (0-23)</label>
