@@ -262,15 +262,10 @@ def solve(
             load_w=float(inputs.load_forecast_w[t]),
         )
         # Cheap-price override: force grid charging whenever buy price is at or
-        # below the configured threshold, regardless of solver decision.  Skip
-        # during spikes (prices are high, so this is a no-op in practice, but
-        # the guard makes the intent explicit).
-        price_cents = float(inputs.import_rate_cents[t])
+        # below the configured threshold, regardless of solver decision.
         if (
             force_charge_threshold > 0
-            and price_cents <= force_charge_threshold
-            and not inputs.is_spike[t]
-            and soc_val < config.battery.soc_max_soft
+            and float(inputs.import_rate_cents[t]) <= force_charge_threshold
         ):
             mode = SlotMode.FORCE_CHARGE
         power = _determine_target_power(

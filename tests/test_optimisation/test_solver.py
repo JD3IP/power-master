@@ -120,7 +120,7 @@ class TestSolverBasic:
             load=1000.0,
             import_price=2.0,
             export_price=1.0,
-            soc=0.9,  # Already full — solver has no reason to force-charge
+            soc=0.9,
         )
         plan = solve(config, inputs)
         force_charge = [s for s in plan.slots if s.mode == SlotMode.FORCE_CHARGE]
