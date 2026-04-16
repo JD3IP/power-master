@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from power_master.config.manager import ConfigManager
 from power_master.config.schema import AppConfig
 from power_master.dashboard.auth import require_admin
+from power_master.dashboard.routes.settings import PERCENTAGE_FIELDS
 from power_master.optimisation.backtest_lab import BacktestResult, run_backtest
 
 router = APIRouter()
@@ -80,11 +81,19 @@ def _parse_form_to_nested(form_data: dict[str, Any], allowed_keys: list[str]) ->
     for key in allowed_keys:
         if key not in form_data:
             continue
+        value = form_data[key]
+        # Percentage fields are sent as whole-number percents (0-100);
+        # the schema stores them as 0-1 fractions.
+        if key in PERCENTAGE_FIELDS and isinstance(value, str) and value != "":
+            try:
+                value = float(value) / 100.0
+            except ValueError:
+                pass
         parts = key.split(".")
         current = result
         for part in parts[:-1]:
             current = current.setdefault(part, {})
-        current[parts[-1]] = form_data[key]
+        current[parts[-1]] = value
     return result
 
 

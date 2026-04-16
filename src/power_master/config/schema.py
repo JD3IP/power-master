@@ -74,6 +74,9 @@ class BatteryTargetsConfig(BaseModel):
     daytime_reserve_start_hour: int = Field(8, ge=0, le=23)
     daytime_reserve_end_hour: int = Field(18, ge=0, le=24)
     overnight_charge_threshold_cents: int = 10
+    # Force grid charge whenever buy price is at or below this value (c/kWh).
+    # 0 disables the override and lets the solver decide normally.
+    force_charge_below_price_cents: float = Field(0.0, ge=0.0)
 
 
 class ArbitrageConfig(BaseModel):

@@ -182,7 +182,10 @@
         <div class="settings-grid">
             <div class="form-group">
                 <label for="battery_targets.evening_soc_target">Evening SOC Target</label>
-                <input type="number" step="0.01" min="0" max="1" id="battery_targets.evening_soc_target" name="battery_targets.evening_soc_target" value="{{ config.battery_targets.evening_soc_target }}">
+                <div class="input-unit">
+                    <input type="number" step="1" min="0" max="100" id="battery_targets.evening_soc_target" name="battery_targets.evening_soc_target" value="{{ (config.battery_targets.evening_soc_target * 100)|round(0)|int }}">
+                    <span class="unit-label">%</span>
+                </div>
             </div>
             <div class="form-group">
                 <label for="battery_targets.evening_target_hour">Evening Hour</label>
@@ -190,7 +193,10 @@
             </div>
             <div class="form-group">
                 <label for="battery_targets.morning_soc_minimum">Morning SOC Minimum</label>
-                <input type="number" step="0.01" min="0" max="1" id="battery_targets.morning_soc_minimum" name="battery_targets.morning_soc_minimum" value="{{ config.battery_targets.morning_soc_minimum }}">
+                <div class="input-unit">
+                    <input type="number" step="1" min="0" max="100" id="battery_targets.morning_soc_minimum" name="battery_targets.morning_soc_minimum" value="{{ (config.battery_targets.morning_soc_minimum * 100)|round(0)|int }}">
+                    <span class="unit-label">%</span>
+                </div>
             </div>
             <div class="form-group">
                 <label for="battery_targets.morning_minimum_hour">Morning Hour</label>
@@ -198,7 +204,10 @@
             </div>
             <div class="form-group">
                 <label for="battery_targets.daytime_reserve_soc_target">Daytime Reserve SOC</label>
-                <input type="number" step="0.01" min="0" max="1" id="battery_targets.daytime_reserve_soc_target" name="battery_targets.daytime_reserve_soc_target" value="{{ config.battery_targets.daytime_reserve_soc_target }}">
+                <div class="input-unit">
+                    <input type="number" step="1" min="0" max="100" id="battery_targets.daytime_reserve_soc_target" name="battery_targets.daytime_reserve_soc_target" value="{{ (config.battery_targets.daytime_reserve_soc_target * 100)|round(0)|int }}">
+                    <span class="unit-label">%</span>
+                </div>
             </div>
             <div class="form-group">
                 <label for="battery_targets.daytime_reserve_start_hour">Daytime Start Hour</label>
@@ -235,7 +244,10 @@
             </div>
             <div class="form-group">
                 <label for="arbitrage.price_dampen_factor">Dampen Factor</label>
-                <input type="number" step="0.05" min="0" max="1" id="arbitrage.price_dampen_factor" name="arbitrage.price_dampen_factor" value="{{ config.arbitrage.price_dampen_factor }}">
+                <div class="input-unit">
+                    <input type="number" step="1" min="0" max="100" id="arbitrage.price_dampen_factor" name="arbitrage.price_dampen_factor" value="{{ (config.arbitrage.price_dampen_factor * 100)|round(0)|int }}">
+                    <span class="unit-label">%</span>
+                </div>
             </div>
             <div class="form-group">
                 <label for="fixed_costs.hedging_per_kwh_cents">Hedging (c/kWh)</label>

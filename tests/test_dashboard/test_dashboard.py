@@ -95,9 +95,10 @@ class TestSettingsPage:
         resp = await client.get("/settings")
         # Default battery capacity
         assert "10000" in resp.text
-        # Default SOC hard limits
-        assert "0.05" in resp.text
-        assert "0.95" in resp.text
+        # Default SOC hard limits rendered as whole-number percents with % unit
+        assert 'value="5"' in resp.text
+        assert 'value="95"' in resp.text
+        assert '<span class="unit-label">%</span>' in resp.text
 
 
 class TestSettingsPost:
@@ -167,10 +168,11 @@ class TestSettingsPost:
 
     @pytest.mark.asyncio
     async def test_save_daytime_reserve_settings(self, client) -> None:
+        # SOC target is posted as a whole-number percent (55 -> 0.55).
         await client.post(
             "/settings",
             data={
-                "battery_targets.daytime_reserve_soc_target": "0.55",
+                "battery_targets.daytime_reserve_soc_target": "55",
                 "battery_targets.daytime_reserve_start_hour": "9",
                 "battery_targets.daytime_reserve_end_hour": "17",
             },
@@ -210,10 +212,11 @@ class TestSettingsPost:
     @pytest.mark.asyncio
     async def test_save_checkbox_unchecked(self, client) -> None:
         """POST without checkbox sets False."""
-        # Don't send storm.enabled — simulates unchecked checkbox
+        # Don't send storm.enabled — simulates unchecked checkbox.
+        # Reserve SOC target is posted as a whole-number percent (90 -> 0.90).
         await client.post(
             "/settings",
-            data={"storm.reserve_soc_target": "0.90"},
+            data={"storm.reserve_soc_target": "90"},
             follow_redirects=False,
         )
         resp = await client.get("/api/config")
@@ -444,6 +447,62 @@ class TestAPI:
         assert "battery" in data
         assert "planning" in data
         assert "arbitrage" in data
+
+
+class TestDebugExport:
+    @pytest.mark.asyncio
+    async def test_debug_export_returns_zip(self, client, repo) -> None:
+        import io
+        import json
+        import zipfile
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        await repo.store_telemetry(
+            soc=0.42, battery_power_w=0, solar_power_w=0, grid_power_w=0,
+            load_power_w=0,
+        )
+        await repo.store_historical(
+            "import_price_cents", 9.5, "amber",
+            (now - timedelta(hours=2)).isoformat(),
+        )
+
+        resp = await client.get("/api/debug/export?hours=6")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/zip"
+        assert "power_master_debug_" in resp.headers["content-disposition"]
+
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+            names = set(zf.namelist())
+            assert {"meta.json", "config.json", "plan.json",
+                    "telemetry.json", "prices.json", "logs_db.json"} <= names
+            meta = json.loads(zf.read("meta.json"))
+            assert meta["hours"] == 6
+            assert meta["record_counts"]["telemetry"] >= 1
+            assert meta["record_counts"]["import_prices"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_debug_export_redacts_secrets(self, client, repo, settings_config_manager) -> None:
+        import io
+        import json
+        import zipfile
+
+        cfg = settings_config_manager.config
+        cfg.providers.tariff.api_key = "psk_supersecret"
+        cfg.mqtt.password = "broker-secret"
+        cfg.notifications.channels.telegram.bot_token = "tg-token"
+
+        resp = await client.get("/api/debug/export?hours=1")
+        assert resp.status_code == 200
+
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+            config_json = json.loads(zf.read("config.json"))
+
+        assert config_json["providers"]["tariff"]["api_key"] == "***REDACTED***"
+        assert config_json["mqtt"]["password"] == "***REDACTED***"
+        assert config_json["notifications"]["channels"]["telegram"]["bot_token"] == "***REDACTED***"
+        # non-secret fields survive
+        assert "capacity_wh" in config_json["battery"]
 
 
 class TestLoadDetailAndOverride:

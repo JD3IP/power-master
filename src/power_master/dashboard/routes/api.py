@@ -1175,6 +1175,42 @@ async def export_plan_history(request: Request, hours: int = 24) -> Response:
     )
 
 
+@router.get("/debug/export")
+async def export_debug_bundle(request: Request, hours: int = 24) -> Response:
+    """Bundle redacted config, current plan, last N hours of data and logs as a .zip."""
+    from power_master.dashboard.debug_export import build_debug_bundle
+    from power_master.dashboard.log_buffer import log_buffer
+
+    denied = require_admin(request)
+    if denied:
+        return denied
+
+    hours = min(max(hours, 1), 168)
+    repo = request.app.state.repo
+    config = request.app.state.config
+
+    db_log_handler = getattr(request.app.state, "db_log_handler", None)
+    if db_log_handler is not None:
+        try:
+            await db_log_handler.flush_to_db()
+        except Exception:
+            pass
+
+    in_memory_logs = log_buffer.get_records(limit=10000)
+
+    payload = await build_debug_bundle(
+        config, repo, hours=hours, in_memory_logs=in_memory_logs,
+    )
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%SZ")
+    filename = f"power_master_debug_{timestamp}.zip"
+    return Response(
+        content=payload,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 # ── Config ───────────────────────────────────────────
 
 @router.get("/config")
