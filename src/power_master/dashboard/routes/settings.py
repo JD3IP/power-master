@@ -65,9 +65,24 @@ NULLABLE_FIELDS = {
     "providers.solar.azimuth",
 }
 
-# Fields displayed as percentage in UI but stored as 0-1 decimal
+# Fields displayed as percentage in UI but stored as 0-1 decimal.
+# The settings form always sends these as whole-number percents (0-100);
+# the route converts to the 0-1 fractions the schema/solver expect.
 PERCENTAGE_FIELDS = {
+    "battery.soc_min_hard",
+    "battery.soc_max_hard",
+    "battery.soc_min_soft",
+    "battery.soc_max_soft",
+    "battery.round_trip_efficiency",
+    "battery_targets.evening_soc_target",
+    "battery_targets.morning_soc_minimum",
+    "battery_targets.daytime_reserve_soc_target",
     "planning.soc_deviation_tolerance",
+    "anti_oscillation.hysteresis_band",
+    "arbitrage.price_dampen_factor",
+    "storm.reserve_soc_target",
+    "storm.probability_threshold",
+    "resilience.degraded_safety_margin",
     "notifications.battery_low_threshold",
     "notifications.battery_full_threshold",
 }

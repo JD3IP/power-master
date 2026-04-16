@@ -174,29 +174,47 @@
     </div>
     <div class="form-group">
         <label for="battery.soc_min_hard">SOC Min Hard</label>
-        <input type="number" id="battery.soc_min_hard" name="battery.soc_min_hard" step="0.01" value="{{ config.battery.soc_min_hard }}" min="0" max="1">
+        <div class="input-unit">
+            <input type="number" id="battery.soc_min_hard" name="battery.soc_min_hard" step="1" value="{{ (config.battery.soc_min_hard * 100)|round(0)|int }}" min="0" max="100">
+            <span class="unit-label">%</span>
+        </div>
     </div>
     <div class="form-group">
         <label for="battery.soc_max_hard">SOC Max Hard</label>
-        <input type="number" id="battery.soc_max_hard" name="battery.soc_max_hard" step="0.01" value="{{ config.battery.soc_max_hard }}" min="0" max="1">
+        <div class="input-unit">
+            <input type="number" id="battery.soc_max_hard" name="battery.soc_max_hard" step="1" value="{{ (config.battery.soc_max_hard * 100)|round(0)|int }}" min="0" max="100">
+            <span class="unit-label">%</span>
+        </div>
     </div>
     <div class="form-group">
         <label for="battery.soc_min_soft">SOC Min Soft</label>
-        <input type="number" id="battery.soc_min_soft" name="battery.soc_min_soft" step="0.01" value="{{ config.battery.soc_min_soft }}" min="0" max="1">
+        <div class="input-unit">
+            <input type="number" id="battery.soc_min_soft" name="battery.soc_min_soft" step="1" value="{{ (config.battery.soc_min_soft * 100)|round(0)|int }}" min="0" max="100">
+            <span class="unit-label">%</span>
+        </div>
     </div>
     <div class="form-group">
         <label for="battery.soc_max_soft">SOC Max Soft</label>
-        <input type="number" id="battery.soc_max_soft" name="battery.soc_max_soft" step="0.01" value="{{ config.battery.soc_max_soft }}" min="0" max="1">
+        <div class="input-unit">
+            <input type="number" id="battery.soc_max_soft" name="battery.soc_max_soft" step="1" value="{{ (config.battery.soc_max_soft * 100)|round(0)|int }}" min="0" max="100">
+            <span class="unit-label">%</span>
+        </div>
     </div>
     <div class="form-group">
         <label for="battery.round_trip_efficiency">Round Trip Efficiency</label>
-        <input type="number" id="battery.round_trip_efficiency" name="battery.round_trip_efficiency" step="0.01" value="{{ config.battery.round_trip_efficiency }}" min="0" max="1">
+        <div class="input-unit">
+            <input type="number" id="battery.round_trip_efficiency" name="battery.round_trip_efficiency" step="1" value="{{ (config.battery.round_trip_efficiency * 100)|round(0)|int }}" min="0" max="100">
+            <span class="unit-label">%</span>
+        </div>
     </div>
 
     <h2>Battery Targets</h2>
     <div class="form-group">
         <label for="battery_targets.evening_soc_target">Evening SOC Target</label>
-        <input type="number" id="battery_targets.evening_soc_target" name="battery_targets.evening_soc_target" step="0.01" value="{{ config.battery_targets.evening_soc_target }}" min="0" max="1">
+        <div class="input-unit">
+            <input type="number" id="battery_targets.evening_soc_target" name="battery_targets.evening_soc_target" step="1" value="{{ (config.battery_targets.evening_soc_target * 100)|round(0)|int }}" min="0" max="100">
+            <span class="unit-label">%</span>
+        </div>
     </div>
     <div class="form-group">
         <label for="battery_targets.evening_target_hour">Evening Target Hour (0-23)</label>
@@ -204,7 +222,10 @@
     </div>
     <div class="form-group">
         <label for="battery_targets.morning_soc_minimum">Morning SOC Minimum</label>
-        <input type="number" id="battery_targets.morning_soc_minimum" name="battery_targets.morning_soc_minimum" step="0.01" value="{{ config.battery_targets.morning_soc_minimum }}" min="0" max="1">
+        <div class="input-unit">
+            <input type="number" id="battery_targets.morning_soc_minimum" name="battery_targets.morning_soc_minimum" step="1" value="{{ (config.battery_targets.morning_soc_minimum * 100)|round(0)|int }}" min="0" max="100">
+            <span class="unit-label">%</span>
+        </div>
     </div>
     <div class="form-group">
         <label for="battery_targets.morning_minimum_hour">Morning Minimum Hour (0-23)</label>
@@ -213,7 +234,10 @@
     <h3>Daytime Reserve</h3>
     <div class="form-group">
         <label for="battery_targets.daytime_reserve_soc_target">Daytime Reserve SOC Target</label>
-        <input type="number" id="battery_targets.daytime_reserve_soc_target" name="battery_targets.daytime_reserve_soc_target" step="0.01" value="{{ config.battery_targets.daytime_reserve_soc_target }}" min="0" max="1">
+        <div class="input-unit">
+            <input type="number" id="battery_targets.daytime_reserve_soc_target" name="battery_targets.daytime_reserve_soc_target" step="1" value="{{ (config.battery_targets.daytime_reserve_soc_target * 100)|round(0)|int }}" min="0" max="100">
+            <span class="unit-label">%</span>
+        </div>
         <small class="form-hint">Soft daytime SOC bias for backup readiness (0 disables).</small>
     </div>
     <div class="form-group">
@@ -272,12 +296,18 @@
         <input type="number" id="planning.periodic_rebuild_interval_seconds" name="planning.periodic_rebuild_interval_seconds" value="{{ config.planning.periodic_rebuild_interval_seconds }}">
     </div>
     <div class="form-group">
-        <label for="planning.forecast_delta_threshold_pct">Forecast Delta Threshold (%)</label>
-        <input type="number" id="planning.forecast_delta_threshold_pct" name="planning.forecast_delta_threshold_pct" step="0.1" value="{{ config.planning.forecast_delta_threshold_pct }}">
+        <label for="planning.forecast_delta_threshold_pct">Forecast Delta Threshold</label>
+        <div class="input-unit">
+            <input type="number" id="planning.forecast_delta_threshold_pct" name="planning.forecast_delta_threshold_pct" step="0.1" value="{{ config.planning.forecast_delta_threshold_pct }}">
+            <span class="unit-label">%</span>
+        </div>
     </div>
     <div class="form-group">
-        <label for="planning.soc_deviation_tolerance">SOC Deviation Tolerance (%)</label>
-        <input type="number" id="planning.soc_deviation_tolerance" name="planning.soc_deviation_tolerance" step="1" value="{{ (config.planning.soc_deviation_tolerance * 100)|round(0)|int }}" min="1" max="20">
+        <label for="planning.soc_deviation_tolerance">SOC Deviation Tolerance</label>
+        <div class="input-unit">
+            <input type="number" id="planning.soc_deviation_tolerance" name="planning.soc_deviation_tolerance" step="1" value="{{ (config.planning.soc_deviation_tolerance * 100)|round(0)|int }}" min="1" max="20">
+            <span class="unit-label">%</span>
+        </div>
         <small>Replan when actual SOC deviates from plan by this percentage</small>
     </div>
     <div class="form-group">
@@ -325,8 +355,11 @@
         <small class="form-hint">Import prices above this are dampened to reduce solver overreaction.</small>
     </div>
     <div class="form-group">
-        <label for="arbitrage.price_dampen_factor">Dampen Factor (0-1)</label>
-        <input type="number" id="arbitrage.price_dampen_factor" name="arbitrage.price_dampen_factor" step="0.1" min="0" max="1" value="{{ config.arbitrage.price_dampen_factor }}">
+        <label for="arbitrage.price_dampen_factor">Dampen Factor</label>
+        <div class="input-unit">
+            <input type="number" id="arbitrage.price_dampen_factor" name="arbitrage.price_dampen_factor" step="1" min="0" max="100" value="{{ (config.arbitrage.price_dampen_factor * 100)|round(0)|int }}">
+            <span class="unit-label">%</span>
+        </div>
         <small class="form-hint">Fraction of excess above threshold to keep. Applied progressively by horizon: near-term less damped, far-term more damped.</small>
     </div>
 
@@ -749,7 +782,10 @@
     </div>
     <div class="form-group">
         <label for="anti_oscillation.hysteresis_band">Hysteresis Band</label>
-        <input type="number" id="anti_oscillation.hysteresis_band" name="anti_oscillation.hysteresis_band" step="0.01" value="{{ config.anti_oscillation.hysteresis_band }}" min="0" max="0.5">
+        <div class="input-unit">
+            <input type="number" id="anti_oscillation.hysteresis_band" name="anti_oscillation.hysteresis_band" step="1" value="{{ (config.anti_oscillation.hysteresis_band * 100)|round(0)|int }}" min="0" max="50">
+            <span class="unit-label">%</span>
+        </div>
     </div>
     <div class="form-group">
         <label for="anti_oscillation.rate_limit_window_seconds">Rate Limit Window (s)</label>
@@ -772,11 +808,17 @@
     </div>
     <div class="form-group">
         <label for="storm.reserve_soc_target">Reserve SOC Target</label>
-        <input type="number" id="storm.reserve_soc_target" name="storm.reserve_soc_target" step="0.01" value="{{ config.storm.reserve_soc_target }}" min="0" max="1">
+        <div class="input-unit">
+            <input type="number" id="storm.reserve_soc_target" name="storm.reserve_soc_target" step="1" value="{{ (config.storm.reserve_soc_target * 100)|round(0)|int }}" min="0" max="100">
+            <span class="unit-label">%</span>
+        </div>
     </div>
     <div class="form-group">
         <label for="storm.probability_threshold">Probability Threshold</label>
-        <input type="number" id="storm.probability_threshold" name="storm.probability_threshold" step="0.01" value="{{ config.storm.probability_threshold }}" min="0" max="1">
+        <div class="input-unit">
+            <input type="number" id="storm.probability_threshold" name="storm.probability_threshold" step="1" value="{{ (config.storm.probability_threshold * 100)|round(0)|int }}" min="0" max="100">
+            <span class="unit-label">%</span>
+        </div>
     </div>
     <div class="form-group">
         <label for="storm.horizon_hours">Horizon (hours)</label>
@@ -801,7 +843,10 @@
     </div>
     <div class="form-group">
         <label for="resilience.degraded_safety_margin">Degraded Safety Margin</label>
-        <input type="number" id="resilience.degraded_safety_margin" name="resilience.degraded_safety_margin" step="0.01" value="{{ config.resilience.degraded_safety_margin }}" min="0" max="1">
+        <div class="input-unit">
+            <input type="number" id="resilience.degraded_safety_margin" name="resilience.degraded_safety_margin" step="1" value="{{ (config.resilience.degraded_safety_margin * 100)|round(0)|int }}" min="0" max="100">
+            <span class="unit-label">%</span>
+        </div>
     </div>
     <div class="form-group">
         <label for="resilience.stale_telemetry_max_age_seconds">Stale Telemetry Max Age (s)</label>
@@ -984,12 +1029,18 @@
 
     <h3>Event Rules</h3>
     <div class="form-group">
-        <label>Battery Low Threshold (%)</label>
-        <input type="number" name="notifications.battery_low_threshold" value="{{ (config.notifications.battery_low_threshold * 100)|int }}" min="0" max="100" step="1">
+        <label>Battery Low Threshold</label>
+        <div class="input-unit">
+            <input type="number" name="notifications.battery_low_threshold" value="{{ (config.notifications.battery_low_threshold * 100)|int }}" min="0" max="100" step="1">
+            <span class="unit-label">%</span>
+        </div>
     </div>
     <div class="form-group">
-        <label>Battery Full Threshold (%)</label>
-        <input type="number" name="notifications.battery_full_threshold" value="{{ (config.notifications.battery_full_threshold * 100)|int }}" min="0" max="100" step="1">
+        <label>Battery Full Threshold</label>
+        <div class="input-unit">
+            <input type="number" name="notifications.battery_full_threshold" value="{{ (config.notifications.battery_full_threshold * 100)|int }}" min="0" max="100" step="1">
+            <span class="unit-label">%</span>
+        </div>
     </div>
     <div class="form-group">
         <label>Log Forwarding Min Level</label>

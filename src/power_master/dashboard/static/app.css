@@ -817,6 +817,21 @@ tr.mode-4 { background: rgba(248, 81, 73, 0.03); }
     width: auto;
     margin-right: 8px;
 }
+.form-group .input-unit {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 400px;
+}
+.form-group .input-unit input[type="number"] {
+    flex: 1;
+    max-width: none;
+}
+.form-group .input-unit .unit-label {
+    color: var(--text-muted);
+    font-size: 14px;
+    font-weight: 500;
+}
 
 /* ── Buttons ────────────────────────────────────── */
 

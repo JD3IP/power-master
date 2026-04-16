@@ -95,9 +95,10 @@ class TestSettingsPage:
         resp = await client.get("/settings")
         # Default battery capacity
         assert "10000" in resp.text
-        # Default SOC hard limits
-        assert "0.05" in resp.text
-        assert "0.95" in resp.text
+        # Default SOC hard limits rendered as whole-number percents with % unit
+        assert 'value="5"' in resp.text
+        assert 'value="95"' in resp.text
+        assert '<span class="unit-label">%</span>' in resp.text
 
 
 class TestSettingsPost:
@@ -167,10 +168,11 @@ class TestSettingsPost:
 
     @pytest.mark.asyncio
     async def test_save_daytime_reserve_settings(self, client) -> None:
+        # SOC target is posted as a whole-number percent (55 -> 0.55).
         await client.post(
             "/settings",
             data={
-                "battery_targets.daytime_reserve_soc_target": "0.55",
+                "battery_targets.daytime_reserve_soc_target": "55",
                 "battery_targets.daytime_reserve_start_hour": "9",
                 "battery_targets.daytime_reserve_end_hour": "17",
             },
@@ -210,10 +212,11 @@ class TestSettingsPost:
     @pytest.mark.asyncio
     async def test_save_checkbox_unchecked(self, client) -> None:
         """POST without checkbox sets False."""
-        # Don't send storm.enabled — simulates unchecked checkbox
+        # Don't send storm.enabled — simulates unchecked checkbox.
+        # Reserve SOC target is posted as a whole-number percent (90 -> 0.90).
         await client.post(
             "/settings",
-            data={"storm.reserve_soc_target": "0.90"},
+            data={"storm.reserve_soc_target": "90"},
             follow_redirects=False,
         )
         resp = await client.get("/api/config")
