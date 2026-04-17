@@ -1,6 +1,6 @@
 """SQL table definitions for all 17 tables."""
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 TABLES = [
     # ── Config ──────────────────────────────────────────────
@@ -331,6 +331,23 @@ TABLES = [
         updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     )
     """,
+
+    # ── Forecast Samples (individual horizon values, calibration + accuracy) ─
+    """
+    CREATE TABLE IF NOT EXISTS forecast_samples (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider_type   TEXT NOT NULL,
+        metric          TEXT NOT NULL,
+        fetched_at      TEXT NOT NULL,
+        horizon_hours   REAL NOT NULL,
+        target_time     TEXT NOT NULL,
+        predicted_value REAL NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_fcsamples_target ON forecast_samples(provider_type, metric, target_time)",
+    "CREATE INDEX IF NOT EXISTS idx_fcsamples_fetched ON forecast_samples(fetched_at)",
+    """CREATE UNIQUE INDEX IF NOT EXISTS idx_fcsamples_dedup
+       ON forecast_samples(provider_type, metric, fetched_at, horizon_hours)""",
 
     # ── Schema version tracking ─────────────────────────────
     """

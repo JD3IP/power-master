@@ -64,6 +64,14 @@ storm:
   horizon_hours: 24
 
 providers:
+  # Store forecast samples (per-horizon predictions) so we can measure
+  # forecast accuracy over time and use the history for calibration.
+  # Solar: every fetch, full resolution (all 30-min slots + P10/P50/P90).
+  # Weather/Tariff/Storm: hourly cadence, bucketed to the configured horizons.
+  forecast_persistence_enabled: true
+  forecast_retention_days: 365
+  forecast_horizons_hours: [1, 4, 10, 18, 24]
+
   weather:
     type: "openmeteo"
     update_interval_seconds: 3600       # 1 hour

@@ -52,8 +52,35 @@ async def _apply_migrations(
     db: aiosqlite.Connection, from_version: int, to_version: int
 ) -> None:
     """Apply incremental migrations between versions."""
-    # Future migrations go here as version-specific functions
-    # Example:
-    # if from_version < 2:
-    #     await _migrate_v1_to_v2(db)
-    pass
+    if from_version < 2:
+        await _migrate_v1_to_v2(db)
+
+
+async def _migrate_v1_to_v2(db: aiosqlite.Connection) -> None:
+    """Add forecast_samples table for per-horizon forecast persistence."""
+    await db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS forecast_samples (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            provider_type   TEXT NOT NULL,
+            metric          TEXT NOT NULL,
+            fetched_at      TEXT NOT NULL,
+            horizon_hours   REAL NOT NULL,
+            target_time     TEXT NOT NULL,
+            predicted_value REAL NOT NULL
+        )
+        """
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_fcsamples_target "
+        "ON forecast_samples(provider_type, metric, target_time)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_fcsamples_fetched "
+        "ON forecast_samples(fetched_at)"
+    )
+    await db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_fcsamples_dedup "
+        "ON forecast_samples(provider_type, metric, fetched_at, horizon_hours)"
+    )
+    logger.info("Migrated to v2: forecast_samples table created")

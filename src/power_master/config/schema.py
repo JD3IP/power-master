@@ -162,6 +162,13 @@ class ProvidersConfig(BaseModel):
     solar: SolarProviderConfig = SolarProviderConfig()
     storm: StormProviderConfig = StormProviderConfig()
     tariff: TariffProviderConfig = TariffProviderConfig()
+    # Forecast persistence — stores per-horizon forecast samples so we can
+    # measure accuracy and feed calibration.
+    forecast_persistence_enabled: bool = True
+    forecast_retention_days: int = Field(365, ge=7, le=1825)
+    forecast_horizons_hours: list[float] = Field(
+        default_factory=lambda: [1.0, 4.0, 10.0, 18.0, 24.0]
+    )
 
 
 class FoxESSConfig(BaseModel):

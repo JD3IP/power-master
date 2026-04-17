@@ -426,6 +426,12 @@ class Application:
             name="db_log_flusher",
         ))
 
+        # Forecast samples retention prune (once per hour)
+        self._tasks.append(asyncio.create_task(
+            self._forecast_prune_loop(repo),
+            name="forecast_prune",
+        ))
+
         # Resilience evaluator
         self._tasks.append(asyncio.create_task(
             self._resilience_loop(resilience_mgr, event_bus=event_bus),
@@ -839,12 +845,21 @@ class Application:
             try:
                 now = time.monotonic()
 
+                persist_enabled = self.config.providers.forecast_persistence_enabled
+                horizons = self.config.providers.forecast_horizons_hours
+
                 # Tariff update
                 if now - last_tariff >= tariff_interval:
                     result = await aggregator.update_tariff()
                     if result:
                         health_checker.record_success("tariff")
                         await history.record_price(result)
+                        if persist_enabled:
+                            try:
+                                from power_master.forecast.persistence import persist_tariff_forecast
+                                await persist_tariff_forecast(repo, result, horizons)
+                            except Exception:
+                                logger.exception("Tariff forecast persistence failed")
                         last_tariff = now
                     else:
                         health_checker.record_failure("tariff", "fetch failed")
@@ -857,6 +872,14 @@ class Application:
                     last_solar = now
                     if result:
                         health_checker.record_success("solar_forecast")
+                        if persist_enabled:
+                            try:
+                                from power_master.forecast.persistence import persist_solar_forecast
+                                n = await persist_solar_forecast(repo, result)
+                                if n:
+                                    logger.debug("Persisted %d solar forecast samples", n)
+                            except Exception:
+                                logger.exception("Solar forecast persistence failed")
                     else:
                         health_checker.record_failure("solar_forecast", "fetch failed")
 
@@ -866,6 +889,12 @@ class Application:
                     if result:
                         health_checker.record_success("weather_forecast")
                         await history.record_weather(result)
+                        if persist_enabled:
+                            try:
+                                from power_master.forecast.persistence import persist_weather_forecast
+                                await persist_weather_forecast(repo, result, horizons)
+                            except Exception:
+                                logger.exception("Weather forecast persistence failed")
                         last_weather = now
                     else:
                         health_checker.record_failure("weather_forecast", "fetch failed")
@@ -876,6 +905,12 @@ class Application:
                     if result:
                         health_checker.record_success("storm")
                         storm_monitor.update(result.max_probability)
+                        if persist_enabled:
+                            try:
+                                from power_master.forecast.persistence import persist_storm_forecast
+                                await persist_storm_forecast(repo, result, horizons)
+                            except Exception:
+                                logger.exception("Storm forecast persistence failed")
                         last_storm = now
                     elif health_checker.is_healthy("storm"):
                         health_checker.record_failure("storm", "fetch failed")
@@ -1387,6 +1422,35 @@ class Application:
         )
 
         return plan
+
+    async def _forecast_prune_loop(self, repo):
+        """Delete forecast samples older than providers.forecast_retention_days.
+
+        Runs once per hour, a trivial DELETE on an indexed column.
+        """
+        # Let the app warm up before first prune
+        try:
+            await asyncio.wait_for(self._stop_event.wait(), timeout=300)
+            return
+        except asyncio.TimeoutError:
+            pass
+        while not self._stop_event.is_set():
+            try:
+                retention_days = self.config.providers.forecast_retention_days
+                cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+                pruned = await repo.prune_forecast_samples(cutoff)
+                if pruned:
+                    logger.info(
+                        "Pruned %d forecast samples older than %d days",
+                        pruned, retention_days,
+                    )
+            except Exception:
+                logger.exception("Forecast sample prune failed")
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=3600)
+                return
+            except asyncio.TimeoutError:
+                continue
 
     async def _refresh_solar_calibration(self, repo):
         """Fit (or refit) the solar calibration model.  Returns None when disabled

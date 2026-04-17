@@ -449,6 +449,54 @@ class TestAPI:
         assert "arbitrage" in data
 
 
+class TestForecastAccuracyAPI:
+    @pytest.mark.asyncio
+    async def test_returns_empty_buckets_with_no_data(self, client) -> None:
+        resp = await client.get("/api/forecast/accuracy?days=7")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["window_days"] == 7
+        assert data["buckets"] == []
+
+    @pytest.mark.asyncio
+    async def test_computes_mae_per_horizon_bucket(self, client, repo) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        # Predicted 200W for a slot where actual was 150W at a 30-min cadence
+        target = now - timedelta(hours=3)
+        target = target.replace(minute=0, second=0, microsecond=0)
+        await repo.store_forecast_samples([{
+            "provider_type": "solar",
+            "metric": "pv_estimate_w",
+            "fetched_at": (target - timedelta(hours=1)).isoformat(),
+            "horizon_hours": 1.0,
+            "target_time": target.isoformat(),
+            "predicted_value": 200.0,
+        }])
+        await repo.store_telemetry(
+            soc=0.5, battery_power_w=0, solar_power_w=150, grid_power_w=0,
+            load_power_w=0,
+        )
+        # Telemetry uses _now() internally so rewrite its recorded_at to match target
+        await repo.db.execute(
+            "UPDATE telemetry SET recorded_at = ?", (target.isoformat(),),
+        )
+        await repo.db.commit()
+
+        resp = await client.get("/api/forecast/accuracy?days=7")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["buckets"]) == 1
+        bucket = data["buckets"][0]
+        assert bucket["provider"] == "solar"
+        assert bucket["metric"] == "pv_estimate_w"
+        assert bucket["horizon_hours"] == 1.0
+        assert bucket["n_samples"] == 1
+        assert bucket["n_with_actual"] == 1
+        assert bucket["mae"] == 50.0
+
+
 class TestForecastCalibrationAPI:
     @pytest.mark.asyncio
     async def test_returns_status_when_no_application(self, client) -> None:

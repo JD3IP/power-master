@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, Request
@@ -1173,6 +1174,111 @@ async def export_plan_history(request: Request, hours: int = 24) -> Response:
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=power_master_plan_history_{hours}h.csv"},
     )
+
+
+@router.get("/forecast/accuracy")
+async def forecast_accuracy(request: Request, days: int = 30) -> dict:
+    """Forecast MAE per (provider, metric, horizon) over the last N days.
+
+    Solar actuals come from telemetry.solar_power_w; weather/tariff come from
+    historical_data rows stored by HistoryCollector.  Storm alerts have no
+    actuals path and are reported with MAE=None.
+    """
+    days = min(max(days, 1), 365)
+    repo = request.app.state.repo
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(days=days)).isoformat()
+    end_iso = now.isoformat()
+
+    # Actuals lookup tables keyed by 30-min UTC slot
+    telemetry = await repo.get_telemetry_since(cutoff)
+    solar_actual_by_slot: dict[str, list[float]] = {}
+    for row in telemetry:
+        ts = _parse_iso(row["recorded_at"])
+        if ts is None:
+            continue
+        key = _slot_key(ts)
+        solar_actual_by_slot.setdefault(key, []).append(float(row["solar_power_w"]))
+
+    historical_by_type: dict[str, dict[str, float]] = {}
+    for data_type in ("import_price_cents", "export_price_cents",
+                      "temperature_c", "cloud_cover_pct"):
+        rows = await repo.get_historical(data_type, cutoff, end_iso)
+        lookup: dict[str, float] = {}
+        for r in rows:
+            ts = _parse_iso(r["recorded_at"])
+            if ts is None:
+                continue
+            lookup[_slot_key(ts)] = float(r["value"])
+        historical_by_type[data_type] = lookup
+
+    def actual_for(provider: str, metric: str, slot_key: str) -> float | None:
+        if provider == "solar" and metric == "pv_estimate_w":
+            xs = solar_actual_by_slot.get(slot_key)
+            return sum(xs) / len(xs) if xs else None
+        if metric in historical_by_type:
+            return historical_by_type[metric].get(slot_key)
+        return None
+
+    # Pull all forecast samples in the window (any provider, any metric)
+    rows = await repo.get_forecast_samples(
+        "solar", target_time_start=cutoff, target_time_end=end_iso,
+    )
+    rows += await repo.get_forecast_samples(
+        "weather", target_time_start=cutoff, target_time_end=end_iso,
+    )
+    rows += await repo.get_forecast_samples(
+        "tariff", target_time_start=cutoff, target_time_end=end_iso,
+    )
+    rows += await repo.get_forecast_samples(
+        "storm", target_time_start=cutoff, target_time_end=end_iso,
+    )
+
+    # Group by (provider, metric, horizon_hours) and aggregate MAE against actuals
+    buckets: dict[tuple[str, str, float], dict[str, Any]] = {}
+    for r in rows:
+        key = (r["provider_type"], r["metric"], round(float(r["horizon_hours"]), 2))
+        b = buckets.setdefault(key, {"n_samples": 0, "errors": []})
+        b["n_samples"] += 1
+        target = _parse_iso(r["target_time"])
+        if target is None:
+            continue
+        actual = actual_for(r["provider_type"], r["metric"], _slot_key(target))
+        if actual is None:
+            continue
+        b["errors"].append(abs(float(r["predicted_value"]) - actual))
+
+    result = []
+    for (provider, metric, horizon), b in sorted(buckets.items()):
+        errors = b["errors"]
+        mae = sum(errors) / len(errors) if errors else None
+        result.append({
+            "provider": provider,
+            "metric": metric,
+            "horizon_hours": horizon,
+            "n_samples": b["n_samples"],
+            "n_with_actual": len(errors),
+            "mae": round(mae, 3) if mae is not None else None,
+        })
+
+    return {"window_days": days, "buckets": result}
+
+
+def _parse_iso(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _slot_key(t: datetime) -> str:
+    minute = 30 * (t.minute // 30)
+    return t.replace(minute=minute, second=0, microsecond=0).isoformat()
 
 
 @router.get("/forecast/calibration")
