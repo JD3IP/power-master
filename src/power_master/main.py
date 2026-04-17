@@ -51,6 +51,10 @@ class Application:
         self._load_manager = None
         self._repo = None
 
+        # Solar calibration model (lazy-fitted, refreshed on stale)
+        self._solar_calibration_model = None
+        self._solar_calibration_last_fit = None
+
     async def start(self) -> None:
         """Start all application components in dependency order."""
         logger.info("Starting Power Master v%s", VERSION)
@@ -1237,6 +1241,25 @@ class Application:
                 solar_source.provider if solar_source else "None",
             )
 
+        # Calibrate the solar forecast against recent telemetry.  Model is
+        # refit lazily (see _refresh_solar_calibration).  When disabled or
+        # there's insufficient data, apply_calibration returns the raw
+        # forecast unchanged.
+        solar_model = await self._refresh_solar_calibration(repo)
+        if solar_model is not None:
+            from power_master.forecast.solar_calibration import apply_calibration
+            calibrated = apply_calibration(solar_forecast_w, slot_start_times, solar_model)
+            raw_sum = sum(solar_forecast_w)
+            cal_sum = sum(calibrated)
+            logger.info(
+                "Solar calibration applied: raw_total=%.0fWh cal_total=%.0fWh "
+                "n_samples=%d raw_mae=%.0fW cal_mae=%.0fW",
+                raw_sum * 0.5, cal_sum * 0.5,
+                solar_model.n_samples,
+                solar_model.raw_mae_w, solar_model.calibrated_mae_w,
+            )
+            solar_forecast_w = calibrated
+
         # Load forecast — use historic patterns, fall back to configured profile
         load_forecast_w = await self._build_load_forecast(
             repo, slot_start_times, n_slots,
@@ -1364,6 +1387,66 @@ class Application:
         )
 
         return plan
+
+    async def _refresh_solar_calibration(self, repo):
+        """Fit (or refit) the solar calibration model.  Returns None when disabled
+        or when insufficient training data is available.
+        """
+        solar_cfg = self.config.providers.solar
+        if not solar_cfg.calibration_enabled:
+            return None
+
+        peak_w = solar_cfg.system_size_kw * 1000.0 if solar_cfg.system_size_kw > 0 else solar_cfg.kwp * 1000.0
+        if peak_w <= 0:
+            return None
+
+        now = datetime.now(timezone.utc)
+        last_fit = self._solar_calibration_last_fit
+        refit_interval = timedelta(seconds=solar_cfg.calibration_refit_interval_seconds)
+        if self._solar_calibration_model is not None and last_fit is not None:
+            if now - last_fit < refit_interval:
+                return self._solar_calibration_model
+
+        from power_master.forecast.solar_calibration import (
+            build_training_set,
+            fit_calibration_model,
+        )
+
+        try:
+            samples = await build_training_set(
+                repo,
+                window_days=solar_cfg.calibration_window_days,
+                system_peak_w=peak_w,
+                tz_name=solar_cfg.timezone,
+                reference_time=now,
+            )
+            model = fit_calibration_model(
+                samples,
+                system_peak_w=peak_w,
+                tz_name=solar_cfg.timezone,
+                trained_at=now,
+            )
+        except Exception:
+            logger.exception("Solar calibration fit failed — using raw forecast")
+            self._solar_calibration_last_fit = now
+            return self._solar_calibration_model  # keep previous (possibly None)
+
+        self._solar_calibration_last_fit = now
+        if model is None:
+            logger.info(
+                "Solar calibration: insufficient data (%d samples, need >=50)",
+                len(samples),
+            )
+            self._solar_calibration_model = None
+            return None
+
+        self._solar_calibration_model = model
+        logger.info(
+            "Solar calibration refit: n=%d raw_mae=%.0fW cal_mae=%.0fW lift=%.0fW",
+            model.n_samples, model.raw_mae_w, model.calibrated_mae_w,
+            model.raw_mae_w - model.calibrated_mae_w,
+        )
+        return model
 
     async def _build_load_forecast(
         self,

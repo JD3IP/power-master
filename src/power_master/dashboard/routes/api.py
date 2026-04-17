@@ -1175,6 +1175,25 @@ async def export_plan_history(request: Request, hours: int = 24) -> Response:
     )
 
 
+@router.get("/forecast/calibration")
+async def forecast_calibration(request: Request) -> dict:
+    """Inspect the current solar-forecast calibration model."""
+    application = getattr(request.app.state, "application", None)
+    if application is None:
+        return {"enabled": False, "status": "application_not_available"}
+    config = request.app.state.config
+    solar_cfg = config.providers.solar
+    model = getattr(application, "_solar_calibration_model", None)
+    last_fit = getattr(application, "_solar_calibration_last_fit", None)
+    return {
+        "enabled": bool(solar_cfg.calibration_enabled),
+        "window_days": solar_cfg.calibration_window_days,
+        "refit_interval_seconds": solar_cfg.calibration_refit_interval_seconds,
+        "last_fit": last_fit.isoformat() if last_fit else None,
+        "model": model.as_dict() if model is not None else None,
+    }
+
+
 @router.get("/debug/export")
 async def export_debug_bundle(request: Request, hours: int = 24) -> Response:
     """Bundle redacted config, current plan, last N hours of data and logs as a .zip."""
@@ -1198,8 +1217,20 @@ async def export_debug_bundle(request: Request, hours: int = 24) -> Response:
 
     in_memory_logs = log_buffer.get_records(limit=10000)
 
+    application = getattr(request.app.state, "application", None)
+    solar_calibration = None
+    if application is not None:
+        model = getattr(application, "_solar_calibration_model", None)
+        last_fit = getattr(application, "_solar_calibration_last_fit", None)
+        solar_calibration = {
+            "enabled": bool(config.providers.solar.calibration_enabled),
+            "last_fit": last_fit.isoformat() if last_fit else None,
+            "model": model.as_dict() if model is not None else None,
+        }
+
     payload = await build_debug_bundle(
         config, repo, hours=hours, in_memory_logs=in_memory_logs,
+        solar_calibration=solar_calibration,
     )
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%SZ")

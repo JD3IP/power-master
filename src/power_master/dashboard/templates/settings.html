@@ -507,6 +507,32 @@
         <label for="providers.solar.validity_seconds">Forecast Validity (s)</label>
         <input type="number" id="providers.solar.validity_seconds" name="providers.solar.validity_seconds" value="{{ config.providers.solar.validity_seconds }}">
     </div>
+    <h3 style="margin-top:12px;">Forecast Calibration</h3>
+    <small class="form-hint" style="display:block; margin-bottom:8px;">
+        Fits a small ridge regression against recent telemetry to correct provider bias.
+        The planner uses the calibrated forecast. Raw forecast is still logged. Coefficients and MAE lift
+        are visible at <a href="/api/forecast/calibration" target="_blank">/api/forecast/calibration</a>.
+    </small>
+    <div class="form-group">
+        <label for="providers.solar.calibration_enabled">
+            <input type="checkbox" id="providers.solar.calibration_enabled" name="providers.solar.calibration_enabled" {% if config.providers.solar.calibration_enabled %}checked{% endif %}>
+            Enable Calibration
+        </label>
+    </div>
+    <div class="form-group">
+        <label for="providers.solar.calibration_window_days">Training Window</label>
+        <div class="input-unit">
+            <input type="number" id="providers.solar.calibration_window_days" name="providers.solar.calibration_window_days" min="3" max="90" value="{{ config.providers.solar.calibration_window_days }}">
+            <span class="unit-label">days</span>
+        </div>
+    </div>
+    <div class="form-group">
+        <label for="providers.solar.calibration_refit_interval_seconds">Refit Interval</label>
+        <div class="input-unit">
+            <input type="number" id="providers.solar.calibration_refit_interval_seconds" name="providers.solar.calibration_refit_interval_seconds" min="60" value="{{ config.providers.solar.calibration_refit_interval_seconds }}">
+            <span class="unit-label">s</span>
+        </div>
+    </div>
     <h2>Weather (Open-Meteo)</h2>
     <div class="provider-status" id="provider-status-weather_forecast">
         <span class="provider-status-dot"></span>
