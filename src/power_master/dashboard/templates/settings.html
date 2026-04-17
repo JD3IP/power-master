@@ -250,8 +250,19 @@
         <input type="number" id="battery_targets.daytime_reserve_end_hour" name="battery_targets.daytime_reserve_end_hour" value="{{ config.battery_targets.daytime_reserve_end_hour }}" min="1" max="24">
     </div>
     <div class="form-group">
-        <label for="battery_targets.overnight_charge_threshold_cents">Overnight Charge Threshold (c/kWh)</label>
-        <input type="number" id="battery_targets.overnight_charge_threshold_cents" name="battery_targets.overnight_charge_threshold_cents" value="{{ config.battery_targets.overnight_charge_threshold_cents }}">
+        <label for="battery_targets.overnight_charge_threshold_cents">Overnight Charge Threshold</label>
+        <div class="input-unit">
+            <input type="number" id="battery_targets.overnight_charge_threshold_cents" name="battery_targets.overnight_charge_threshold_cents" value="{{ config.battery_targets.overnight_charge_threshold_cents }}">
+            <span class="unit-label">c/kWh</span>
+        </div>
+    </div>
+    <div class="form-group">
+        <label for="battery_targets.force_charge_below_price_cents">Force Grid Charge Below Price</label>
+        <div class="input-unit">
+            <input type="number" id="battery_targets.force_charge_below_price_cents" name="battery_targets.force_charge_below_price_cents" step="0.1" min="0" value="{{ config.battery_targets.force_charge_below_price_cents }}">
+            <span class="unit-label">c/kWh</span>
+        </div>
+        <small class="form-hint">Hard override: whenever the buy price is at or below this, the plan forces grid charging regardless of solver decision. Set to 0 to disable.</small>
     </div>
 
     <h2>Battery Cost Basis Reset</h2>
