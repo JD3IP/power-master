@@ -54,6 +54,8 @@ async def _apply_migrations(
     """Apply incremental migrations between versions."""
     if from_version < 2:
         await _migrate_v1_to_v2(db)
+    if from_version < 3:
+        await _migrate_v2_to_v3(db)
 
 
 async def _migrate_v1_to_v2(db: aiosqlite.Connection) -> None:
@@ -84,3 +86,34 @@ async def _migrate_v1_to_v2(db: aiosqlite.Connection) -> None:
         "ON forecast_samples(provider_type, metric, fetched_at, horizon_hours)"
     )
     logger.info("Migrated to v2: forecast_samples table created")
+
+
+async def _migrate_v2_to_v3(db: aiosqlite.Connection) -> None:
+    """Add notification_log table for persistent notification history."""
+    await db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS notification_log (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            emitted_at      TEXT NOT NULL,
+            event_name      TEXT NOT NULL,
+            severity        TEXT NOT NULL,
+            tier            TEXT NOT NULL DEFAULT 'informational',
+            title           TEXT NOT NULL,
+            message         TEXT NOT NULL,
+            action_json     TEXT,
+            incident_id     TEXT,
+            correlation_id  TEXT,
+            channels_sent   TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_notif_log_time ON notification_log(emitted_at)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_notif_log_incident ON notification_log(incident_id)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_notif_log_correlation ON notification_log(correlation_id)"
+    )
+    logger.info("Migrated to v3: notification_log table created")

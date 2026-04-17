@@ -334,32 +334,59 @@ class NotificationEventConfig(BaseModel):
 
 
 class NotificationEventsConfig(BaseModel):
+    # Exceptional events — on by default.  Fire when something abnormal
+    # happens; each carries an Action describing the system's response.
     price_spike: NotificationEventConfig = NotificationEventConfig(
-        severity="critical", cooldown_seconds=300,
-    )
-    price_spike_end: NotificationEventConfig = NotificationEventConfig(
-        severity="info", cooldown_seconds=60,
-    )
-    battery_low: NotificationEventConfig = NotificationEventConfig(
-        severity="warning", cooldown_seconds=3600,
-    )
-    battery_full: NotificationEventConfig = NotificationEventConfig(
-        severity="info", cooldown_seconds=3600,
+        severity="critical", cooldown_seconds=300, enabled=True,
     )
     inverter_offline: NotificationEventConfig = NotificationEventConfig(
-        severity="critical", cooldown_seconds=600,
-    )
-    inverter_online: NotificationEventConfig = NotificationEventConfig(
-        severity="info", cooldown_seconds=60,
+        severity="critical", cooldown_seconds=600, enabled=True,
     )
     resilience_degraded: NotificationEventConfig = NotificationEventConfig(
-        severity="warning", cooldown_seconds=600,
+        severity="warning", cooldown_seconds=600, enabled=True,
+    )
+    storm_plan_active: NotificationEventConfig = NotificationEventConfig(
+        severity="warning", cooldown_seconds=900, enabled=True,
+    )
+    grid_outage: NotificationEventConfig = NotificationEventConfig(
+        severity="critical", cooldown_seconds=600, enabled=True,
+    )
+    force_charge_triggered: NotificationEventConfig = NotificationEventConfig(
+        severity="info", cooldown_seconds=1800, enabled=True,
+    )
+    # Resolution / closing events — on by default so incidents get closed out.
+    price_spike_end: NotificationEventConfig = NotificationEventConfig(
+        severity="info", cooldown_seconds=60, enabled=True,
+    )
+    storm_resolved: NotificationEventConfig = NotificationEventConfig(
+        severity="info", cooldown_seconds=60, enabled=True,
+    )
+    grid_outage_resolved: NotificationEventConfig = NotificationEventConfig(
+        severity="info", cooldown_seconds=60, enabled=True,
+    )
+    # Routine events — off by default.  Flip on only if you specifically
+    # want the noise.
+    battery_low: NotificationEventConfig = NotificationEventConfig(
+        severity="warning", cooldown_seconds=3600, enabled=False,
+    )
+    battery_full: NotificationEventConfig = NotificationEventConfig(
+        severity="info", cooldown_seconds=3600, enabled=False,
+    )
+    inverter_online: NotificationEventConfig = NotificationEventConfig(
+        severity="info", cooldown_seconds=60, enabled=False,
     )
     resilience_recovered: NotificationEventConfig = NotificationEventConfig(
-        severity="info", cooldown_seconds=60,
+        severity="info", cooldown_seconds=60, enabled=False,
     )
+    # log_error is disabled by default but the log handler filters at
+    # log_min_level (CRITICAL by default) so silent failures still surface
+    # iff they reach CRITICAL severity.
     log_error: NotificationEventConfig = NotificationEventConfig(
-        severity="warning", cooldown_seconds=300,
+        severity="warning", cooldown_seconds=300, enabled=False,
+    )
+    # Daily briefing digest — off by default.
+    daily_briefing: NotificationEventConfig = NotificationEventConfig(
+        severity="info", cooldown_seconds=60, enabled=False,
     )
 
 
@@ -367,7 +394,16 @@ class NotificationsConfig(BaseModel):
     enabled: bool = False
     battery_low_threshold: float = Field(0.10, ge=0.0, le=1.0)
     battery_full_threshold: float = Field(0.95, ge=0.0, le=1.0)
-    log_min_level: str = "ERROR"
+    # Minimum log level that will reach the event bus (separate from
+    # the `log_error` event rule).  Set to CRITICAL by default so routine
+    # errors are logged but not notified; CRITICAL-level failures always
+    # surface even when the `log_error` event rule is off.
+    log_min_level: str = "CRITICAL"
+    # Daily briefing configuration
+    daily_briefing_enabled: bool = False
+    daily_briefing_hour_local: int = Field(7, ge=0, le=23)
+    # Persistence retention (days) for notification_log rows
+    notification_retention_days: int = Field(90, ge=1, le=3650)
     channels: NotificationChannelsConfig = NotificationChannelsConfig()
     events: NotificationEventsConfig = NotificationEventsConfig()
 

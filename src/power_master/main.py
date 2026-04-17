@@ -55,6 +55,15 @@ class Application:
         self._solar_calibration_model = None
         self._solar_calibration_last_fit = None
 
+        # Notification correlation state for open-state incidents
+        self._spike_correlation_id: str | None = None
+        self._spike_deferred_loads: list[str] = []
+        self._grid_outage_correlation_id: str | None = None
+        self._grid_outage_since: datetime | None = None
+        self._storm_correlation_id: str | None = None
+        self._storm_was_active: bool = False
+        self._force_charge_last_emitted_hour: str | None = None
+
     async def start(self) -> None:
         """Start all application components in dependency order."""
         logger.info("Starting Power Master v%s", VERSION)
@@ -155,7 +164,7 @@ class Application:
         from power_master.notifications.manager import NotificationManager
 
         event_bus = EventBus()
-        notification_manager = NotificationManager(self.config.notifications, event_bus)
+        notification_manager = NotificationManager(self.config.notifications, event_bus, repo=repo)
 
         # Wire log forwarding if notifications enabled
         if self.config.notifications.enabled:
@@ -430,6 +439,12 @@ class Application:
         self._tasks.append(asyncio.create_task(
             self._forecast_prune_loop(repo),
             name="forecast_prune",
+        ))
+
+        # Daily briefing + notification log retention
+        self._tasks.append(asyncio.create_task(
+            self._notification_maintenance_loop(repo, event_bus, control_loop, aggregator, storm_monitor),
+            name="notification_maintenance",
         ))
 
         # Resilience evaluator
@@ -956,29 +971,67 @@ class Application:
                     # Handle spike load shedding + notifications
                     if rebuild_result.trigger == "price_spike":
                         spike_was_active = True
-                        await load_manager.shed_for_spike()
+                        deferred = await load_manager.shed_for_spike()
                         if event_bus and self.config.notifications.enabled:
-                            from power_master.notifications.bus import Event as _NEvent
+                            from power_master.notifications.bus import Tier
+                            from power_master.notifications.emitter import (
+                                emit_narrated, new_correlation_id, spike_incident_id,
+                            )
+                            from power_master.notifications.narrators import NarratorContext
                             spike = aggregator.spike_detector.current_spike
-                            price_str = f"{spike.price_cents:.0f}c/kWh" if spike else "high"
-                            await event_bus.publish(_NEvent(
-                                name="price_spike",
+                            telemetry = control_loop.state.last_telemetry
+                            # Correlation id is persisted so the "end" event can match
+                            corr_id = new_correlation_id()
+                            self._spike_correlation_id = corr_id
+                            self._spike_deferred_loads = (
+                                [c.load_id for c in deferred] if deferred else []
+                            )
+                            ctx = NarratorContext(
+                                now=datetime.now(timezone.utc),
+                                current_soc=telemetry.soc if telemetry else None,
+                                spike_price_cents=spike.price_cents if spike else None,
+                                spike_window_end=None,
+                                deferred_load_names=self._spike_deferred_loads,
+                            )
+                            await emit_narrated(
+                                event_bus,
+                                event_name="price_spike",
+                                title="Price spike detected",
                                 severity="critical",
-                                title="Price Spike Detected",
-                                message=f"Electricity price spiked to {price_str}. Shedding loads and maximising discharge.",
+                                tier=Tier.ATTENTION,
+                                plan=control_loop.state.current_plan,
+                                ctx=ctx,
+                                incident_id=spike_incident_id(spike.started_at if spike else None),
+                                correlation_id=corr_id,
+                                fallback_message="Electricity price spiked — discharging and shedding loads.",
                                 data={"price_cents": spike.price_cents if spike else 0},
-                            ))
+                            )
                     elif spike_was_active and not aggregator.spike_detector.is_spike_active:
                         spike_was_active = False
                         await load_manager.restore_after_spike()
                         if event_bus and self.config.notifications.enabled:
-                            from power_master.notifications.bus import Event as _NEvent
-                            await event_bus.publish(_NEvent(
-                                name="price_spike_end",
+                            from power_master.notifications.bus import Tier
+                            from power_master.notifications.emitter import emit_narrated
+                            from power_master.notifications.narrators import NarratorContext
+                            telemetry = control_loop.state.last_telemetry
+                            ctx = NarratorContext(
+                                now=datetime.now(timezone.utc),
+                                current_soc=telemetry.soc if telemetry else None,
+                                deferred_load_names=getattr(self, "_spike_deferred_loads", []),
+                            )
+                            await emit_narrated(
+                                event_bus,
+                                event_name="price_spike_end",
+                                title="Price spike ended",
                                 severity="info",
-                                title="Price Spike Ended",
-                                message="Electricity price has returned to normal. Restoring loads.",
-                            ))
+                                tier=Tier.INFORMATIONAL,
+                                plan=control_loop.state.current_plan,
+                                ctx=ctx,
+                                correlation_id=getattr(self, "_spike_correlation_id", None),
+                                fallback_message="Prices normalised. Restoring loads.",
+                            )
+                            self._spike_correlation_id = None
+                            self._spike_deferred_loads = []
 
                 # Check if control loop flagged urgent SOC deviation
                 if self._soc_rebuild_needed.is_set():
@@ -995,6 +1048,17 @@ class Application:
                             rebuild_evaluator, control_loop, repo,
                             trigger=soc_result.trigger, load_manager=load_manager,
                         )
+
+                # Storm state transitions — emitted post-rebuild so the plan
+                # reflects the reserve strategy we narrate.
+                if event_bus and self.config.notifications.enabled:
+                    await self._maybe_emit_storm_events(
+                        event_bus, storm_monitor, control_loop, aggregator,
+                    )
+                    # Force-grid-charge override just became active in the current slot?
+                    await self._maybe_emit_force_charge_event(
+                        event_bus, control_loop, aggregator,
+                    )
 
             except Exception:
                 logger.exception("Error in forecast update loop iteration")
@@ -1117,13 +1181,31 @@ class Application:
             # Attempt reconnect if disconnected
             if not await current_adapter.is_connected():
                 if _was_connected and event_bus and self.config.notifications.enabled:
-                    from power_master.notifications.bus import Event as _NEvent
-                    await event_bus.publish(_NEvent(
-                        name="inverter_offline",
+                    from power_master.notifications.bus import Tier
+                    from power_master.notifications.emitter import (
+                        emit_narrated, grid_outage_incident_id, new_correlation_id,
+                    )
+                    from power_master.notifications.narrators import NarratorContext
+                    self._grid_outage_since = datetime.now(timezone.utc)
+                    self._grid_outage_correlation_id = new_correlation_id()
+                    telemetry = control_loop.state.last_telemetry
+                    ctx = NarratorContext(
+                        now=datetime.now(timezone.utc),
+                        current_soc=telemetry.soc if telemetry else None,
+                        inverter_offline_since=self._grid_outage_since,
+                    )
+                    await emit_narrated(
+                        event_bus,
+                        event_name="inverter_offline",
+                        title="Inverter unreachable",
                         severity="critical",
-                        title="Inverter Offline",
-                        message="Lost connection to the inverter. Attempting reconnect.",
-                    ))
+                        tier=Tier.ATTENTION,
+                        plan=control_loop.state.current_plan,
+                        ctx=ctx,
+                        incident_id=grid_outage_incident_id(self._grid_outage_since),
+                        correlation_id=self._grid_outage_correlation_id,
+                        fallback_message="Lost connection to the inverter — retrying every 30s.",
+                    )
                 _was_connected = False
                 now_mono = _time.monotonic()
                 if (now_mono - last_reconnect_attempt) >= reconnect_interval:
@@ -1133,13 +1215,27 @@ class Application:
                         logger.info("Reconnected to inverter")
                         _was_connected = True
                         if event_bus and self.config.notifications.enabled:
-                            from power_master.notifications.bus import Event as _NEvent
-                            await event_bus.publish(_NEvent(
-                                name="inverter_online",
+                            from power_master.notifications.bus import Tier
+                            from power_master.notifications.emitter import emit_narrated
+                            from power_master.notifications.narrators import NarratorContext
+                            telemetry = control_loop.state.last_telemetry
+                            ctx = NarratorContext(
+                                now=datetime.now(timezone.utc),
+                                current_soc=telemetry.soc if telemetry else None,
+                            )
+                            await emit_narrated(
+                                event_bus,
+                                event_name="inverter_online",
+                                title="Inverter reconnected",
                                 severity="info",
-                                title="Inverter Online",
-                                message="Reconnected to the inverter successfully.",
-                            ))
+                                tier=Tier.INFORMATIONAL,
+                                plan=control_loop.state.current_plan,
+                                ctx=ctx,
+                                correlation_id=self._grid_outage_correlation_id,
+                                fallback_message="Reconnected to the inverter.",
+                            )
+                            self._grid_outage_correlation_id = None
+                            self._grid_outage_since = None
                     except Exception:
                         logger.warning("Inverter reconnect failed, will retry in %ds", reconnect_interval)
                 try:
@@ -1451,6 +1547,188 @@ class Application:
                 return
             except asyncio.TimeoutError:
                 continue
+
+    async def _notification_maintenance_loop(
+        self, repo, event_bus, control_loop, aggregator, storm_monitor,
+    ) -> None:
+        """Daily-briefing fire + notification log retention prune.
+
+        Checks every 60s whether we've crossed the configured local-hour
+        boundary for today's briefing, using the configured timezone.  The
+        TZ lookup is re-done each iteration so DST transitions are handled.
+        """
+        from power_master.notifications.bus import Event as _NEvent
+        from power_master.notifications.bus import Tier
+        from power_master.notifications.narrators import NarratorContext, generate_daily_briefing
+        from power_master.notifications.emitter import emit_narrated
+        last_briefing_date: str | None = None
+        while not self._stop_event.is_set():
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=60)
+                return
+            except asyncio.TimeoutError:
+                pass
+            try:
+                cfg = self.config.notifications
+                # Notification log prune (once per iteration is cheap)
+                cutoff = (
+                    datetime.now(timezone.utc)
+                    - timedelta(days=cfg.notification_retention_days)
+                ).isoformat()
+                try:
+                    await repo.prune_notifications(cutoff)
+                except Exception:
+                    logger.debug("Notification prune failed", exc_info=True)
+
+                # Daily briefing
+                if not cfg.daily_briefing_enabled:
+                    continue
+                tz_name = self.config.load_profile.timezone
+                tz = resolve_timezone(tz_name)
+                now_local = datetime.now(tz)
+                target_hour = cfg.daily_briefing_hour_local
+                today_key = now_local.date().isoformat()
+                if now_local.hour < target_hour or last_briefing_date == today_key:
+                    continue
+                telemetry = control_loop.state.last_telemetry
+                spike = aggregator.spike_detector.current_spike
+                ctx = NarratorContext(
+                    now=datetime.now(timezone.utc),
+                    current_soc=telemetry.soc if telemetry else None,
+                    storm_active=storm_monitor.is_active,
+                    spike_price_cents=spike.price_cents if spike else None,
+                    evening_target_soc=self.config.battery_targets.evening_soc_target,
+                    evening_target_hour=self.config.battery_targets.evening_target_hour,
+                )
+                action = generate_daily_briefing(control_loop.state.current_plan, ctx)
+                event = _NEvent(
+                    name="daily_briefing",
+                    severity="info",
+                    title=f"Daily briefing — {now_local.strftime('%a %d %b')}",
+                    message="",
+                    tier=Tier.INFORMATIONAL,
+                    action=action,
+                )
+                await event_bus.publish(event)
+                last_briefing_date = today_key
+            except Exception:
+                logger.exception("Notification maintenance loop error")
+
+    async def _maybe_emit_storm_events(
+        self, event_bus, storm_monitor, control_loop, aggregator,
+    ) -> None:
+        """Emit storm_plan_active / storm_resolved on state transitions.
+
+        Runs after a plan rebuild so the narrated Action reflects the
+        reserve strategy now committed to the plan (not the pre-rebuild state).
+        """
+        from power_master.notifications.bus import Tier
+        from power_master.notifications.emitter import (
+            emit_narrated, new_correlation_id, storm_incident_id,
+        )
+        from power_master.notifications.narrators import NarratorContext
+
+        currently_active = storm_monitor.is_active
+        if currently_active and not self._storm_was_active:
+            window_start = getattr(storm_monitor, "window_start", None)
+            window_end = getattr(storm_monitor, "window_end", None)
+            self._storm_correlation_id = new_correlation_id()
+            telemetry = control_loop.state.last_telemetry
+            ctx = NarratorContext(
+                now=datetime.now(timezone.utc),
+                current_soc=telemetry.soc if telemetry else None,
+                storm_active=True,
+                storm_reserve_soc=storm_monitor.reserve_soc,
+                storm_window_start=window_start,
+                storm_window_end=window_end,
+            )
+            await emit_narrated(
+                event_bus,
+                event_name="storm_plan_active",
+                title="Storm plan active",
+                severity="warning",
+                tier=Tier.ATTENTION,
+                plan=control_loop.state.current_plan,
+                ctx=ctx,
+                incident_id=storm_incident_id(window_start),
+                correlation_id=self._storm_correlation_id,
+                fallback_message="Storm forecast active — reserving battery.",
+            )
+        elif not currently_active and self._storm_was_active:
+            telemetry = control_loop.state.last_telemetry
+            ctx = NarratorContext(
+                now=datetime.now(timezone.utc),
+                current_soc=telemetry.soc if telemetry else None,
+            )
+            await emit_narrated(
+                event_bus,
+                event_name="storm_resolved",
+                title="Storm window cleared",
+                severity="info",
+                tier=Tier.INFORMATIONAL,
+                plan=control_loop.state.current_plan,
+                ctx=ctx,
+                correlation_id=self._storm_correlation_id,
+                fallback_message="Storm window cleared.",
+            )
+            self._storm_correlation_id = None
+
+        self._storm_was_active = currently_active
+
+    async def _maybe_emit_force_charge_event(
+        self, event_bus, control_loop, aggregator,
+    ) -> None:
+        """Emit once per hour when a force-charge override slot is currently active."""
+        plan = control_loop.state.current_plan
+        if plan is None:
+            return
+        threshold = self.config.battery_targets.force_charge_below_price_cents
+        if threshold <= 0:
+            return
+        slot = plan.get_current_slot()
+        if slot is None:
+            return
+        from power_master.optimisation.plan import SlotMode
+        if slot.mode != SlotMode.FORCE_CHARGE:
+            return
+        if slot.import_rate_cents > threshold:
+            # The force-charge is coming from the solver, not the price override
+            return
+
+        from power_master.notifications.bus import Tier
+        from power_master.notifications.emitter import (
+            emit_narrated, force_charge_incident_id,
+        )
+        from power_master.notifications.narrators import NarratorContext
+
+        now = datetime.now(timezone.utc)
+        hour_key = now.strftime("%Y-%m-%dT%H")
+        if self._force_charge_last_emitted_hour == hour_key:
+            return  # already emitted this hour
+
+        telemetry = control_loop.state.last_telemetry
+        ctx = NarratorContext(
+            now=now,
+            current_soc=telemetry.soc if telemetry else None,
+            force_charge_threshold_cents=threshold,
+            force_charge_price_cents=slot.import_rate_cents,
+            evening_target_soc=self.config.battery_targets.evening_soc_target,
+            evening_target_hour=self.config.battery_targets.evening_target_hour,
+        )
+        await emit_narrated(
+            event_bus,
+            event_name="force_charge_triggered",
+            title="Cheap-price grid charge active",
+            severity="info",
+            tier=Tier.INFORMATIONAL,
+            plan=plan,
+            ctx=ctx,
+            incident_id=force_charge_incident_id(now),
+            fallback_message=(
+                f"Buy price {slot.import_rate_cents:.1f}c/kWh — forcing grid charge."
+            ),
+        )
+        self._force_charge_last_emitted_hour = hour_key
 
     async def _refresh_solar_calibration(self, repo):
         """Fit (or refit) the solar calibration model.  Returns None when disabled
