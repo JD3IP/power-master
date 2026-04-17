@@ -114,6 +114,19 @@ class Repository:
             row = await cursor.fetchone()
             return dict(row) if row else None
 
+    async def get_forecasts_between(
+        self, provider_type: str, start_iso: str, end_iso: str,
+    ) -> list[dict[str, Any]]:
+        """Return forecast snapshots fetched in the given window."""
+        async with self.db.execute(
+            """SELECT * FROM forecast_snapshots
+               WHERE provider_type = ? AND fetched_at >= ? AND fetched_at <= ?
+               ORDER BY fetched_at""",
+            (provider_type, start_iso, end_iso),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
     # ── Tariff Schedules ────────────────────────────────────
 
     async def store_tariff(

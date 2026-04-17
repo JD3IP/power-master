@@ -130,6 +130,11 @@ class SolarProviderConfig(BaseModel):
     update_interval_seconds: int = 21600
     validity_seconds: int = 21600
     system_size_kw: float = 0.0  # 0 = no fallback; set to PV size for bell curve fallback
+    # Solar forecast calibration — fits a small ridge regression against recent
+    # telemetry to correct systematic provider bias before the planner consumes it.
+    calibration_enabled: bool = False
+    calibration_window_days: int = Field(21, ge=3, le=90)
+    calibration_refit_interval_seconds: int = Field(3600, ge=60)
 
 
 class StormProviderConfig(BaseModel):

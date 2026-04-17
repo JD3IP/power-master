@@ -449,6 +449,33 @@ class TestAPI:
         assert "arbitrage" in data
 
 
+class TestForecastCalibrationAPI:
+    @pytest.mark.asyncio
+    async def test_returns_status_when_no_application(self, client) -> None:
+        resp = await client.get("/api/forecast/calibration")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["enabled"] is False
+
+    @pytest.mark.asyncio
+    async def test_reports_no_model_when_enabled_but_untrained(
+        self, client, settings_config_manager,
+    ) -> None:
+        # Attach a minimal stub application with calibration enabled but no model.
+        class _StubApp:
+            _solar_calibration_model = None
+            _solar_calibration_last_fit = None
+
+        settings_config_manager.config.providers.solar.calibration_enabled = True
+        client._transport.app.state.application = _StubApp()
+        resp = await client.get("/api/forecast/calibration")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["enabled"] is True
+        assert data["model"] is None
+        assert "window_days" in data
+
+
 class TestDebugExport:
     @pytest.mark.asyncio
     async def test_debug_export_returns_zip(self, client, repo) -> None:

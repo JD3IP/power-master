@@ -78,6 +78,12 @@ providers:
     kwp: 5.0                           # Installed PV size in kWp
     timezone: "Australia/Brisbane"
     update_interval_seconds: 21600      # 6 hours
+    # Off by default — enable once enough telemetry has accumulated (~1 week).
+    # When enabled, the planner uses a ridge-regression correction fitted on
+    # recent forecast-vs-actual pairs.  Raw forecast is still logged.
+    calibration_enabled: false
+    calibration_window_days: 21
+    calibration_refit_interval_seconds: 3600
 
   storm:
     type: "bom"

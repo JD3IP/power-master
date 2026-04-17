@@ -56,6 +56,7 @@ async def build_debug_bundle(
     hours: int = 24,
     log_limit: int = 10000,
     in_memory_logs: list[dict[str, Any]] | None = None,
+    solar_calibration: dict[str, Any] | None = None,
 ) -> bytes:
     """Return a .zip archive of config, plan, telemetry, prices and logs."""
     now = datetime.now(timezone.utc)
@@ -99,6 +100,8 @@ async def build_debug_bundle(
         zf.writestr("logs_db.json", _json(db_logs))
         if in_memory_logs is not None:
             zf.writestr("logs_memory.json", _json(in_memory_logs))
+        if solar_calibration is not None:
+            zf.writestr("solar_calibration.json", _json(solar_calibration))
     return buf.getvalue()
 
 
