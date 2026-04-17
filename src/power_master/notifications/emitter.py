@@ -55,11 +55,19 @@ def new_correlation_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
-def storm_incident_id(window_start: datetime | None) -> str:
-    """Stable incident id for a storm window — changes if the window slides."""
-    if window_start is None:
-        return "storm"
-    return f"storm:{window_start.date().isoformat()}"
+def storm_incident_id(window_start: datetime | None, activated_at: datetime | None = None) -> str:
+    """Stable incident id for a storm window — changes between incidents.
+
+    Prefer the forecast window_start, fall back to the activation timestamp
+    (rounded to the hour) so separate storm incidents don't collide on a
+    single "storm" key.  Only the degenerate all-None case returns "storm".
+    """
+    if window_start is not None:
+        return f"storm:{window_start.date().isoformat()}"
+    if activated_at is not None:
+        rounded = activated_at.replace(minute=0, second=0, microsecond=0)
+        return f"storm:{rounded.isoformat()}"
+    return "storm"
 
 
 def spike_incident_id(started_at: datetime | None) -> str:

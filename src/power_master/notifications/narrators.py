@@ -9,9 +9,9 @@ rebuild completes, not while detection fires).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 
 from power_master.notifications.bus import Action
 from power_master.optimisation.plan import OptimisationPlan, SlotMode
@@ -31,7 +31,7 @@ class NarratorContext:
     force_charge_threshold_cents: float = 0.0
     force_charge_price_cents: float | None = None
     inverter_offline_since: datetime | None = None
-    deferred_load_names: list[str] = ()
+    deferred_load_names: list[str] = field(default_factory=list)
     evening_target_soc: float = 0.0
     evening_target_hour: int = 16
 
@@ -200,7 +200,8 @@ def narrate_force_charge_triggered(
 
 
 # Registry keyed by event name
-NARRATORS: dict[str, Any] = {
+_NarratorFn = Callable[[OptimisationPlan | None, "NarratorContext"], Action]
+NARRATORS: dict[str, _NarratorFn] = {
     "storm_plan_active": narrate_storm_plan_active,
     "storm_resolved": narrate_storm_resolved,
     "price_spike": narrate_price_spike,

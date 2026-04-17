@@ -1561,7 +1561,11 @@ class Application:
         from power_master.notifications.bus import Tier
         from power_master.notifications.narrators import NarratorContext, generate_daily_briefing
         from power_master.notifications.emitter import emit_narrated
-        last_briefing_date: str | None = None
+        _KV_KEY = "notifications.last_briefing_date"
+        try:
+            last_briefing_date: str | None = await repo.kv_get(_KV_KEY)
+        except Exception:
+            last_briefing_date = None
         while not self._stop_event.is_set():
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=60)
@@ -1611,6 +1615,10 @@ class Application:
                 )
                 await event_bus.publish(event)
                 last_briefing_date = today_key
+                try:
+                    await repo.kv_set(_KV_KEY, today_key)
+                except Exception:
+                    logger.debug("Failed to persist last briefing date", exc_info=True)
             except Exception:
                 logger.exception("Notification maintenance loop error")
 
@@ -1630,8 +1638,18 @@ class Application:
 
         currently_active = storm_monitor.is_active
         if currently_active and not self._storm_was_active:
-            window_start = getattr(storm_monitor, "window_start", None)
-            window_end = getattr(storm_monitor, "window_end", None)
+            # Pull the alert window from the aggregator's last StormForecast
+            window_start = None
+            window_end = None
+            storm_forecast = aggregator.state.storm
+            if storm_forecast and storm_forecast.alerts:
+                active_alerts = [
+                    a for a in storm_forecast.alerts
+                    if a.probability >= self.config.storm.probability_threshold
+                ]
+                if active_alerts:
+                    window_start = min(a.valid_from for a in active_alerts)
+                    window_end = max(a.valid_to for a in active_alerts)
             self._storm_correlation_id = new_correlation_id()
             telemetry = control_loop.state.last_telemetry
             ctx = NarratorContext(
@@ -1650,7 +1668,10 @@ class Application:
                 tier=Tier.ATTENTION,
                 plan=control_loop.state.current_plan,
                 ctx=ctx,
-                incident_id=storm_incident_id(window_start),
+                incident_id=storm_incident_id(
+                    window_start,
+                    activated_at=getattr(storm_monitor, "activated_at", None),
+                ),
                 correlation_id=self._storm_correlation_id,
                 fallback_message="Storm forecast active — reserving battery.",
             )

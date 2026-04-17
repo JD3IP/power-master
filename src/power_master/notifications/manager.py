@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from power_master.config.schema import NotificationsConfig
-from power_master.notifications.bus import Action, Event, EventBus, Tier
+from power_master.notifications.bus import Event, EventBus, Tier
 from power_master.notifications.channels.base import NotificationChannel
 from power_master.notifications.narrators import render_plain
 
@@ -17,6 +17,10 @@ logger = logging.getLogger(__name__)
 
 # Cap update re-fires per incident within one hour
 MAX_UPDATES_PER_INCIDENT_HOUR = 3
+
+# Drop per-incident state that hasn't been touched for this many seconds.
+# Prevents unbounded growth of _state across long-running processes.
+STATE_REAPER_MAX_AGE_SECONDS = 24 * 3600
 
 
 class NotificationManager:
@@ -130,46 +134,65 @@ class NotificationManager:
         # Trim to 1h
         state["recent_updates"] = [t for t in state["recent_updates"] if (now_mono - t) < 3600]
 
+    def _reap_state(self, now_mono: float) -> None:
+        """Drop incident state that hasn't been touched recently."""
+        stale = [k for k, s in self._state.items()
+                 if (now_mono - s.get("last_sent", 0)) > STATE_REAPER_MAX_AGE_SECONDS]
+        for k in stale:
+            self._state.pop(k, None)
+
     async def _on_event(self, event: Event) -> None:
         """Handle an event from the bus."""
         event_cfg = self._get_event_config(event.name)
+        effective_severity = event.severity
         if event_cfg is not None:
             if not event_cfg.enabled:
                 # Still persist to the log so history is complete even if
                 # channels are silent for this event type.
                 await self._persist(event, channels_sent="")
                 return
-            event.severity = event_cfg.severity
+            effective_severity = event_cfg.severity
 
         if not self._should_emit(event, event_cfg):
             logger.debug("Notification suppressed (cooldown): %s", event.name)
             return
 
-        # Build the channel-facing message.  If the event carries an Action,
-        # the rendered text replaces the bare `message` for channel delivery.
+        # Build the channel-facing payload locally — never mutate the shared
+        # Event (other subscribers would see the mutation non-deterministically).
         rendered_message = render_plain(event.title, event.action, event.message)
+        dispatch_event = Event(
+            name=event.name,
+            severity=effective_severity,
+            title=event.title,
+            message=rendered_message,
+            timestamp=event.timestamp,
+            data=event.data,
+            tier=event.tier,
+            action=event.action,
+            incident_id=event.incident_id,
+            correlation_id=event.correlation_id,
+        )
         channels_sent: list[str] = []
         if self._config.enabled and self._channels:
-            # Temporarily swap rendered text onto the event for the channel
-            # send.  Channels read event.message directly today.
-            original_message = event.message
-            event.message = rendered_message
-            try:
-                for channel in self._channels:
-                    try:
-                        await channel.send(event)
-                        channels_sent.append(channel.name)
-                    except Exception:
-                        logger.warning(
-                            "Failed to send %s via %s", event.name, channel.name,
-                            exc_info=True,
-                        )
-            finally:
-                event.message = original_message
+            for channel in self._channels:
+                try:
+                    await channel.send(dispatch_event)
+                    channels_sent.append(channel.name)
+                except Exception:
+                    logger.warning(
+                        "Failed to send %s via %s", event.name, channel.name,
+                        exc_info=True,
+                    )
 
-        self._remember(event, time.monotonic())
-        await self._persist(event, channels_sent=",".join(channels_sent),
-                            rendered_message=rendered_message)
+        now_mono = time.monotonic()
+        self._remember(event, now_mono)
+        self._reap_state(now_mono)
+        # Persist using the effective severity + rendered message
+        await self._persist(
+            dispatch_event,
+            channels_sent=",".join(channels_sent),
+            rendered_message=rendered_message,
+        )
 
     async def _persist(
         self, event: Event, *, channels_sent: str = "",

@@ -27,12 +27,20 @@ async def run_migrations(db: aiosqlite.Connection) -> None:
         logger.info("Schema created successfully")
     elif current < SCHEMA_VERSION:
         logger.info("Migrating database from version %d to %d", current, SCHEMA_VERSION)
-        await _apply_migrations(db, current, SCHEMA_VERSION)
-        await db.execute(
-            "UPDATE schema_version SET version = ? WHERE id = 1",
-            (SCHEMA_VERSION,),
-        )
-        await db.commit()
+        # Single transaction: if any migration step raises, the version bump
+        # is rolled back with the rest so the DB never lands in a partially-
+        # migrated state that looks like a completed older version.
+        try:
+            await db.execute("BEGIN")
+            await _apply_migrations(db, current, SCHEMA_VERSION)
+            await db.execute(
+                "UPDATE schema_version SET version = ? WHERE id = 1",
+                (SCHEMA_VERSION,),
+            )
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
         logger.info("Migration complete")
     else:
         logger.debug("Database schema is up to date (version %d)", current)

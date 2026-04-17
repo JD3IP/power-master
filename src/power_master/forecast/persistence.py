@@ -61,7 +61,29 @@ async def persist_solar_forecast(repo: Any, forecast: SolarForecast) -> int:
                 "target_time": target_utc.isoformat(),
                 "predicted_value": float(value),
             })
-    return await repo.store_forecast_samples(samples)
+    n = await repo.store_forecast_samples(samples)
+    await _touch_forecast_age(repo, "solar", forecast.fetched_at, forecast.provider or "solar")
+    return n
+
+
+async def _touch_forecast_age(
+    repo: Any, provider_type: str, fetched_at: datetime, provider_name: str,
+) -> None:
+    """Write a single minimal forecast_snapshots row so
+    repo.get_forecast_age_seconds("<provider>") keeps returning sensible
+    values for the aggregator freshness check.  The snapshot JSON is a
+    placeholder — the real per-horizon data lives in forecast_samples.
+    """
+    try:
+        await repo.store_forecast(
+            provider_type=provider_type,
+            provider_name=provider_name,
+            horizon_start=fetched_at.astimezone(timezone.utc).isoformat(),
+            horizon_end=fetched_at.astimezone(timezone.utc).isoformat(),
+            data={"note": "persistence touch — see forecast_samples for data"},
+        )
+    except Exception:
+        logger.debug("Failed to touch forecast_snapshots for %s", provider_type, exc_info=True)
 
 
 def _bucket_samples_at_horizons(
@@ -122,7 +144,9 @@ async def persist_weather_forecast(
         horizons_hours,
         "weather",
     )
-    return await repo.store_forecast_samples(samples)
+    n = await repo.store_forecast_samples(samples)
+    await _touch_forecast_age(repo, "weather", forecast.fetched_at, forecast.provider or "weather")
+    return n
 
 
 async def persist_tariff_forecast(
@@ -148,7 +172,9 @@ async def persist_tariff_forecast(
         horizons_hours,
         "tariff",
     )
-    return await repo.store_forecast_samples(samples)
+    n = await repo.store_forecast_samples(samples)
+    await _touch_forecast_age(repo, "tariff", fetched_at, getattr(schedule, "provider", "tariff") or "tariff")
+    return n
 
 
 async def persist_storm_forecast(
@@ -182,4 +208,6 @@ async def persist_storm_forecast(
             "target_time": target.isoformat(),
             "predicted_value": probability_at(target),
         })
-    return await repo.store_forecast_samples(samples)
+    n = await repo.store_forecast_samples(samples)
+    await _touch_forecast_age(repo, "storm", fetched_at, forecast.provider or "storm")
+    return n
