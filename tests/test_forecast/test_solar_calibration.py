@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 from datetime import datetime, timedelta, timezone
 
@@ -126,36 +125,29 @@ class TestTimezoneBucketing:
 class TestBuildTrainingSet:
     @pytest.mark.asyncio
     async def test_pairs_near_term_forecast_with_telemetry(self, repo) -> None:
-        now = datetime(2025, 6, 15, 12, 0, tzinfo=timezone.utc)
+        # "now" is well after the forecast target times so every sample qualifies
+        now = datetime(2025, 6, 15, 18, 0, tzinfo=timezone.utc)
         system_peak = 5000.0
+        fetched = now - timedelta(hours=5)  # fetched at 13:00
+        fetched_iso = fetched.isoformat()
 
-        # Store a forecast snapshot with 6 near-term slots
-        fetched = now - timedelta(hours=1)
-        slots = []
+        forecast_samples = []
+        slot_starts = []
         for i in range(6):
             slot_start = fetched + timedelta(minutes=30 * (i + 1))
-            slots.append({
-                "start": slot_start.isoformat(),
-                "end": (slot_start + timedelta(minutes=30)).isoformat(),
-                "pv_estimate_w": 2000.0 + i * 100,
+            slot_starts.append(slot_start)
+            forecast_samples.append({
+                "provider_type": "solar",
+                "metric": "pv_estimate_w",
+                "fetched_at": fetched_iso,
+                "horizon_hours": 0.5 * (i + 1),
+                "target_time": slot_start.isoformat(),
+                "predicted_value": 2000.0 + i * 100,
             })
+        await repo.store_forecast_samples(forecast_samples)
 
-        await repo.db.execute(
-            """INSERT INTO forecast_snapshots
-               (provider_type, provider_name, fetched_at, horizon_start, horizon_end,
-                data_json, solar_estimate_json, confidence_score, storm_probability,
-                storm_window_start, storm_window_end, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                "solar", "test", fetched.isoformat(),
-                slots[0]["start"], slots[-1]["end"],
-                "{}", json.dumps(slots), None, None, None, None, "ok",
-            ),
-        )
-        # Store actual telemetry at each slot start
-        for i, slot in enumerate(slots):
-            slot_start = datetime.fromisoformat(slot["start"])
-            actual = slot["pv_estimate_w"] * 0.6
+        for slot_start, fs in zip(slot_starts, forecast_samples):
+            actual = fs["predicted_value"] * 0.6
             await repo.db.execute(
                 """INSERT INTO telemetry
                    (recorded_at, soc, battery_power_w, solar_power_w, grid_power_w,
@@ -181,28 +173,17 @@ class TestBuildTrainingSet:
 
     @pytest.mark.asyncio
     async def test_rejects_samples_below_min_forecast(self, repo) -> None:
-        now = datetime(2025, 6, 15, 12, 0, tzinfo=timezone.utc)
-        fetched = now - timedelta(hours=1)
+        now = datetime(2025, 6, 15, 18, 0, tzinfo=timezone.utc)
+        slot_start = now - timedelta(hours=5) + timedelta(minutes=30)
         # Sub-floor forecast (50W) — should be rejected; min is max(100W, 5% of peak)
-        slot_start = fetched + timedelta(minutes=30)
-        slots = [{
-            "start": slot_start.isoformat(),
-            "end": (slot_start + timedelta(minutes=30)).isoformat(),
-            "pv_estimate_w": 50.0,
-        }]
-        await repo.db.execute(
-            """INSERT INTO forecast_snapshots
-               (provider_type, provider_name, fetched_at, horizon_start, horizon_end,
-                data_json, solar_estimate_json, confidence_score, storm_probability,
-                storm_window_start, storm_window_end, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                "solar", "test", fetched.isoformat(),
-                slot_start.isoformat(),
-                (slot_start + timedelta(minutes=30)).isoformat(),
-                "{}", json.dumps(slots), None, None, None, None, "ok",
-            ),
-        )
+        await repo.store_forecast_samples([{
+            "provider_type": "solar",
+            "metric": "pv_estimate_w",
+            "fetched_at": (now - timedelta(hours=1)).isoformat(),
+            "horizon_hours": 0.5,
+            "target_time": slot_start.isoformat(),
+            "predicted_value": 50.0,
+        }])
         await repo.db.execute(
             """INSERT INTO telemetry
                (recorded_at, soc, battery_power_w, solar_power_w, grid_power_w,

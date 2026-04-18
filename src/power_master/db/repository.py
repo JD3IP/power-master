@@ -127,6 +127,138 @@ class Repository:
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
 
+    # ── Forecast Samples (per-horizon forecast persistence) ────────────
+
+    async def store_forecast_samples(
+        self, samples: list[dict[str, Any]],
+    ) -> int:
+        """Bulk-insert forecast samples.  INSERT OR IGNORE on the unique index.
+
+        Each sample dict: provider_type, metric, fetched_at, horizon_hours,
+        target_time, predicted_value.
+        """
+        if not samples:
+            return 0
+        rows = [
+            (
+                s["provider_type"], s["metric"], s["fetched_at"],
+                float(s["horizon_hours"]), s["target_time"],
+                float(s["predicted_value"]),
+            )
+            for s in samples
+        ]
+        await self.db.executemany(
+            """INSERT OR IGNORE INTO forecast_samples
+               (provider_type, metric, fetched_at, horizon_hours,
+                target_time, predicted_value)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            rows,
+        )
+        await self.db.commit()
+        return len(rows)
+
+    async def get_forecast_samples(
+        self,
+        provider_type: str,
+        metric: str | None = None,
+        *,
+        target_time_start: str | None = None,
+        target_time_end: str | None = None,
+        min_horizon: float | None = None,
+        max_horizon: float | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Query persisted forecast samples.
+
+        All filter arguments are optional.  Results ordered by target_time asc.
+        """
+        query = ["SELECT * FROM forecast_samples WHERE provider_type = ?"]
+        params: list[Any] = [provider_type]
+        if metric is not None:
+            query.append(" AND metric = ?")
+            params.append(metric)
+        if target_time_start is not None:
+            query.append(" AND target_time >= ?")
+            params.append(target_time_start)
+        if target_time_end is not None:
+            query.append(" AND target_time <= ?")
+            params.append(target_time_end)
+        if min_horizon is not None:
+            query.append(" AND horizon_hours >= ?")
+            params.append(float(min_horizon))
+        if max_horizon is not None:
+            query.append(" AND horizon_hours <= ?")
+            params.append(float(max_horizon))
+        query.append(" ORDER BY target_time")
+        if limit is not None:
+            query.append(" LIMIT ?")
+            params.append(int(limit))
+        async with self.db.execute("".join(query), params) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+    async def prune_forecast_samples(self, cutoff_iso: str) -> int:
+        """Delete forecast samples whose target_time is older than cutoff."""
+        async with self.db.execute(
+            "DELETE FROM forecast_samples WHERE target_time < ?",
+            (cutoff_iso,),
+        ) as cursor:
+            count = cursor.rowcount or 0
+        await self.db.commit()
+        return count
+
+    # ── Notification Log ───────────────────────────────────────
+
+    async def store_notification(
+        self,
+        *,
+        emitted_at: str,
+        event_name: str,
+        severity: str,
+        tier: str,
+        title: str,
+        message: str,
+        action_json: str | None = None,
+        incident_id: str | None = None,
+        correlation_id: str | None = None,
+        channels_sent: str = "",
+    ) -> int:
+        async with self.db.execute(
+            """INSERT INTO notification_log
+               (emitted_at, event_name, severity, tier, title, message,
+                action_json, incident_id, correlation_id, channels_sent)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                emitted_at, event_name, severity, tier, title, message,
+                action_json, incident_id, correlation_id, channels_sent,
+            ),
+        ) as cursor:
+            row_id = cursor.lastrowid
+        await self.db.commit()
+        return row_id  # type: ignore[return-value]
+
+    async def get_notifications_since(
+        self, cutoff_iso: str, limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        async with self.db.execute(
+            """SELECT * FROM notification_log
+               WHERE emitted_at >= ?
+               ORDER BY emitted_at DESC
+               LIMIT ?""",
+            (cutoff_iso, int(limit)),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+    async def prune_notifications(self, cutoff_iso: str) -> int:
+        async with self.db.execute(
+            "DELETE FROM notification_log WHERE emitted_at < ?",
+            (cutoff_iso,),
+        ) as cursor:
+            count = cursor.rowcount or 0
+        await self.db.commit()
+        return count
+
     # ── Tariff Schedules ────────────────────────────────────
 
     async def store_tariff(

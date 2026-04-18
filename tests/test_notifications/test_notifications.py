@@ -179,8 +179,8 @@ async def test_manager_different_events_independent_cooldown():
             title="Spike", message="msg",
         ))
         await bus.publish(Event(
-            name="battery_low", severity="warning",
-            title="Low", message="msg",
+            name="inverter_offline", severity="critical",
+            title="Offline", message="msg",
         ))
         assert mock_send.call_count == 2  # different events, no shared cooldown
 

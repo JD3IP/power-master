@@ -1,6 +1,6 @@
 """SQL table definitions for all 17 tables."""
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
 
 TABLES = [
     # ── Config ──────────────────────────────────────────────
@@ -331,6 +331,43 @@ TABLES = [
         updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     )
     """,
+
+    # ── Forecast Samples (individual horizon values, calibration + accuracy) ─
+    """
+    CREATE TABLE IF NOT EXISTS forecast_samples (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider_type   TEXT NOT NULL,
+        metric          TEXT NOT NULL,
+        fetched_at      TEXT NOT NULL,
+        horizon_hours   REAL NOT NULL,
+        target_time     TEXT NOT NULL,
+        predicted_value REAL NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_fcsamples_target ON forecast_samples(provider_type, metric, target_time)",
+    "CREATE INDEX IF NOT EXISTS idx_fcsamples_fetched ON forecast_samples(fetched_at)",
+    """CREATE UNIQUE INDEX IF NOT EXISTS idx_fcsamples_dedup
+       ON forecast_samples(provider_type, metric, fetched_at, horizon_hours)""",
+
+    # ── Notification log (persistent record of emitted events) ──────
+    """
+    CREATE TABLE IF NOT EXISTS notification_log (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        emitted_at      TEXT NOT NULL,
+        event_name      TEXT NOT NULL,
+        severity        TEXT NOT NULL,
+        tier            TEXT NOT NULL DEFAULT 'informational',
+        title           TEXT NOT NULL,
+        message         TEXT NOT NULL,
+        action_json     TEXT,
+        incident_id     TEXT,
+        correlation_id  TEXT,
+        channels_sent   TEXT NOT NULL DEFAULT ''
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_notif_log_time ON notification_log(emitted_at)",
+    "CREATE INDEX IF NOT EXISTS idx_notif_log_incident ON notification_log(incident_id)",
+    "CREATE INDEX IF NOT EXISTS idx_notif_log_correlation ON notification_log(correlation_id)",
 
     # ── Schema version tracking ─────────────────────────────
     """

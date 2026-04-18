@@ -64,6 +64,14 @@ storm:
   horizon_hours: 24
 
 providers:
+  # Store forecast samples (per-horizon predictions) so we can measure
+  # forecast accuracy over time and use the history for calibration.
+  # Solar: every fetch, full resolution (all 30-min slots + P10/P50/P90).
+  # Weather/Tariff/Storm: hourly cadence, bucketed to the configured horizons.
+  forecast_persistence_enabled: true
+  forecast_retention_days: 365
+  forecast_horizons_hours: [1, 4, 10, 18, 24]
+
   weather:
     type: "openmeteo"
     update_interval_seconds: 3600       # 1 hour
@@ -166,9 +174,15 @@ accounting:
 
 notifications:
   enabled: false
-  battery_low_threshold: 0.10           # SOC below this triggers battery_low event
-  battery_full_threshold: 0.95          # SOC above this triggers battery_full event
-  log_min_level: "ERROR"                # Forward log entries at this level or above
+  battery_low_threshold: 0.10           # SOC below this triggers battery_low event (off by default)
+  battery_full_threshold: 0.95          # SOC above this triggers battery_full event (off by default)
+  # Min log level forwarded to the event bus.  CRITICAL by default so routine
+  # errors don't spam you — CRITICAL-level failures still surface regardless
+  # of the log_error event rule.
+  log_min_level: "CRITICAL"
+  daily_briefing_enabled: false         # One-line digest at daily_briefing_hour_local
+  daily_briefing_hour_local: 7          # Hour-of-day (local tz) for daily briefing
+  notification_retention_days: 90       # Notification log retention (days)
   channels:
     telegram:
       enabled: false
@@ -198,42 +212,69 @@ notifications:
       method: "POST"
       headers: {}
   events:
+    # Exceptional events — on by default.
     price_spike:
       enabled: true
       severity: "critical"
       cooldown_seconds: 300
-    price_spike_end:
-      enabled: true
-      severity: "info"
-      cooldown_seconds: 60
-    battery_low:
-      enabled: true
-      severity: "warning"
-      cooldown_seconds: 3600
-    battery_full:
-      enabled: true
-      severity: "info"
-      cooldown_seconds: 3600
     inverter_offline:
       enabled: true
       severity: "critical"
       cooldown_seconds: 600
-    inverter_online:
-      enabled: true
-      severity: "info"
-      cooldown_seconds: 60
     resilience_degraded:
       enabled: true
       severity: "warning"
       cooldown_seconds: 600
-    resilience_recovered:
+    storm_plan_active:
+      enabled: true
+      severity: "warning"
+      cooldown_seconds: 900
+    grid_outage:
+      enabled: true
+      severity: "critical"
+      cooldown_seconds: 600
+    force_charge_triggered:
+      enabled: true
+      severity: "info"
+      cooldown_seconds: 1800
+    # Resolution events — on by default so incidents get closed.
+    price_spike_end:
       enabled: true
       severity: "info"
       cooldown_seconds: 60
-    log_error:
+    storm_resolved:
       enabled: true
+      severity: "info"
+      cooldown_seconds: 60
+    grid_outage_resolved:
+      enabled: true
+      severity: "info"
+      cooldown_seconds: 60
+    # Routine events — off by default, flip on only if you want the noise.
+    battery_low:
+      enabled: false
+      severity: "warning"
+      cooldown_seconds: 3600
+    battery_full:
+      enabled: false
+      severity: "info"
+      cooldown_seconds: 3600
+    inverter_online:
+      enabled: false
+      severity: "info"
+      cooldown_seconds: 60
+    resilience_recovered:
+      enabled: false
+      severity: "info"
+      cooldown_seconds: 60
+    log_error:
+      enabled: false
       severity: "warning"
       cooldown_seconds: 300
+    daily_briefing:
+      enabled: false
+      severity: "info"
+      cooldown_seconds: 60
 
 logging:
   level: "INFO"

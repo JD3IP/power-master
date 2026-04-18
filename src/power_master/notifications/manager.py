@@ -1,31 +1,57 @@
-"""Notification manager — cooldowns, channel dispatch, and log handler."""
+"""Notification manager — incident dedup, channel dispatch, persistent log."""
 
 from __future__ import annotations
 
+import json
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 from power_master.config.schema import NotificationsConfig
-from power_master.notifications.bus import Event, EventBus
+from power_master.notifications.bus import Event, EventBus, Tier
 from power_master.notifications.channels.base import NotificationChannel
+from power_master.notifications.narrators import render_plain
 
 logger = logging.getLogger(__name__)
+
+# Cap update re-fires per incident within one hour
+MAX_UPDATES_PER_INCIDENT_HOUR = 3
+
+# Drop per-incident state that hasn't been touched for this many seconds.
+# Prevents unbounded growth of _state across long-running processes.
+STATE_REAPER_MAX_AGE_SECONDS = 24 * 3600
 
 
 class NotificationManager:
     """Subscribes to the event bus and dispatches to enabled channels.
 
-    Enforces per-event cooldowns and respects event enable/disable config.
+    Cooldown applies per (incident_id or event_name) so an incident whose
+    details evolve (storm window shifting, spike price rising) can emit
+    update notifications when Action content materially changes, but is
+    rate-limited to MAX_UPDATES_PER_INCIDENT_HOUR.
+
+    Every emission is persisted to `notification_log` for history + debug.
     """
 
-    def __init__(self, config: NotificationsConfig, event_bus: EventBus) -> None:
+    def __init__(
+        self,
+        config: NotificationsConfig,
+        event_bus: EventBus,
+        repo: Any | None = None,
+    ) -> None:
         self._config = config
         self._bus = event_bus
+        self._repo = repo
         self._channels: list[NotificationChannel] = []
-        self._last_sent: dict[str, float] = {}  # event_name → monotonic time
+        # Per-key: (last_sent_monotonic, last_action_hash, recent_timestamps)
+        self._state: dict[str, dict[str, Any]] = {}
         self._bus.subscribe(self._on_event)
         self._build_channels()
+
+    def set_repo(self, repo: Any) -> None:
+        """Wire the repository for persistence after construction."""
+        self._repo = repo
 
     def _build_channels(self) -> None:
         self._channels.clear()
@@ -63,47 +89,134 @@ class NotificationManager:
         self._build_channels()
 
     def _get_event_config(self, event_name: str) -> Any:
-        """Look up per-event config from NotificationEventsConfig."""
         return getattr(self._config.events, event_name, None)
 
-    def _is_cooled_down(self, event_name: str, cooldown_seconds: int) -> bool:
-        """Return True if the event is still in cooldown."""
-        last = self._last_sent.get(event_name)
-        if last is None:
+    def _incident_key(self, event: Event) -> str:
+        return event.incident_id or event.name
+
+    def _should_emit(self, event: Event, event_cfg: Any) -> bool:
+        """Decide whether to emit this event given cooldown + update rules.
+
+        Allows "update" re-fires when Action.content_hash() changes, capped
+        at MAX_UPDATES_PER_INCIDENT_HOUR.
+        """
+        key = self._incident_key(event)
+        state = self._state.get(key)
+        cooldown = event_cfg.cooldown_seconds if event_cfg else 300
+        now_mono = time.monotonic()
+
+        if state is None:
+            return True
+
+        last_sent = state["last_sent"]
+        in_cooldown = (now_mono - last_sent) < cooldown
+        if not in_cooldown:
+            return True
+
+        # Inside cooldown — allow only if Action content materially changed
+        new_hash = event.action.content_hash() if event.action else None
+        if new_hash is None or new_hash == state.get("last_hash"):
             return False
-        return (time.monotonic() - last) < cooldown_seconds
+
+        # Rate-limit update re-fires to MAX_UPDATES_PER_INCIDENT_HOUR within 1h
+        recent = [t for t in state.get("recent_updates", []) if (now_mono - t) < 3600]
+        if len(recent) >= MAX_UPDATES_PER_INCIDENT_HOUR:
+            logger.debug("Incident %s update rate-limited", key)
+            return False
+        return True
+
+    def _remember(self, event: Event, now_mono: float) -> None:
+        key = self._incident_key(event)
+        state = self._state.setdefault(key, {"recent_updates": []})
+        state["last_sent"] = now_mono
+        state["last_hash"] = event.action.content_hash() if event.action else None
+        state.setdefault("recent_updates", []).append(now_mono)
+        # Trim to 1h
+        state["recent_updates"] = [t for t in state["recent_updates"] if (now_mono - t) < 3600]
+
+    def _reap_state(self, now_mono: float) -> None:
+        """Drop incident state that hasn't been touched recently."""
+        stale = [k for k, s in self._state.items()
+                 if (now_mono - s.get("last_sent", 0)) > STATE_REAPER_MAX_AGE_SECONDS]
+        for k in stale:
+            self._state.pop(k, None)
 
     async def _on_event(self, event: Event) -> None:
         """Handle an event from the bus."""
-        if not self._config.enabled:
-            return
-        if not self._channels:
-            return
-
         event_cfg = self._get_event_config(event.name)
-        if event_cfg is None:
-            # Unknown event type — still send it if channels exist
-            pass
-        elif not event_cfg.enabled:
-            return
-        elif self._is_cooled_down(event.name, event_cfg.cooldown_seconds):
+        effective_severity = event.severity
+        if event_cfg is not None:
+            if not event_cfg.enabled:
+                # Still persist to the log so history is complete even if
+                # channels are silent for this event type.
+                await self._persist(event, channels_sent="")
+                return
+            effective_severity = event_cfg.severity
+
+        if not self._should_emit(event, event_cfg):
             logger.debug("Notification suppressed (cooldown): %s", event.name)
             return
 
-        # Override severity from config if available
-        if event_cfg is not None:
-            event.severity = event_cfg.severity
+        # Build the channel-facing payload locally — never mutate the shared
+        # Event (other subscribers would see the mutation non-deterministically).
+        rendered_message = render_plain(event.title, event.action, event.message)
+        dispatch_event = Event(
+            name=event.name,
+            severity=effective_severity,
+            title=event.title,
+            message=rendered_message,
+            timestamp=event.timestamp,
+            data=event.data,
+            tier=event.tier,
+            action=event.action,
+            incident_id=event.incident_id,
+            correlation_id=event.correlation_id,
+        )
+        channels_sent: list[str] = []
+        if self._config.enabled and self._channels:
+            for channel in self._channels:
+                try:
+                    await channel.send(dispatch_event)
+                    channels_sent.append(channel.name)
+                except Exception:
+                    logger.warning(
+                        "Failed to send %s via %s", event.name, channel.name,
+                        exc_info=True,
+                    )
 
-        for channel in self._channels:
-            try:
-                await channel.send(event)
-            except Exception:
-                logger.warning(
-                    "Failed to send %s via %s", event.name, channel.name,
-                    exc_info=True,
-                )
+        now_mono = time.monotonic()
+        self._remember(event, now_mono)
+        self._reap_state(now_mono)
+        # Persist using the effective severity + rendered message
+        await self._persist(
+            dispatch_event,
+            channels_sent=",".join(channels_sent),
+            rendered_message=rendered_message,
+        )
 
-        self._last_sent[event.name] = time.monotonic()
+    async def _persist(
+        self, event: Event, *, channels_sent: str = "",
+        rendered_message: str | None = None,
+    ) -> None:
+        """Append the event to notification_log (if repo available)."""
+        if self._repo is None:
+            return
+        try:
+            action_json = json.dumps(event.action.as_dict()) if event.action else None
+            await self._repo.store_notification(
+                emitted_at=event.timestamp.astimezone(timezone.utc).isoformat(),
+                event_name=event.name,
+                severity=event.severity,
+                tier=event.tier.value if isinstance(event.tier, Tier) else str(event.tier),
+                title=event.title,
+                message=rendered_message if rendered_message is not None else event.message,
+                action_json=action_json,
+                incident_id=event.incident_id,
+                correlation_id=event.correlation_id,
+                channels_sent=channels_sent,
+            )
+        except Exception:
+            logger.debug("Failed to persist notification", exc_info=True)
 
     async def send_test(self, channel_name: str) -> dict[str, str]:
         """Send a test notification to a specific channel. Returns status dict."""
@@ -112,6 +225,7 @@ class NotificationManager:
             severity="info",
             title="Test Notification",
             message="This is a test notification from Power Master.",
+            tier=Tier.INFORMATIONAL,
         )
         for channel in self._channels:
             if channel.name == channel_name:
@@ -128,7 +242,6 @@ class NotificationManager:
     async def _test_unconfigured_channel(
         self, channel_name: str, event: Event,
     ) -> dict[str, str]:
-        """Build a channel temporarily for testing even if not in active list."""
         ch = self._config.channels
         channel: NotificationChannel | None = None
         try:
@@ -165,15 +278,19 @@ class NotificationManager:
 
 
 class NotificationLogHandler(logging.Handler):
-    """Logging handler that forwards log records to the notification event bus."""
+    """Logging handler that forwards log records to the notification event bus.
 
-    def __init__(self, event_bus: EventBus, min_level: str = "ERROR") -> None:
+    min_level gates at the handler so "silence routine log_error" is separate
+    from "log_error event disabled entirely" — routine noise is filtered here,
+    critical-level failures still reach the bus.
+    """
+
+    def __init__(self, event_bus: EventBus, min_level: str = "CRITICAL") -> None:
         super().__init__()
         self._bus = event_bus
-        self.setLevel(getattr(logging, min_level.upper(), logging.ERROR))
+        self.setLevel(getattr(logging, min_level.upper(), logging.CRITICAL))
 
     def emit(self, record: logging.LogRecord) -> None:
-        # Skip notifications from the notification system itself to avoid loops
         if record.name.startswith("power_master.notifications"):
             return
         event = Event(
@@ -182,10 +299,11 @@ class NotificationLogHandler(logging.Handler):
             title=f"Log {record.levelname}: {record.name}",
             message=self.format(record) if self.formatter else record.getMessage(),
             data={"logger": record.name, "level": record.levelname},
+            tier=Tier.ATTENTION if record.levelno >= logging.CRITICAL else Tier.INFORMATIONAL,
         )
         import asyncio
         try:
             loop = asyncio.get_running_loop()
             loop.create_task(self._bus.publish(event))
         except RuntimeError:
-            pass  # No event loop — skip
+            pass

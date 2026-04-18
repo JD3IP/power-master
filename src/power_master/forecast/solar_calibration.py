@@ -140,11 +140,13 @@ async def build_training_set(
     tz_name: str,
     reference_time: datetime | None = None,
 ) -> list[TrainingSample]:
-    """Pair historical forecast snapshots with telemetry.
+    """Pair persisted per-horizon solar forecasts with telemetry.
 
-    Only near-term horizon pairs are kept (slot start within 3h of snapshot
-    fetched_at).  Forecast samples below max(100W, 5 % of system peak) are
-    rejected so near-zero divisions don't pollute the regression.
+    Queries the forecast_samples table for solar pv_estimate_w rows in the
+    near-term horizon band (0.5–3h ahead), joins with telemetry at each
+    target_time, and returns weighted training samples.  Forecast values
+    below max(100W, 5 % of system peak) are rejected so near-zero
+    divisions don't pollute the regression.
     """
     if system_peak_w <= 0:
         return []
@@ -153,10 +155,15 @@ async def build_training_set(
     cutoff = now - timedelta(days=window_days)
     min_forecast_w = max(100.0, 0.05 * system_peak_w)
 
-    snapshots = await repo.get_forecasts_between(
-        "solar", cutoff.isoformat(), now.isoformat(),
+    rows = await repo.get_forecast_samples(
+        "solar",
+        metric="pv_estimate_w",
+        target_time_start=cutoff.isoformat(),
+        target_time_end=now.isoformat(),
+        min_horizon=0.5,
+        max_horizon=NEAR_TERM_HORIZON_HOURS,
     )
-    if not snapshots:
+    if not rows:
         return []
 
     telemetry = await repo.get_telemetry_since(cutoff.isoformat())
@@ -172,40 +179,38 @@ async def build_training_set(
         slot_key = _slot_key(ts)
         telemetry_by_slot.setdefault(slot_key, []).append(float(row["solar_power_w"]))
 
+    # Deduplicate by target_time — a single slot may have multiple fetches
+    # covering it; take the most recent forecast per target.
+    forecast_by_slot: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        target = _parse_iso(r["target_time"])
+        if target is None:
+            continue
+        forecast_w = float(r["predicted_value"])
+        if forecast_w < min_forecast_w:
+            continue
+        key = _slot_key(target)
+        existing = forecast_by_slot.get(key)
+        if existing is None or r["fetched_at"] > existing["fetched_at"]:
+            forecast_by_slot[key] = r
+
     samples: list[TrainingSample] = []
-    for snap in snapshots:
-        fetched_at = _parse_iso(snap["fetched_at"])
-        if fetched_at is None:
+    for key, r in forecast_by_slot.items():
+        target = _parse_iso(r["target_time"])
+        if target is None:
             continue
-        estimate_json = snap.get("solar_estimate_json")
-        if not estimate_json:
+        actuals = telemetry_by_slot.get(key)
+        if not actuals:
             continue
-        try:
-            slots = json.loads(estimate_json)
-        except (TypeError, ValueError):
-            continue
-        for slot in slots:
-            slot_start = _parse_iso(slot.get("start") or slot.get("period_end"))
-            if slot_start is None:
-                continue
-            horizon_hours = (slot_start - fetched_at).total_seconds() / 3600.0
-            if horizon_hours < 0 or horizon_hours > NEAR_TERM_HORIZON_HOURS:
-                continue
-            forecast_w = float(slot.get("pv_estimate_w") or 0.0)
-            if forecast_w < min_forecast_w:
-                continue
-            actuals = telemetry_by_slot.get(_slot_key(slot_start))
-            if not actuals:
-                continue
-            actual_w = sum(actuals) / len(actuals)
-            age_days = (now - slot_start).total_seconds() / 86400.0
-            samples.append(TrainingSample(
-                slot_start_utc=slot_start,
-                local_solar_hour=_local_solar_hour(slot_start, tz_name),
-                forecast_w=forecast_w,
-                actual_w=max(0.0, actual_w),
-                age_days=max(0.0, age_days),
-            ))
+        actual_w = sum(actuals) / len(actuals)
+        age_days = (now - target).total_seconds() / 86400.0
+        samples.append(TrainingSample(
+            slot_start_utc=target,
+            local_solar_hour=_local_solar_hour(target, tz_name),
+            forecast_w=float(r["predicted_value"]),
+            actual_w=max(0.0, actual_w),
+            age_days=max(0.0, age_days),
+        ))
     return samples
 
 
