@@ -4,8 +4,8 @@ Register map based on the official FoxESS KH Series Modbus PDF.
 See KH_MODBUS_REGISTERS.md for the full register reference.
 
 Key registers:
-  Read (input):  31002 (PV1 power), 31014 (meter power), 31016 (load),
-                 31022 (battery power), 31024 (SOC)
+  Read (input):  39280/39279 (PV1 power I32), 39282/39281 (PV2 power I32),
+                 31014 (meter power), 31016 (load), 31022 (battery power), 31024 (SOC)
   Read/Write (holding): 41000 (work mode), 41012 (export limit)
   Write: 44000 (remote enable), 44001 (remote timeout), 44002 (active power)
 """
@@ -43,8 +43,10 @@ class Registers:
     """
 
     # Input registers — live measurements (read_input_registers, FC 4)
-    PV1_POWER = 31002       # I16, watts
-    PV2_POWER = 31005       # I16, watts
+    PV1_POWER_HI = 39280    # I32 high word — combine with PV1_POWER_LO; raw value in watts
+    PV1_POWER_LO = 39279
+    PV2_POWER_HI = 39282    # I32 high word — combine with PV2_POWER_LO; raw value in watts
+    PV2_POWER_LO = 39281
     GRID_METER = 31014      # I16, watts (KH raw: positive=export, negative=import; we negate)
     LOAD_POWER = 31016      # I16, watts (home consumption)
     BATTERY_VOLTAGE = 31020  # I16, volts (gain 10)
@@ -212,7 +214,8 @@ class FoxESSAdapter:
     async def get_telemetry(self) -> Telemetry:
         """Read current telemetry from the inverter via Modbus.
 
-        All power readings are I16 input registers at 31xxx.
+        PV power is read as I32 pairs from 39xxx registers (KH firmware convention).
+        All other power readings are I16 input registers at 31xxx.
         Battery: KH register positive=discharging, negative=charging (opposite of PDF).
                  We flip the sign so our Telemetry convention holds:
                  positive=charging, negative=discharging.
@@ -221,10 +224,40 @@ class FoxESSAdapter:
               positive=import, negative=export.
         """
         async with self._lock:
-            # Bulk read input registers 31002-31024 (23 registers) in one transaction
-            # instead of 9 individual reads, reducing Modbus traffic significantly.
-            base = Registers.PV1_POWER  # 31002
-            count = Registers.BATTERY_SOC - base + 1  # 31024 - 31002 + 1 = 23
+            def _s16(raw: int) -> int:
+                return raw - 0x10000 if raw >= 0x8000 else raw
+
+            def _s32_auto(hi: int, lo: int) -> int:
+                """Combine two 16-bit words into a signed 32-bit int, auto-detecting word order."""
+                v_be = (hi << 16) | lo
+                v_le = (lo << 16) | hi
+                if v_be & 0x80000000:
+                    v_be -= 0x100000000
+                if v_le & 0x80000000:
+                    v_le -= 0x100000000
+                return v_be if abs(v_be) <= abs(v_le) else v_le
+
+            # Bulk read PV registers 39279-39282 (4 registers, two I32 pairs)
+            pv_base = Registers.PV1_POWER_LO  # 39279
+            try:
+                pv_result = await self._client.read_input_registers(
+                    pv_base, count=4, device_id=self._config.unit_id
+                )
+            except Exception:
+                self._connected = False
+                raise
+            if pv_result.isError():
+                self._connected = False
+                raise IOError(f"Modbus bulk read error at PV input registers {pv_base}-{pv_base+3}: {pv_result}")
+
+            pv_regs = pv_result.registers
+            # pv_regs[0]=39279(LO), pv_regs[1]=39280(HI), pv_regs[2]=39281(LO), pv_regs[3]=39282(HI)
+            pv1_power = _s32_auto(pv_regs[1], pv_regs[0])  # raw value is watts
+            pv2_power = _s32_auto(pv_regs[3], pv_regs[2])
+
+            # Bulk read input registers 31014-31024 (11 registers) in one transaction
+            base = Registers.GRID_METER  # 31014
+            count = Registers.BATTERY_SOC - base + 1  # 31024 - 31014 + 1 = 11
             try:
                 result = await self._client.read_input_registers(
                     base, count=count, device_id=self._config.unit_id
@@ -243,12 +276,7 @@ class FoxESSAdapter:
                 self._connected = False
                 raise IOError(f"Modbus bulk read error at input registers {base}-{base+count-1}: {result}")
 
-            def _s16(raw: int) -> int:
-                return raw - 0x10000 if raw >= 0x8000 else raw
-
             regs = result.registers
-            pv1_power = _s16(regs[Registers.PV1_POWER - base])
-            pv2_power = _s16(regs[Registers.PV2_POWER - base])
             grid_power_raw = _s16(regs[Registers.GRID_METER - base])
             load_power_raw = _s16(regs[Registers.LOAD_POWER - base])
             bat_voltage_raw = _s16(regs[Registers.BATTERY_VOLTAGE - base])
