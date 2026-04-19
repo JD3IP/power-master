@@ -72,9 +72,7 @@ class Registers:
     # Remote power control registers (FC 6)
     REMOTE_ENABLE = 44000   # U16, 0=off, 1=on
     REMOTE_TIMEOUT = 44001  # U16, seconds (watchdog)
-    ACTIVE_POWER = 44002    # I16, watts (per FoxESS doc: positive=charge, negative=discharge)
-    # NOTE: The TCP gateway inverts the sign, so TCP code sends positive=discharge.
-    # Direct RTU follows the documented convention: positive=charge, negative=discharge.
+    ACTIVE_POWER = 44002    # I16, watts: negative=charge, positive=discharge (same on TCP and RTU)
 
 
 # KH work mode register values → human-readable names
@@ -104,8 +102,9 @@ class FoxESSAdapter:
 
     _MAX_REASONABLE_POWER_W = 50000
 
-    def __init__(self, config: FoxESSConfig) -> None:
+    def __init__(self, config: FoxESSConfig, max_export_w: int = 10000) -> None:
         self._config = config
+        self._max_export_w = max_export_w
         self._client: AsyncModbusTcpClient | AsyncModbusSerialClient | None = None
         self._connected = False
         self._lock = asyncio.Lock()
@@ -356,8 +355,8 @@ class FoxESSAdapter:
                     # Matches example mode_self_use(): remote_disable + set_work_mode(0)
                     await self._write_register(Registers.REMOTE_ENABLE, 0)
                     await self._write_register(Registers.WORK_MODE, 0)
-                    await self._write_register(Registers.EXPORT_LIMIT, 65535)
-                    logger.info("SELF_USE: remote=off, work_mode=0, export_limit=65535W")
+                    await self._write_register(Registers.EXPORT_LIMIT, self._max_export_w)
+                    logger.info("SELF_USE: remote=off, work_mode=0, export_limit=%dW", self._max_export_w)
 
                 elif command.mode == OperatingMode.SELF_USE_ZERO_EXPORT:
                     await self._write_register(Registers.REMOTE_ENABLE, 0)
@@ -367,8 +366,8 @@ class FoxESSAdapter:
 
                 elif command.mode == OperatingMode.FORCE_CHARGE:
                     charge_w = abs(command.power_w)
-                    # Matches example remote_set(): exactly 3 writes, no extras
-                    # Negative active power = charge from grid
+                    # Both TCP and RTU: negative=charge, positive=discharge.
+                    # (TCP gateway does NOT invert — same convention as direct RTU.)
                     await self._write_register(Registers.REMOTE_ENABLE, 1)
                     await self._write_register(
                         Registers.REMOTE_TIMEOUT,
@@ -384,19 +383,18 @@ class FoxESSAdapter:
 
                 elif command.mode == OperatingMode.FORCE_DISCHARGE:
                     discharge_w = abs(command.power_w)
-                    # Matches example remote_set(): exactly 3 writes, no extras
-                    # Positive active power = discharge to loads
+                    # Both TCP and RTU: positive=discharge, negative=charge.
                     await self._write_register(Registers.REMOTE_ENABLE, 1)
                     await self._write_register(
                         Registers.REMOTE_TIMEOUT,
                         self._config.watchdog_timeout_seconds,
                     )
                     await self._write_register(Registers.ACTIVE_POWER, discharge_w)
-                    await self._write_register(Registers.EXPORT_LIMIT, 65535)
+                    await self._write_register(Registers.EXPORT_LIMIT, self._max_export_w)
                     logger.info(
                         "FORCE_DISCHARGE: remote=1, timeout=%ds, "
-                        "active_power=+%dW (discharge to loads)",
-                        self._config.watchdog_timeout_seconds, discharge_w,
+                        "active_power=+%dW export_limit=%dW (discharge to loads/grid)",
+                        self._config.watchdog_timeout_seconds, discharge_w, self._max_export_w,
                     )
                     await self._verify_remote_state(expected_remote=1, expected_active=discharge_w)
 

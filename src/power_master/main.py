@@ -694,7 +694,7 @@ class Application:
         """Create and connect the hardware adapter."""
         from power_master.hardware.adapters.foxess import FoxESSAdapter
 
-        adapter = FoxESSAdapter(self.config.hardware.foxess)
+        adapter = FoxESSAdapter(self.config.hardware.foxess, max_export_w=self.config.battery.max_discharge_rate_w)
         if (
             self.config.hardware.foxess.watchdog_timeout_seconds
             <= self.config.planning.evaluation_interval_seconds
