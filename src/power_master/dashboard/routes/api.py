@@ -949,11 +949,37 @@ async def inverter_diagnostics(request: Request) -> dict:
                 "error": str(e),
             }
 
+    def _s32_auto(hi: int, lo: int) -> int:
+        v_be = (hi << 16) | lo
+        v_le = (lo << 16) | hi
+        if v_be & 0x80000000:
+            v_be -= 0x100000000
+        if v_le & 0x80000000:
+            v_le -= 0x100000000
+        return v_be if abs(v_be) <= abs(v_le) else v_le
+
+    async def read_holding_i32(name: str, lo_addr: int, hi_addr: int, unit: str = "W"):
+        # 39xxx PV registers use FC3 (holding) per FoxESS protocol doc V1.05.03.00
+        try:
+            lo = await adapter._read_uint16(lo_addr)
+            hi = await adapter._read_uint16(hi_addr)
+            value = _s32_auto(hi, lo)
+            registers[name] = {
+                "address": lo_addr, "raw": f"HI={hi:#06x} LO={lo:#06x}", "value": value,
+                "unit": unit, "type": "holding_i32", "status": "ok",
+            }
+        except Exception as e:
+            registers[name] = {
+                "address": lo_addr, "raw": None, "value": None,
+                "unit": unit, "type": "holding_i32", "status": "error",
+                "error": str(e),
+            }
+
     # Read all KH input registers under the adapter lock
     try:
         async with adapter._lock:
-            await read_input_i16("PV1 Power", Registers.PV1_POWER, "W")
-            await read_input_i16("PV2 Power", Registers.PV2_POWER, "W")
+            await read_holding_i32("PV1 Power", Registers.PV1_POWER_LO, Registers.PV1_POWER_HI, "W")
+            await read_holding_i32("PV2 Power", Registers.PV2_POWER_LO, Registers.PV2_POWER_HI, "W")
             await read_input_i16("Grid / Meter", Registers.GRID_METER, "W")
             await read_input_i16("Load Power", Registers.LOAD_POWER, "W")
             await read_input_i16("Battery Power", Registers.BATTERY_POWER, "W")

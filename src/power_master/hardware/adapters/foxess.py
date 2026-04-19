@@ -357,7 +357,7 @@ class FoxESSAdapter:
                     await self._write_register(Registers.REMOTE_ENABLE, 0)
                     await self._write_register(Registers.WORK_MODE, 0)
                     await self._write_register(Registers.EXPORT_LIMIT, 65535)
-                    logger.info("SELF_USE: remote=off, work_mode=0")
+                    logger.info("SELF_USE: remote=off, work_mode=0, export_limit=65535W")
 
                 elif command.mode == OperatingMode.SELF_USE_ZERO_EXPORT:
                     await self._write_register(Registers.REMOTE_ENABLE, 0)
