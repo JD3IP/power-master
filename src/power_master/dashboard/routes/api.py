@@ -958,28 +958,50 @@ async def inverter_diagnostics(request: Request) -> dict:
             v_le -= 0x100000000
         return v_be if abs(v_be) <= abs(v_le) else v_le
 
-    async def read_holding_i32(name: str, lo_addr: int, hi_addr: int, unit: str = "W"):
-        # 39xxx PV registers use FC3 (holding) per FoxESS protocol doc V1.05.03.00
+    async def read_input_i32(name: str, lo_addr: int, hi_addr: int, unit: str = "W"):
+        """Read a 32-bit I32 value from two input registers (FC4) and show all 4 raw words."""
         try:
-            lo = await adapter._read_uint16(lo_addr)
-            hi = await adapter._read_uint16(hi_addr)
+            lo = await adapter._read_input_uint16(lo_addr)
+            registers[f"{name} LO ({lo_addr})"] = {
+                "address": lo_addr, "raw": lo, "value": lo,
+                "unit": "raw", "type": "input_u16", "status": "ok",
+            }
+        except Exception as e:
+            lo = None
+            registers[f"{name} LO ({lo_addr})"] = {
+                "address": lo_addr, "raw": None, "value": None,
+                "unit": "raw", "type": "input_u16", "status": "error", "error": str(e),
+            }
+        try:
+            hi = await adapter._read_input_uint16(hi_addr)
+            registers[f"{name} HI ({hi_addr})"] = {
+                "address": hi_addr, "raw": hi, "value": hi,
+                "unit": "raw", "type": "input_u16", "status": "ok",
+            }
+        except Exception as e:
+            hi = None
+            registers[f"{name} HI ({hi_addr})"] = {
+                "address": hi_addr, "raw": None, "value": None,
+                "unit": "raw", "type": "input_u16", "status": "error", "error": str(e),
+            }
+        if lo is not None and hi is not None:
             value = _s32_auto(hi, lo)
             registers[name] = {
                 "address": lo_addr, "raw": f"HI={hi:#06x} LO={lo:#06x}", "value": value,
-                "unit": unit, "type": "holding_i32", "status": "ok",
+                "unit": unit, "type": "input_i32", "status": "ok",
             }
-        except Exception as e:
+        else:
             registers[name] = {
                 "address": lo_addr, "raw": None, "value": None,
-                "unit": unit, "type": "holding_i32", "status": "error",
-                "error": str(e),
+                "unit": unit, "type": "input_i32", "status": "error",
+                "error": "one or more component registers failed",
             }
 
     # Read all KH input registers under the adapter lock
     try:
         async with adapter._lock:
-            await read_holding_i32("PV1 Power", Registers.PV1_POWER_LO, Registers.PV1_POWER_HI, "W")
-            await read_holding_i32("PV2 Power", Registers.PV2_POWER_LO, Registers.PV2_POWER_HI, "W")
+            await read_input_i32("PV1 Power", Registers.PV1_POWER_LO, Registers.PV1_POWER_HI, "W")
+            await read_input_i32("PV2 Power", Registers.PV2_POWER_LO, Registers.PV2_POWER_HI, "W")
             await read_input_i16("Grid / Meter", Registers.GRID_METER, "W")
             await read_input_i16("Load Power", Registers.LOAD_POWER, "W")
             await read_input_i16("Battery Power", Registers.BATTERY_POWER, "W")

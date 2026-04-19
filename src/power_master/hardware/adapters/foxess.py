@@ -236,24 +236,25 @@ class FoxESSAdapter:
                     v_le -= 0x100000000
                 return v_be if abs(v_be) <= abs(v_le) else v_le
 
-            # Bulk read PV registers 39279-39282 (4 registers, two I32 pairs)
-            # Protocol doc V1.05.03.00: 39xxx registers use FC3 (read holding registers), not FC4.
-            pv_base = Registers.PV1_POWER_LO  # 39279
-            try:
-                pv_result = await self._client.read_holding_registers(
-                    pv_base, count=4, device_id=self._config.unit_id
-                )
-            except Exception:
-                self._connected = False
-                raise
-            if pv_result.isError():
-                self._connected = False
-                raise IOError(f"Modbus bulk read error at PV holding registers {pv_base}-{pv_base+3}: {pv_result}")
+            # Read PV registers individually via FC4 (input registers)
+            # 39279=PV1_LO, 39280=PV1_HI, 39281=PV2_LO, 39282=PV2_HI
+            async def _read_pv_reg(addr: int) -> int:
+                try:
+                    r = await self._client.read_input_registers(addr, count=1, device_id=self._config.unit_id)
+                except Exception:
+                    self._connected = False
+                    raise
+                if r.isError():
+                    self._connected = False
+                    raise IOError(f"Modbus read error at PV input register {addr}: {r}")
+                return r.registers[0]
 
-            pv_regs = pv_result.registers
-            # pv_regs[0]=39279(LO), pv_regs[1]=39280(HI), pv_regs[2]=39281(LO), pv_regs[3]=39282(HI)
-            pv1_power = _s32_auto(pv_regs[1], pv_regs[0])  # raw value is watts
-            pv2_power = _s32_auto(pv_regs[3], pv_regs[2])
+            pv1_lo = await _read_pv_reg(Registers.PV1_POWER_LO)
+            pv1_hi = await _read_pv_reg(Registers.PV1_POWER_HI)
+            pv2_lo = await _read_pv_reg(Registers.PV2_POWER_LO)
+            pv2_hi = await _read_pv_reg(Registers.PV2_POWER_HI)
+            pv1_power = _s32_auto(pv1_hi, pv1_lo)
+            pv2_power = _s32_auto(pv2_hi, pv2_lo)
 
             # Bulk read input registers 31014-31024 (11 registers) in one transaction
             base = Registers.GRID_METER  # 31014
