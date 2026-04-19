@@ -238,9 +238,10 @@ class FoxESSAdapter:
                 return v_be if abs(v_be) <= abs(v_le) else v_le
 
             # Bulk read PV registers 39279-39282 (4 registers, two I32 pairs)
+            # Protocol doc V1.05.03.00: 39xxx registers use FC3 (read holding registers), not FC4.
             pv_base = Registers.PV1_POWER_LO  # 39279
             try:
-                pv_result = await self._client.read_input_registers(
+                pv_result = await self._client.read_holding_registers(
                     pv_base, count=4, device_id=self._config.unit_id
                 )
             except Exception:
@@ -248,7 +249,7 @@ class FoxESSAdapter:
                 raise
             if pv_result.isError():
                 self._connected = False
-                raise IOError(f"Modbus bulk read error at PV input registers {pv_base}-{pv_base+3}: {pv_result}")
+                raise IOError(f"Modbus bulk read error at PV holding registers {pv_base}-{pv_base+3}: {pv_result}")
 
             pv_regs = pv_result.registers
             # pv_regs[0]=39279(LO), pv_regs[1]=39280(HI), pv_regs[2]=39281(LO), pv_regs[3]=39282(HI)
@@ -293,6 +294,9 @@ class FoxESSAdapter:
         grid_power = -grid_power_raw
 
         solar_power = max(0, pv1_power) + max(0, pv2_power)
+        if solar_power == 0:
+            # PV power registers unavailable on this firmware; derive from energy balance
+            solar_power = max(0, load_power_raw + (-battery_power_raw) - (-grid_power_raw))
         load_power = max(0, load_power_raw)
         work_mode_name = KH_WORK_MODES.get(work_mode_raw, f"Unknown({work_mode_raw})")
 
@@ -352,6 +356,7 @@ class FoxESSAdapter:
                     # Matches example mode_self_use(): remote_disable + set_work_mode(0)
                     await self._write_register(Registers.REMOTE_ENABLE, 0)
                     await self._write_register(Registers.WORK_MODE, 0)
+                    await self._write_register(Registers.EXPORT_LIMIT, 65535)
                     logger.info("SELF_USE: remote=off, work_mode=0")
 
                 elif command.mode == OperatingMode.SELF_USE_ZERO_EXPORT:
@@ -387,6 +392,7 @@ class FoxESSAdapter:
                         self._config.watchdog_timeout_seconds,
                     )
                     await self._write_register(Registers.ACTIVE_POWER, discharge_w)
+                    await self._write_register(Registers.EXPORT_LIMIT, 65535)
                     logger.info(
                         "FORCE_DISCHARGE: remote=1, timeout=%ds, "
                         "active_power=+%dW (discharge to loads)",
