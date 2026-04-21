@@ -256,7 +256,7 @@ class UserConfig(BaseModel):
 class AuthConfig(BaseModel):
     users: list[UserConfig] = Field(default_factory=list)  # Empty = auth disabled
     session_secret: str = ""  # Auto-generated on first authenticated startup
-    session_max_age_seconds: int = 86400  # 24 hours
+    session_max_age_seconds: int = 2592000  # 30 days
 
 
 class DashboardConfig(BaseModel):

@@ -236,6 +236,7 @@ async def login_submit(
             value=cookie_value,
             max_age=auth_config.session_max_age_seconds,
             httponly=True,
+            secure=True,
             samesite="lax",
             path="/",
         )
