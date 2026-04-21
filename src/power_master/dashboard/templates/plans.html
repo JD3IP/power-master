@@ -8,7 +8,7 @@
 
 {% if active_plan %}
 <section class="card">
-    <h2>Active Plan (v{{ active_plan.version }})</h2>
+    <h2>Active Plan (v{{ '%06X' % active_plan.version }})</h2>
     <p>Trigger: {{ active_plan.trigger_reason }} | Score: {{ "%.2f"|format(active_plan.objective_score) }}</p>
     <div class="table-scroll">
     <table class="plan-table">
@@ -59,7 +59,7 @@
         <tbody>
             {% for plan in plans %}
             <tr>
-                <td>v{{ plan.version }}</td>
+                <td>v{{ '%06X' % plan.version }}</td>
                 <td>{{ plan.created_at }}</td>
                 <td>{{ plan.trigger_reason }}</td>
                 <td>{{ "%.2f"|format(plan.objective_score) }}</td>
