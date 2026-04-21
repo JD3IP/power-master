@@ -5,11 +5,21 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 
 from power_master.hardware.base import CommandResult, InverterAdapter, InverterCommand, OperatingMode
 from power_master.optimisation.plan import PlanSlot, SlotMode
 
 logger = logging.getLogger(__name__)
+
+
+class CommandSourceType(str, Enum):
+    """Classification of command sources for audit logging."""
+
+    MANUAL = "MANUAL"
+    SAFETY = "SAFETY"
+    STORM = "STORM"
+    OPTIMIZER = "OPTIMIZER"
 
 # Map SlotMode to OperatingMode
 _SLOT_TO_OP: dict[SlotMode, OperatingMode] = {
@@ -30,6 +40,16 @@ class ControlCommand:
     reason: str = ""
     priority: int = 5  # 1=highest (safety), 5=lowest (opportunistic)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def get_source_type(self) -> CommandSourceType:
+        """Derive the audit classification of the command source."""
+        if self.source == "manual":
+            return CommandSourceType.MANUAL
+        if self.source == "safety" or self.priority <= 2:
+            return CommandSourceType.SAFETY
+        if self.source == "storm":
+            return CommandSourceType.STORM
+        return CommandSourceType.OPTIMIZER
 
 
 def command_from_slot(slot: PlanSlot, source: str = "optimiser") -> ControlCommand:

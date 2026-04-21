@@ -33,6 +33,7 @@
     <button type="button" class="tab" data-tab="storm" onclick="switchTab('storm', this)">Storm</button>
     <button type="button" class="tab" data-tab="resilience" onclick="switchTab('resilience', this)">Resilience</button>
     <button type="button" class="tab" data-tab="notifications" onclick="switchTab('notifications', this)">Notifications</button>
+    <button type="button" class="tab" data-tab="health" onclick="switchTab('health', this)">System Health</button>
     <button type="button" class="tab" data-tab="system" onclick="switchTab('system', this)">System <span id="update-pill" style="display:none;background:#3fb950;color:#0d1117;border-radius:8px;padding:1px 6px;font-size:11px;margin-left:4px;">Update</span></button>
     {% if not auth_enabled or user_role == 'admin' %}
     <button type="button" class="tab" data-tab="users" onclick="switchTab('users', this)">Users</button>
@@ -54,6 +55,7 @@
         <option value="storm">Storm</option>
         <option value="resilience">Resilience</option>
         <option value="notifications">Notifications</option>
+        <option value="health">System Health</option>
         <option value="system">System</option>
         {% if not auth_enabled or user_role == 'admin' %}
         <option value="users">Users</option>
@@ -1130,6 +1132,57 @@
 </div>
 {% endif %}
 
+<!-- ═══ SYSTEM HEALTH TAB ═══ -->
+<section id="tab-health" class="tab-content">
+    <h2>System Health</h2>
+    <p style="font-size: 0.85em; color: var(--text-muted); margin-bottom: 16px;">
+        Real-time system status and diagnostics. Updates every 30 seconds.
+    </p>
+
+    <div class="settings-table">
+        <table>
+            <tbody>
+                <tr>
+                    <td><strong>Inverter Status</strong></td>
+                    <td><span id="health-inverter-status">—</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Last Telemetry</strong></td>
+                    <td><span id="health-telemetry-age">—</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Active Plan Age</strong></td>
+                    <td><span id="health-plan-age">—</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Plan Slots Remaining</strong></td>
+                    <td><span id="health-plan-slots">—</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Database Size</strong></td>
+                    <td><span id="health-db-size">—</span></td>
+                </tr>
+                <tr>
+                    <td><strong>App Version</strong></td>
+                    <td><span id="health-app-version">—</span></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h3 style="margin-top: 24px; font-size: 14px;">Forecast Providers</h3>
+    <div id="health-forecasts" style="margin-top: 12px; font-size: 13px;">
+        <p style="color: var(--text-muted);">Loading...</p>
+    </div>
+
+    <div style="margin-top: 24px; display: flex; gap: 8px; align-items: center;">
+        <button type="button" class="btn" id="health-refresh-btn" onclick="refreshSystemHealth()">Refresh Now</button>
+        <label style="font-size: 13px; margin-left: 12px;">
+            <input type="checkbox" id="health-auto-refresh" checked> Auto-refresh (30s)
+        </label>
+    </div>
+</section>
+
 <!-- ═══ SYSTEM TAB ═══ -->
 <section id="tab-system" class="tab-content">
     <h2>System Update</h2>
@@ -1573,6 +1626,97 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 {% endif %}
+
+// System Health Tab Auto-Refresh
+var healthTimer = null;
+function refreshSystemHealth() {
+    fetch('/api/health')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        // Inverter status
+        var inverterEl = document.getElementById('health-inverter-status');
+        if (inverterEl) {
+            inverterEl.textContent = data.inverter_online ? 'Online' : 'Offline';
+            inverterEl.style.color = data.inverter_online ? '#3fb950' : '#f85149';
+        }
+        // Telemetry age
+        var telemetryEl = document.getElementById('health-telemetry-age');
+        if (telemetryEl) {
+            if (data.last_telemetry_age_seconds !== null) {
+                telemetryEl.textContent = data.last_telemetry_age_seconds + 's ago';
+                telemetryEl.style.color = data.last_telemetry_age_seconds > 300 ? '#f85149' : '#8b949e';
+            } else {
+                telemetryEl.textContent = 'No data';
+                telemetryEl.style.color = '#8b949e';
+            }
+        }
+        // Plan age
+        var planEl = document.getElementById('health-plan-age');
+        if (planEl) {
+            if (data.plan_age_seconds !== null) {
+                planEl.textContent = data.plan_age_seconds + 's old';
+                planEl.style.color = '#8b949e';
+            } else {
+                planEl.textContent = 'No active plan';
+                planEl.style.color = '#8b949e';
+            }
+        }
+        // Plan slots
+        var slotsEl = document.getElementById('health-plan-slots');
+        if (slotsEl) {
+            slotsEl.textContent = data.plan_slots_remaining + ' slots';
+        }
+        // DB size
+        var dbEl = document.getElementById('health-db-size');
+        if (dbEl) {
+            var bytes = data.db_size_bytes;
+            var size = bytes > 1000000 ? (bytes / 1000000).toFixed(1) + ' MB' : (bytes / 1000).toFixed(1) + ' KB';
+            dbEl.textContent = size;
+        }
+        // App version
+        var verEl = document.getElementById('health-app-version');
+        if (verEl) {
+            verEl.textContent = data.app_version;
+        }
+        // Forecasts
+        var forecastEl = document.getElementById('health-forecasts');
+        if (forecastEl) {
+            var providers = Object.keys(data.forecasts);
+            if (providers.length === 0) {
+                forecastEl.innerHTML = '<p style="color: var(--text-muted);">No forecasts available</p>';
+            } else {
+                var html = '';
+                providers.forEach(function(p) {
+                    var fc = data.forecasts[p];
+                    var status = fc.status === 'ok' ? '<span style="color: #3fb950;">✓</span>' : '<span style="color: #f85149;">✗</span>';
+                    html += status + ' <strong>' + p + '</strong>: ' + fc.fetched_at + '<br>';
+                });
+                forecastEl.innerHTML = html;
+            }
+        }
+    })
+    .catch(function(err) {
+        console.error('Health refresh failed:', err);
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    refreshSystemHealth();
+    var autoRefresh = document.getElementById('health-auto-refresh');
+    if (autoRefresh && autoRefresh.checked) {
+        healthTimer = setInterval(refreshSystemHealth, 30000);
+    }
+    if (autoRefresh) {
+        autoRefresh.addEventListener('change', function() {
+            if (this.checked) {
+                healthTimer = setInterval(refreshSystemHealth, 30000);
+            } else if (healthTimer) {
+                clearInterval(healthTimer);
+                healthTimer = null;
+            }
+        });
+    }
+});
 
 function testChannel(channel) {
     var resultEl = document.getElementById('notif-test-result');

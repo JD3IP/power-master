@@ -7,10 +7,17 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any, Awaitable, Callable
 
 from power_master.config.schema import AppConfig
 from power_master.control.anti_oscillation import AntiOscillationGuard
 from power_master.control.command import ControlCommand, command_from_slot, dispatch_command
+from power_master.control.constants import (
+    COMMAND_REFRESH_INTERVAL_SECONDS,
+    CONTROL_TICK_INTERVAL_SECONDS,
+    PLAN_STALENESS_THRESHOLD_MULTIPLIER,
+    PLAN_STALENESS_WARNING_COOLDOWN_SECONDS,
+)
 from power_master.control.hierarchy import evaluate_hierarchy
 from power_master.control.manual_override import ManualOverride
 from power_master.hardware.base import InverterAdapter, OperatingMode
@@ -59,13 +66,15 @@ class ControlLoop:
         adapter: InverterAdapter,
         manual_override: ManualOverride | None = None,
         anti_oscillation: AntiOscillationGuard | None = None,
+        repo: Any | None = None,
     ) -> None:
-        self._config = config
-        self._adapter = adapter
-        self._manual_override = manual_override or ManualOverride()
-        self._anti_oscillation = anti_oscillation or AntiOscillationGuard(config.anti_oscillation)
-        self._state = LoopState()
-        self._stop_event = asyncio.Event()
+        self._config: AppConfig = config
+        self._adapter: InverterAdapter = adapter
+        self._manual_override: ManualOverride = manual_override or ManualOverride()
+        self._anti_oscillation: AntiOscillationGuard = anti_oscillation or AntiOscillationGuard(config.anti_oscillation)
+        self._state: LoopState = LoopState()
+        self._stop_event: asyncio.Event = asyncio.Event()
+        self._repo: Any = repo
 
         # External state for hierarchy evaluation (updated by main app)
         self._storm_active: bool = False
@@ -75,9 +84,9 @@ class ControlLoop:
         self._last_dispatched_command: ControlCommand | None = None
 
         # Callbacks for extensibility
-        self._on_telemetry: list = []
-        self._on_command: list = []
-        self._on_plan_needed: list = []
+        self._on_telemetry: list[Callable[[Telemetry], Awaitable[None]]] = []
+        self._on_command: list[Callable[[ControlCommand, Any], Awaitable[None]]] = []
+        self._on_plan_needed: list[Callable[[], Awaitable[None]]] = []
 
         # Track last staleness warning to avoid spam
         self._last_staleness_warned_at: float | None = None
@@ -108,7 +117,7 @@ class ControlLoop:
         """
         self._state.is_running = True
         self._stop_event.clear()
-        interval = self._config.planning.evaluation_interval_seconds
+        interval: int = self._config.planning.evaluation_interval_seconds
 
         logger.info("Control loop starting (interval: %ds)", interval)
 
@@ -167,14 +176,14 @@ class ControlLoop:
             return None
 
         # 2a. Check plan staleness
-        plan = self._state.current_plan
+        plan: OptimisationPlan | None = self._state.current_plan
         if plan is not None:
-            now = time.monotonic()
-            stale_threshold = 2 * self._config.planning.evaluation_interval_seconds
-            plan_age_s = (datetime.now(timezone.utc) - plan.created_at).total_seconds()
+            now: float = time.monotonic()
+            stale_threshold: int = PLAN_STALENESS_THRESHOLD_MULTIPLIER * self._config.planning.evaluation_interval_seconds
+            plan_age_s: float = (datetime.now(timezone.utc) - plan.created_at).total_seconds()
             if plan_age_s > stale_threshold:
-                # Warn at most once every 10 minutes
-                if self._last_staleness_warned_at is None or (now - self._last_staleness_warned_at) >= 600:
+                # Warn at most once every configured cooldown period
+                if self._last_staleness_warned_at is None or (now - self._last_staleness_warned_at) >= PLAN_STALENESS_WARNING_COOLDOWN_SECONDS:
                     logger.warning(
                         "Tick %d: plan is stale (age=%ds, threshold=%ds)",
                         self._state.tick_count, int(plan_age_s), int(stale_threshold),
@@ -237,6 +246,22 @@ class ControlLoop:
             self._last_dispatched_command = final_command
         self._state.last_command_result = "ok" if result.success else f"error: {result.message}"
 
+        # 6. Audit logging
+        if self._repo:
+            try:
+                await self._repo.log_command_audit(
+                    mode=final_command.mode.name,
+                    power_w=final_command.power_w,
+                    source=final_command.source,
+                    source_type=final_command.get_source_type().value,
+                    reason=final_command.reason,
+                    priority=final_command.priority,
+                    result="ok" if result.success else "error",
+                    latency_ms=result.latency_ms,
+                )
+            except Exception:
+                logger.exception("Failed to log command audit")
+
         elapsed_ms = int((time.monotonic() - tick_start) * 1000)
         log_fn = logger.info if result.success else logger.warning
         log_fn(
@@ -271,7 +296,7 @@ class ControlLoop:
         don't need refresh since remote control is disabled for those.
         Bypasses anti-oscillation since this is a refresh, not a mode change.
         """
-        interval = self._config.hardware.foxess.remote_refresh_interval_seconds
+        interval: int = self._config.hardware.foxess.remote_refresh_interval_seconds
         logger.info("Command refresh loop starting (interval: %ds)", interval)
 
         while not self._stop_event.is_set():
@@ -321,12 +346,12 @@ class ControlLoop:
         Priority: manual override > plan slot > default self-use.
         """
         # Manual override
-        override_cmd = self._manual_override.get_command()
+        override_cmd: ControlCommand | None = self._manual_override.get_command()
         if override_cmd is not None:
             return override_cmd
 
         # Plan slot
-        plan = self._state.current_plan
+        plan: OptimisationPlan | None = self._state.current_plan
         if plan is not None:
             slot = plan.get_current_slot()
             if slot is not None:
@@ -360,4 +385,4 @@ class ControlLoop:
             return await self._adapter.get_telemetry()
         except Exception:
             logger.exception("Failed to read telemetry")
-            return None
+            return None  # noqa: TRY300

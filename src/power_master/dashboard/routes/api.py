@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from power_master.dashboard.auth import require_admin
 
@@ -24,6 +24,57 @@ class ModeRequest(BaseModel):
     mode: int
     power_w: int = 0
     timeout_s: float | None = None
+
+    @field_validator('mode')
+    @classmethod
+    def validate_mode(cls, v: int) -> int:
+        if v < 0 or v > 4:
+            raise ValueError('mode must be 0-4')
+        return v
+
+    @field_validator('power_w')
+    @classmethod
+    def validate_power(cls, v: int) -> int:
+        if v < -10000 or v > 10000:
+            raise ValueError('power_w must be between -10000 and 10000 watts')
+        return v
+
+    @field_validator('timeout_s')
+    @classmethod
+    def validate_timeout(cls, v: float | None) -> float | None:
+        if v is not None and (v < 0 or v > 86400):
+            raise ValueError('timeout_s must be between 0 and 86400 seconds (24 hours)')
+        return v
+
+
+class ResetWacbRequest(BaseModel):
+    wacb_cents: float = Field(..., gt=0, description="Weighted average cost basis in cents/kWh")
+
+
+class LoadOverrideRequest(BaseModel):
+    state: str = Field(..., pattern='^(on|off)$', description="Load state: 'on' or 'off'")
+    timeout_s: float = Field(3600, ge=0, le=86400, description="Override duration in seconds")
+
+    @field_validator('state')
+    @classmethod
+    def validate_state(cls, v: str) -> str:
+        if v.lower() not in ('on', 'off'):
+            raise ValueError("state must be 'on' or 'off'")
+        return v.lower()
+
+
+class ShellyLoadRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    ip_address: str = Field(...)
+    device_type: str = Field(..., pattern='^(plug|plus|pro)$')
+
+
+class MqttLoadRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    topic: str = Field(..., min_length=1)
+    power_w: int = Field(gt=0)
+    on_payload: str = Field(default="ON")
+    off_payload: str = Field(default="OFF")
 
 
 # ── Status ───────────────────────────────────────────
@@ -52,6 +103,76 @@ async def system_status(request: Request) -> dict:
             "export_revenue_cents": billing["total_export_revenue_cents"] if billing else 0,
         } if billing else None,
         "spike_active": spike is not None,
+    }
+
+
+# ── System Health ────────────────────────────────────
+
+@router.get("/health")
+async def system_health(request: Request) -> dict:
+    """Get comprehensive system health status and metrics."""
+    from power_master import __version__
+
+    repo = request.app.state.repo
+    control_loop = getattr(request.app.state, "control_loop", None)
+
+    # Inverter connectivity
+    adapter = getattr(request.app.state, "_adapter", None)
+    inverter_online = False
+    if adapter:
+        try:
+            inverter_online = await adapter.is_connected()
+        except Exception:
+            pass
+
+    # Last telemetry age
+    last_telemetry_age_seconds = None
+    telemetry = control_loop.state.last_telemetry if control_loop else None
+    if telemetry and telemetry.recorded_at:
+        import time
+        age = (datetime.now(timezone.utc) - telemetry.recorded_at).total_seconds()
+        last_telemetry_age_seconds = max(0, int(age))
+
+    # Plan health
+    plan_age_seconds = None
+    plan_slots_remaining = 0
+    if control_loop and control_loop.state.current_plan:
+        plan = control_loop.state.current_plan
+        plan_age = (datetime.now(timezone.utc) - plan.created_at).total_seconds()
+        plan_age_seconds = max(0, int(plan_age))
+        plan_slots_remaining = len([s for s in plan.slots if s.slot_start > datetime.now(timezone.utc)])
+
+    # Forecast data
+    forecasts: dict[str, Any] = {}
+    try:
+        latest_forecasts = await repo.get_latest_forecasts()
+        for fc in latest_forecasts:
+            provider = fc.get("provider_type", "unknown")
+            forecasts[provider] = {
+                "fetched_at": fc.get("fetched_at"),
+                "status": fc.get("status", "unknown"),
+            }
+    except Exception:
+        pass
+
+    # Database size (estimate)
+    db_size_bytes = 0
+    try:
+        import os
+        db_path = getattr(request.app.state.config, "db", {}).get("path", ":memory:")
+        if db_path != ":memory:" and os.path.exists(db_path):
+            db_size_bytes = os.path.getsize(db_path)
+    except Exception:
+        pass
+
+    return {
+        "inverter_online": inverter_online,
+        "last_telemetry_age_seconds": last_telemetry_age_seconds,
+        "forecasts": forecasts,
+        "plan_age_seconds": plan_age_seconds,
+        "plan_slots_remaining": plan_slots_remaining,
+        "db_size_bytes": db_size_bytes,
+        "app_version": str(__version__),
     }
 
 
@@ -427,15 +548,12 @@ async def accounting_summary(request: Request) -> dict:
 
 
 @router.post("/accounting/reset-wacb")
-async def reset_wacb(request: Request) -> dict:
+async def reset_wacb(request: Request, body: ResetWacbRequest) -> dict:
     """Reset battery cost basis using c/kWh only; stored_wh derived from live SOC."""
     accounting_engine = getattr(request.app.state, "accounting", None)
     if not accounting_engine:
         return {"error": "Accounting engine not available"}
-    body = await request.json()
-    new_wacb = float(body.get("wacb_cents", 0))
-    if new_wacb <= 0:
-        return {"error": "wacb_cents must be greater than 0"}
+    new_wacb = body.wacb_cents
 
     # Derive stored_wh from current SOC and battery capacity
     config = request.app.state.config
@@ -649,10 +767,6 @@ async def delete_mqtt_load(request: Request, name: str) -> dict:
 
 
 # ── Load Detail & Manual Override ────────────────────
-
-class LoadOverrideRequest(BaseModel):
-    state: str  # "on" or "off"
-    timeout_s: float = 3600  # 60 minutes default
 
 
 def _find_load_id_by_name(config, name: str) -> str | None:

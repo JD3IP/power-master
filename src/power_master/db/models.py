@@ -1,6 +1,6 @@
-"""SQL table definitions for all 17 tables."""
+"""SQL table definitions for all database tables."""
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 TABLES = [
     # ── Config ──────────────────────────────────────────────
@@ -115,6 +115,25 @@ TABLES = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_commands_issued ON inverter_commands(issued_at)",
+
+    # ── Command Audit Log ───────────────────────────────────
+    """
+    CREATE TABLE IF NOT EXISTS command_audit_log (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        issued_at       TEXT NOT NULL,
+        mode            TEXT NOT NULL,
+        power_w         INTEGER NOT NULL,
+        source          TEXT NOT NULL,
+        source_type     TEXT NOT NULL,
+        reason          TEXT NOT NULL,
+        priority        INTEGER NOT NULL,
+        result          TEXT NOT NULL DEFAULT 'pending',
+        latency_ms      INTEGER,
+        created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_audit_issued ON command_audit_log(issued_at)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_source_type ON command_audit_log(source_type, issued_at)",
 
     # ── Telemetry ───────────────────────────────────────────
     """

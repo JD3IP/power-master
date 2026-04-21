@@ -468,6 +468,51 @@ class Repository:
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
 
+    async def log_command_audit(
+        self,
+        mode: str,
+        power_w: int,
+        source: str,
+        source_type: str,
+        reason: str,
+        priority: int,
+        result: str = "pending",
+        latency_ms: int | None = None,
+    ) -> int:
+        """Log a control command to the audit trail."""
+        now = _now()
+        async with self.db.execute(
+            """INSERT INTO command_audit_log
+               (issued_at, mode, power_w, source, source_type, reason, priority,
+                result, latency_ms)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                now, mode, power_w, source, source_type, reason, priority,
+                result, latency_ms,
+            ),
+        ) as cursor:
+            row_id = cursor.lastrowid
+        await self.db.commit()
+        return row_id  # type: ignore[return-value]
+
+    async def get_audit_trail(self, hours: int = 24, source_type: str | None = None) -> list[dict[str, Any]]:
+        """Get recent command audit entries."""
+        cutoff = datetime.now(timezone.utc).isoformat()
+        if source_type:
+            query = """SELECT * FROM command_audit_log
+                       WHERE issued_at >= datetime(?, '-' || ? || ' hours')
+                       AND source_type = ?
+                       ORDER BY issued_at DESC"""
+            args = (cutoff, hours, source_type)
+        else:
+            query = """SELECT * FROM command_audit_log
+                       WHERE issued_at >= datetime(?, '-' || ? || ' hours')
+                       ORDER BY issued_at DESC"""
+            args = (cutoff, hours)
+        async with self.db.execute(query, args) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
     # ── Billing Cycles ──────────────────────────────────────
 
     async def get_active_billing_cycle(self) -> dict[str, Any] | None:

@@ -16,9 +16,19 @@ import signal
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 from power_master.config.manager import ConfigManager
 from power_master.config.schema import AppConfig
+from power_master.control.constants import (
+    CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+    DB_STORE_INTERVAL_SECONDS,
+    HISTORY_FLUSH_INTERVAL_SECONDS,
+    LOAD_POLL_INTERVAL_SECONDS,
+    RECONNECT_INTERVAL_SECONDS,
+    TELEMETRY_BUFFER_FLUSH_SECONDS,
+    TELEMETRY_BUFFER_MAX_RECORDS,
+)
 from power_master.db.engine import close_db, init_db
 from power_master.db.repository import Repository
 from power_master.logging.structured import setup_logging
@@ -51,30 +61,30 @@ class Application:
     """
 
     def __init__(self, config: AppConfig, config_manager: ConfigManager) -> None:
-        self.config = config
-        self.config_manager = config_manager
-        self._running = False
+        self.config: AppConfig = config
+        self.config_manager: ConfigManager = config_manager
+        self._running: bool = False
         self._tasks: list[asyncio.Task] = []
-        self._stop_event = asyncio.Event()
+        self._stop_event: asyncio.Event = asyncio.Event()
 
         # References held for cleanup
-        self._adapter = None
-        self._mqtt_client = None
-        self._control_loop = None
-        self._providers: list = []  # providers with .close() methods
-        self._server = None
-        self._load_manager = None
-        self._repo = None
-        self._db_log_handler = None
+        self._adapter: Any = None
+        self._mqtt_client: Any = None
+        self._control_loop: Any = None
+        self._providers: list[Any] = []  # providers with .close() methods
+        self._server: Any = None
+        self._load_manager: Any = None
+        self._repo: Any = None
+        self._db_log_handler: Any = None
 
         # Solar calibration model (lazy-fitted, refreshed on stale)
-        self._solar_calibration_model = None
-        self._solar_calibration_last_fit = None
+        self._solar_calibration_model: Any = None
+        self._solar_calibration_last_fit: datetime | None = None
 
         # Telemetry batching
         self._telemetry_buffer: list[dict] = []
-        self._telemetry_buffer_lock = asyncio.Lock()
-        self._telemetry_buffer_flush_time = 0.0
+        self._telemetry_buffer_lock: asyncio.Lock = asyncio.Lock()
+        self._telemetry_buffer_flush_time: float = 0.0
 
         # Notification correlation state for open-state incidents
         self._spike_correlation_id: str | None = None
@@ -86,9 +96,9 @@ class Application:
         self._force_charge_last_emitted_hour: str | None = None
 
         # Concurrency locks for shared mutable state between forecast and control loops
-        self._plan_lock = asyncio.Lock()  # guards self._control_loop.state.current_plan
-        self._storm_lock = asyncio.Lock()  # guards _storm_was_active, _storm_correlation_id, _storm_detected_at
-        self._model_lock = asyncio.Lock()  # guards _solar_calibration_model, _solar_calibration_last_fit
+        self._plan_lock: asyncio.Lock = asyncio.Lock()  # guards self._control_loop.state.current_plan
+        self._storm_lock: asyncio.Lock = asyncio.Lock()  # guards _storm_was_active, _storm_correlation_id, _storm_detected_at
+        self._model_lock: asyncio.Lock = asyncio.Lock()  # guards _solar_calibration_model, _solar_calibration_last_fit
 
     async def start(self) -> None:
         """Start all application components in dependency order."""
@@ -253,6 +263,7 @@ class Application:
             adapter=adapter,
             manual_override=manual_override,
             anti_oscillation=anti_oscillation,
+            repo=self._repo,
         )
         self._control_loop = control_loop
 
@@ -292,8 +303,8 @@ class Application:
                     "grid_available": telemetry.grid_available,
                     "raw_data": telemetry.raw_data,
                 })
-                # Flush if buffer hits 10 records
-                if len(self._telemetry_buffer) >= 10:
+                # Flush if buffer hits max records threshold
+                if len(self._telemetry_buffer) >= TELEMETRY_BUFFER_MAX_RECORDS:
                     try:
                         await repo.store_telemetry_batch(self._telemetry_buffer)
                         self._telemetry_buffer.clear()
@@ -941,7 +952,7 @@ class Application:
 
                 # Tariff update
                 if now - last_tariff >= tariff_interval:
-                    if provider_failures["tariff"] < 5:
+                    if provider_failures["tariff"] < CIRCUIT_BREAKER_FAILURE_THRESHOLD:
                         async def _update_tariff():
                             try:
                                 return await asyncio.wait_for(
@@ -959,7 +970,7 @@ class Application:
 
                 # Solar update
                 if now - last_solar >= solar_interval:
-                    if provider_failures["solar"] < 5:
+                    if provider_failures["solar"] < CIRCUIT_BREAKER_FAILURE_THRESHOLD:
                         async def _update_solar():
                             try:
                                 return await asyncio.wait_for(
@@ -977,7 +988,7 @@ class Application:
 
                 # Weather update
                 if now - last_weather >= weather_interval:
-                    if provider_failures["weather"] < 5:
+                    if provider_failures["weather"] < CIRCUIT_BREAKER_FAILURE_THRESHOLD:
                         async def _update_weather():
                             try:
                                 return await asyncio.wait_for(
@@ -995,7 +1006,7 @@ class Application:
 
                 # Storm update
                 if self.config.storm.enabled and now - last_storm >= storm_interval:
-                    if provider_failures["storm"] < 5:
+                    if provider_failures["storm"] < CIRCUIT_BREAKER_FAILURE_THRESHOLD:
                         async def _update_storm():
                             try:
                                 return await asyncio.wait_for(
@@ -1265,13 +1276,13 @@ class Application:
                 pass
 
     async def _history_flush_loop(self, history):
-        """Flush history buffer and checkpoint WAL every 30 minutes."""
+        """Flush history buffer and checkpoint WAL periodically."""
         from power_master.db.engine import checkpoint_wal
 
         while not self._stop_event.is_set():
             try:
                 await asyncio.wait_for(
-                    self._stop_event.wait(), timeout=1800,
+                    self._stop_event.wait(), timeout=HISTORY_FLUSH_INTERVAL_SECONDS,
                 )
                 break
             except asyncio.CancelledError:
@@ -1282,11 +1293,11 @@ class Application:
             await checkpoint_wal()
 
     async def _telemetry_flush_loop(self, repo):
-        """Flush telemetry buffer every 30 seconds."""
+        """Flush telemetry buffer periodically."""
         while not self._stop_event.is_set():
             try:
                 await asyncio.wait_for(
-                    self._stop_event.wait(), timeout=30,
+                    self._stop_event.wait(), timeout=TELEMETRY_BUFFER_FLUSH_SECONDS,
                 )
                 break
             except asyncio.CancelledError:
@@ -1357,13 +1368,13 @@ class Application:
         import time as _time
 
         interval = max(1, int(self.config.hardware.foxess.poll_interval_seconds))
-        db_store_interval = 60  # seconds between DB writes from poll loop
-        load_poll_interval = 30  # seconds between load status polls
-        reconnect_interval = 30  # seconds between reconnect attempts
-        last_db_store = 0.0
-        last_load_poll = 0.0
-        last_reconnect_attempt = 0.0
-        _was_connected = True  # assume connected at startup
+        db_store_interval: int = DB_STORE_INTERVAL_SECONDS
+        load_poll_interval: int = LOAD_POLL_INTERVAL_SECONDS
+        reconnect_interval: int = RECONNECT_INTERVAL_SECONDS
+        last_db_store: float = 0.0
+        last_load_poll: float = 0.0
+        last_reconnect_attempt: float = 0.0
+        _was_connected: bool = True  # assume connected at startup
         logger.info("Telemetry poll loop starting (interval: %ds)", interval)
         while not self._stop_event.is_set():
             # Always use the latest adapter (may be swapped by config reload)
