@@ -2202,3 +2202,33 @@ h2:first-child {
 .load-row:hover > td {
     background: rgba(88, 166, 255, 0.05);
 }
+
+#sw-update-banner {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 18px;
+    background: #1e2d3d;
+    border: 1px solid var(--accent-blue);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    color: var(--text-primary);
+    font-size: 14px;
+    z-index: 9999;
+    white-space: nowrap;
+}
+
+#sw-update-banner button {
+    padding: 4px 12px;
+    background: var(--accent-blue);
+    color: #000;
+    border: none;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
