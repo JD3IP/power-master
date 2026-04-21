@@ -2,7 +2,7 @@
 
 Three mechanisms:
 1. Dwell time: Minimum time between mode changes
-2. Hysteresis band: SOC-based mode change requires exceeding band
+2. Pattern detection: Suppresses oscillation if same two modes alternate 3+ times
 3. Rate limit: Maximum commands per window
 """
 
@@ -27,6 +27,7 @@ class AntiOscillationState:
     last_mode: OperatingMode | None = None
     last_change_time: float = 0.0
     command_times: deque = field(default_factory=deque)
+    mode_history: deque = field(default_factory=lambda: deque(maxlen=100))  # (timestamp, mode) tuples
     suppressed_count: int = 0
 
 
@@ -78,9 +79,9 @@ class AntiOscillationGuard:
             self._state.suppressed_count += 1
             return False
 
-        # 3. Hysteresis check (for SOC-driven transitions)
-        if current_soc is not None and self._state.last_mode is not None:
-            if not self._passes_hysteresis(command, current_soc):
+        # 3. Hysteresis check (for pattern-based oscillation detection)
+        if self._state.last_mode is not None:
+            if not self._passes_hysteresis(command):
                 self._state.suppressed_count += 1
                 return False
 
@@ -93,6 +94,12 @@ class AntiOscillationGuard:
             self._state.last_change_time = now
         self._state.last_mode = command.mode
         self._state.command_times.append(now)
+        # Record mode change in history for oscillation pattern detection
+        self._state.mode_history.append((now, command.mode))
+        # Prune entries older than the rate limit window
+        cutoff = now - self._config.rate_limit_window_seconds
+        while self._state.mode_history and self._state.mode_history[0][0] < cutoff:
+            self._state.mode_history.popleft()
 
     def reset(self) -> None:
         """Reset state (e.g., after manual override ends)."""
@@ -104,32 +111,39 @@ class AntiOscillationGuard:
         while self._state.command_times and self._state.command_times[0] < cutoff:
             self._state.command_times.popleft()
 
-    def _passes_hysteresis(self, command: ControlCommand, soc: float) -> bool:
-        """Check if the SOC change is large enough to justify a mode switch.
+    def _passes_hysteresis(self, command: ControlCommand) -> bool:
+        """Check for rapid mode oscillation patterns.
 
-        Prevents flip-flopping at SOC boundaries.
+        Detects if the same two modes have alternated 3+ times within the
+        rate limit window and suppresses further switching if so. This prevents
+        equipment damage from rapid mode flipping regardless of SOC, dwell time,
+        or other conditions.
         """
-        band = self._config.hysteresis_band
+        if len(self._state.mode_history) < 3:
+            # Not enough history to detect oscillation
+            return True
+
         last_mode = self._state.last_mode
 
-        # Switching from charge to discharge (or vice versa) needs hysteresis
-        charge_modes = {OperatingMode.FORCE_CHARGE}
-        discharge_modes = {OperatingMode.FORCE_DISCHARGE}
+        # Count alternations in mode_history between last_mode and command.mode
+        alternation_count = 0
+        last_recorded_mode = None
 
-        if last_mode in charge_modes and command.mode in discharge_modes:
-            # Don't switch from charging to discharging without sufficient SOC change
-            logger.debug(
-                "Anti-oscillation: hysteresis check charge→discharge, soc=%.2f, band=%.2f",
-                soc, band,
-            )
-            # Allow if SOC is well above the hysteresis midpoint
-            return True  # Simplified — the hierarchy handles SOC boundaries
+        for _, mode in self._state.mode_history:
+            if last_recorded_mode is not None:
+                # Check if this is an alternation between the two modes
+                if (
+                    (last_recorded_mode == last_mode and mode == command.mode)
+                    or (last_recorded_mode == command.mode and mode == last_mode)
+                ):
+                    alternation_count += 1
+            last_recorded_mode = mode
 
-        if last_mode in discharge_modes and command.mode in charge_modes:
-            logger.debug(
-                "Anti-oscillation: hysteresis check discharge→charge, soc=%.2f, band=%.2f",
-                soc, band,
+        if alternation_count >= 3:
+            logger.warning(
+                "Anti-oscillation: rapid oscillation detected (%d alternations between %s and %s), suppressing",
+                alternation_count, last_mode.name, command.mode.name,
             )
-            return True  # Simplified
+            return False
 
         return True

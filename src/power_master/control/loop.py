@@ -88,7 +88,7 @@ class ControlLoop:
         return self._manual_override
 
     def set_plan(self, plan: OptimisationPlan) -> None:
-        """Update the current plan (called by rebuild evaluator)."""
+        """Update the current plan (called by rebuild evaluator under plan_lock)."""
         self._state.current_plan = plan
 
     async def run(self) -> None:
@@ -119,6 +119,8 @@ class ControlLoop:
                     break  # stop_event was set
                 except asyncio.TimeoutError:
                     pass  # Normal — just means interval elapsed
+        except asyncio.CancelledError:
+            raise
         finally:
             refresh_task.cancel()
             try:
@@ -185,6 +187,21 @@ class ControlLoop:
         ):
             logger.debug("Tick %d: command suppressed by anti-oscillation", self._state.tick_count)
             return None
+
+        # 4b. Power bounds check — clamp to configured limits
+        max_charge = self._config.battery.max_charge_rate_w
+        max_discharge = self._config.battery.max_discharge_rate_w
+        clamped_power = max(-max_discharge, min(final_command.power_w, max_charge))
+        if clamped_power != final_command.power_w:
+            logger.warning(
+                "Tick %d: power clamped from %dW to %dW (charge_limit=%dW, discharge_limit=%dW)",
+                self._state.tick_count,
+                final_command.power_w,
+                clamped_power,
+                max_charge,
+                max_discharge,
+            )
+            final_command.power_w = clamped_power
 
         # 5. Dispatch
         result = await dispatch_command(self._adapter, final_command)
@@ -267,6 +284,8 @@ class ControlLoop:
                         "Command refresh failed: mode=%s error=%s",
                         cmd.mode.name, result.message,
                     )
+            except asyncio.CancelledError:
+                raise
             except Exception:
                 logger.exception("Command refresh error")
 

@@ -65,6 +65,11 @@ class Application:
         self._storm_was_active: bool = False
         self._force_charge_last_emitted_hour: str | None = None
 
+        # Concurrency locks for shared mutable state between forecast and control loops
+        self._plan_lock = asyncio.Lock()  # guards self._control_loop.state.current_plan
+        self._storm_lock = asyncio.Lock()  # guards _storm_was_active, _storm_correlation_id, _storm_detected_at
+        self._model_lock = asyncio.Lock()  # guards _solar_calibration_model, _solar_calibration_last_fit
+
     async def start(self) -> None:
         """Start all application components in dependency order."""
         logger.info("Starting Power Master v%s", VERSION)
@@ -228,21 +233,28 @@ class Application:
 
         # Register telemetry callback: store in DB + history + MQTT
         async def on_telemetry(telemetry):
-            # Store in database
-            await repo.store_telemetry(
-                soc=telemetry.soc,
-                battery_power_w=telemetry.battery_power_w,
-                solar_power_w=telemetry.solar_power_w,
-                grid_power_w=telemetry.grid_power_w,
-                load_power_w=telemetry.load_power_w,
-                battery_voltage=telemetry.battery_voltage,
-                battery_temp_c=telemetry.battery_temp_c,
-                inverter_mode=telemetry.inverter_mode,
-                grid_available=telemetry.grid_available,
-                raw_data=telemetry.raw_data,
-            )
+            # Store in database with error boundary
+            try:
+                await repo.store_telemetry(
+                    soc=telemetry.soc,
+                    battery_power_w=telemetry.battery_power_w,
+                    solar_power_w=telemetry.solar_power_w,
+                    grid_power_w=telemetry.grid_power_w,
+                    load_power_w=telemetry.load_power_w,
+                    battery_voltage=telemetry.battery_voltage,
+                    battery_temp_c=telemetry.battery_temp_c,
+                    inverter_mode=telemetry.inverter_mode,
+                    grid_available=telemetry.grid_available,
+                    raw_data=telemetry.raw_data,
+                )
+            except Exception:
+                logger.exception("Failed to store telemetry to database")
+
             # Buffer for history aggregation
-            history.record_telemetry(telemetry)
+            try:
+                history.record_telemetry(telemetry)
+            except Exception:
+                logger.exception("Failed to record telemetry to history")
 
             # Record energy flows for accounting (power × interval → Wh)
             # NOTE: sync_soc is called AFTER energy recording so that
@@ -299,7 +311,10 @@ class Application:
                     await accounting.record_self_consumption(self_consumption_wh, import_rate)
 
             # Sync accounting SOC after energy recording (see note above)
-            accounting.sync_soc(telemetry.soc)
+            try:
+                accounting.sync_soc(telemetry.soc)
+            except Exception:
+                logger.exception("Failed to sync accounting SOC")
 
             # Notification: battery SOC thresholds
             if self.config.notifications.enabled:
@@ -847,70 +862,94 @@ class Application:
 
                 # Tariff update
                 if now - last_tariff >= tariff_interval:
-                    result = await aggregator.update_tariff()
-                    if result:
-                        health_checker.record_success("tariff")
-                        await history.record_price(result)
-                        if persist_enabled:
+                    try:
+                        result = await aggregator.update_tariff()
+                        if result:
+                            health_checker.record_success("tariff")
                             try:
-                                from power_master.forecast.persistence import persist_tariff_forecast
-                                await persist_tariff_forecast(repo, result, horizons)
+                                await history.record_price(result)
                             except Exception:
-                                logger.exception("Tariff forecast persistence failed")
-                        last_tariff = now
-                    else:
+                                logger.exception("Failed to record tariff to history")
+                            if persist_enabled:
+                                try:
+                                    from power_master.forecast.persistence import persist_tariff_forecast
+                                    await persist_tariff_forecast(repo, result, horizons)
+                                except Exception:
+                                    logger.exception("Tariff forecast persistence failed")
+                            last_tariff = now
+                        else:
+                            health_checker.record_failure("tariff", "fetch failed")
+                    except Exception:
+                        logger.exception("Tariff provider update failed")
                         health_checker.record_failure("tariff", "fetch failed")
 
                 # Solar update
                 if now - last_solar >= solar_interval:
-                    result = await aggregator.update_solar()
-                    # Throttle retries by configured interval even on failures
-                    # to avoid excessive provider polling when endpoint is degraded.
-                    last_solar = now
-                    if result:
-                        health_checker.record_success("solar_forecast")
-                        if persist_enabled:
-                            try:
-                                from power_master.forecast.persistence import persist_solar_forecast
-                                n = await persist_solar_forecast(repo, result)
-                                if n:
-                                    logger.debug("Persisted %d solar forecast samples", n)
-                            except Exception:
-                                logger.exception("Solar forecast persistence failed")
-                    else:
+                    try:
+                        result = await aggregator.update_solar()
+                        # Throttle retries by configured interval even on failures
+                        # to avoid excessive provider polling when endpoint is degraded.
+                        last_solar = now
+                        if result:
+                            health_checker.record_success("solar_forecast")
+                            if persist_enabled:
+                                try:
+                                    from power_master.forecast.persistence import persist_solar_forecast
+                                    n = await persist_solar_forecast(repo, result)
+                                    if n:
+                                        logger.debug("Persisted %d solar forecast samples", n)
+                                except Exception:
+                                    logger.exception("Solar forecast persistence failed")
+                        else:
+                            health_checker.record_failure("solar_forecast", "fetch failed")
+                    except Exception:
+                        logger.exception("Solar provider update failed")
+                        last_solar = now
                         health_checker.record_failure("solar_forecast", "fetch failed")
 
                 # Weather update
                 if now - last_weather >= weather_interval:
-                    result = await aggregator.update_weather()
-                    if result:
-                        health_checker.record_success("weather_forecast")
-                        await history.record_weather(result)
-                        if persist_enabled:
+                    try:
+                        result = await aggregator.update_weather()
+                        if result:
+                            health_checker.record_success("weather_forecast")
                             try:
-                                from power_master.forecast.persistence import persist_weather_forecast
-                                await persist_weather_forecast(repo, result, horizons)
+                                await history.record_weather(result)
                             except Exception:
-                                logger.exception("Weather forecast persistence failed")
-                        last_weather = now
-                    else:
+                                logger.exception("Failed to record weather to history")
+                            if persist_enabled:
+                                try:
+                                    from power_master.forecast.persistence import persist_weather_forecast
+                                    await persist_weather_forecast(repo, result, horizons)
+                                except Exception:
+                                    logger.exception("Weather forecast persistence failed")
+                            last_weather = now
+                        else:
+                            health_checker.record_failure("weather_forecast", "fetch failed")
+                    except Exception:
+                        logger.exception("Weather provider update failed")
                         health_checker.record_failure("weather_forecast", "fetch failed")
 
                 # Storm update
                 if self.config.storm.enabled and now - last_storm >= storm_interval:
-                    result = await aggregator.update_storm()
-                    if result:
-                        health_checker.record_success("storm")
-                        storm_monitor.update(result.max_probability)
-                        if persist_enabled:
-                            try:
-                                from power_master.forecast.persistence import persist_storm_forecast
-                                await persist_storm_forecast(repo, result, horizons)
-                            except Exception:
-                                logger.exception("Storm forecast persistence failed")
-                        last_storm = now
-                    elif health_checker.is_healthy("storm"):
-                        health_checker.record_failure("storm", "fetch failed")
+                    try:
+                        result = await aggregator.update_storm()
+                        if result:
+                            health_checker.record_success("storm")
+                            storm_monitor.update(result.max_probability)
+                            if persist_enabled:
+                                try:
+                                    from power_master.forecast.persistence import persist_storm_forecast
+                                    await persist_storm_forecast(repo, result, horizons)
+                                except Exception:
+                                    logger.exception("Storm forecast persistence failed")
+                            last_storm = now
+                        elif health_checker.is_healthy("storm"):
+                            health_checker.record_failure("storm", "fetch failed")
+                    except Exception:
+                        logger.exception("Storm provider update failed")
+                        if health_checker.is_healthy("storm"):
+                            health_checker.record_failure("storm", "fetch failed")
 
                 # Publish storm/spike status via MQTT
                 if mqtt_publisher:
@@ -922,10 +961,11 @@ class Application:
                     await mqtt_publisher.publish_wacb(summary.wacb_cents)
 
                 # Update storm state on control loop for hierarchy evaluation
-                control_loop.update_storm_state(
-                    active=storm_monitor.is_active,
-                    reserve_soc=storm_monitor.reserve_soc,
-                )
+                async with self._storm_lock:
+                    control_loop.update_storm_state(
+                        active=storm_monitor.is_active,
+                        reserve_soc=storm_monitor.reserve_soc,
+                    )
 
                 # Check if plan rebuild needed
                 telemetry = control_loop.state.last_telemetry
@@ -1042,6 +1082,8 @@ class Application:
                         event_bus, control_loop, aggregator,
                     )
 
+            except asyncio.CancelledError:
+                raise
             except Exception:
                 logger.exception("Error in forecast update loop iteration")
 
@@ -1065,6 +1107,8 @@ class Application:
                     self._stop_event.wait(), timeout=1800,
                 )
                 break
+            except asyncio.CancelledError:
+                raise
             except asyncio.TimeoutError:
                 pass
             await history.flush_telemetry()
@@ -1079,6 +1123,8 @@ class Application:
                     self._stop_event.wait(), timeout=interval,
                 )
                 break
+            except asyncio.CancelledError:
+                raise
             except asyncio.TimeoutError:
                 pass
             old_level = resilience_mgr.level
@@ -1254,6 +1300,8 @@ class Application:
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=interval)
                 break
+            except asyncio.CancelledError:
+                raise
             except asyncio.TimeoutError:
                 pass
 
@@ -1334,7 +1382,9 @@ class Application:
         # refit lazily (see _refresh_solar_calibration).  When disabled or
         # there's insufficient data, apply_calibration returns the raw
         # forecast unchanged.
-        solar_model = await self._refresh_solar_calibration(repo)
+        # Don't hold lock while awaiting solver — this is just getting the model
+        async with self._model_lock:
+            solar_model = self._solar_calibration_model
         if solar_model is not None:
             from power_master.forecast.solar_calibration import apply_calibration
             calibrated = apply_calibration(solar_forecast_w, slot_start_times, solar_model)
@@ -1436,6 +1486,14 @@ class Application:
             None, solve, self.config, inputs, trigger, version,
         )
 
+        # Validate solver status before storing/activating plan
+        if plan.solver_status not in ("Optimal", "Feasible"):
+            logger.error(
+                "Solver returned non-solution status: %s. Retaining previous plan.",
+                plan.solver_status,
+            )
+            return control_loop.state.current_plan
+
         # Second pass: schedule controllable loads into plan slots.
         if load_manager is not None:
             try:
@@ -1466,8 +1524,9 @@ class Application:
         if plan.slots:
             await repo.store_plan_slots(plan_id, plan.slots_to_db_dicts())
 
-        # Update control loop with new plan
-        control_loop.set_plan(plan)
+        # Update control loop with new plan (under lock to prevent control loop conflicts)
+        async with self._plan_lock:
+            control_loop.set_plan(plan)
         rebuild_evaluator.mark_rebuilt(trigger=trigger)
 
         logger.info(
@@ -1503,6 +1562,8 @@ class Application:
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=3600)
                 return
+            except asyncio.CancelledError:
+                raise
             except asyncio.TimeoutError:
                 continue
 
@@ -1528,6 +1589,8 @@ class Application:
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=60)
                 return
+            except asyncio.CancelledError:
+                raise
             except asyncio.TimeoutError:
                 pass
             try:
@@ -1608,7 +1671,8 @@ class Application:
                 if active_alerts:
                     window_start = min(a.valid_from for a in active_alerts)
                     window_end = max(a.valid_to for a in active_alerts)
-            self._storm_correlation_id = new_correlation_id()
+            async with self._storm_lock:
+                self._storm_correlation_id = new_correlation_id()
             telemetry = control_loop.state.last_telemetry
             ctx = NarratorContext(
                 now=datetime.now(timezone.utc),
@@ -1650,9 +1714,11 @@ class Application:
                 correlation_id=self._storm_correlation_id,
                 fallback_message="Storm window cleared.",
             )
-            self._storm_correlation_id = None
+            async with self._storm_lock:
+                self._storm_correlation_id = None
 
-        self._storm_was_active = currently_active
+        async with self._storm_lock:
+            self._storm_was_active = currently_active
 
     async def _maybe_emit_force_charge_event(
         self, event_bus, control_loop, aggregator,
@@ -1722,11 +1788,13 @@ class Application:
             return None
 
         now = datetime.now(timezone.utc)
-        last_fit = self._solar_calibration_last_fit
+        async with self._model_lock:
+            last_fit = self._solar_calibration_last_fit
+            model = self._solar_calibration_model
         refit_interval = timedelta(seconds=solar_cfg.calibration_refit_interval_seconds)
-        if self._solar_calibration_model is not None and last_fit is not None:
+        if model is not None and last_fit is not None:
             if now - last_fit < refit_interval:
-                return self._solar_calibration_model
+                return model
 
         from power_master.forecast.solar_calibration import (
             build_training_set,
@@ -1741,7 +1809,7 @@ class Application:
                 tz_name=solar_cfg.timezone,
                 reference_time=now,
             )
-            model = fit_calibration_model(
+            fitted_model = fit_calibration_model(
                 samples,
                 system_peak_w=peak_w,
                 tz_name=solar_cfg.timezone,
@@ -1749,25 +1817,31 @@ class Application:
             )
         except Exception:
             logger.exception("Solar calibration fit failed — using raw forecast")
-            self._solar_calibration_last_fit = now
-            return self._solar_calibration_model  # keep previous (possibly None)
+            async with self._model_lock:
+                self._solar_calibration_last_fit = now
+            async with self._model_lock:
+                prev_model = self._solar_calibration_model
+            return prev_model  # keep previous (possibly None)
 
-        self._solar_calibration_last_fit = now
-        if model is None:
+        async with self._model_lock:
+            self._solar_calibration_last_fit = now
+        if fitted_model is None:
             logger.info(
                 "Solar calibration: insufficient data (%d samples, need >=50)",
                 len(samples),
             )
-            self._solar_calibration_model = None
+            async with self._model_lock:
+                self._solar_calibration_model = None
             return None
 
-        self._solar_calibration_model = model
+        async with self._model_lock:
+            self._solar_calibration_model = fitted_model
         logger.info(
             "Solar calibration refit: n=%d raw_mae=%.0fW cal_mae=%.0fW lift=%.0fW",
-            model.n_samples, model.raw_mae_w, model.calibrated_mae_w,
-            model.raw_mae_w - model.calibrated_mae_w,
+            fitted_model.n_samples, fitted_model.raw_mae_w, fitted_model.calibrated_mae_w,
+            fitted_model.raw_mae_w - fitted_model.calibrated_mae_w,
         )
-        return model
+        return fitted_model
 
     async def _build_load_forecast(
         self,
