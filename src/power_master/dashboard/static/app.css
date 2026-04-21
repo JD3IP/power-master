@@ -1244,8 +1244,8 @@ h2:first-child {
 }
 
 .hub-icon-img {
-    width: 53px;
-    height: 53px;
+    width: 75px;
+    height: 75px;
     display: block;
     margin: 0 auto;
     object-fit: contain;
@@ -1253,8 +1253,20 @@ h2:first-child {
 }
 
 .hub-pv .hub-icon-img {
-    width: 64px;
-    height: 64px;
+    width: 100px;
+    height: 100px;
+    margin-top: -18px;
+    margin-left: -18px;
+}
+
+.hub-grid .hub-icon-img {
+    margin-top: -12px;
+    margin-left: -16px;
+}
+
+.hub-load .hub-icon-img {
+    margin-top: -14px;
+    margin-left: -17px;
 }
 
 .hub-center .hub-icon {
