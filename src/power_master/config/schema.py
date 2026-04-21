@@ -422,6 +422,7 @@ class AppConfig(BaseModel):
     """Root configuration model containing all system settings."""
 
     setup_completed: bool = False  # Set True after initial setup wizard completes
+    auto_update_stable: bool = False  # Automatically update when a stable release is detected
     battery: BatteryConfig = BatteryConfig()
     load_profile: LoadProfileConfig = LoadProfileConfig()
     planning: PlanningConfig = PlanningConfig()

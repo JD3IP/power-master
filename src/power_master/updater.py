@@ -77,11 +77,13 @@ class UpdateState:
 class UpdateManager:
     """Manages version checking and self-updates via GHCR + Docker."""
 
-    def __init__(self, event_bus: "EventBus | None" = None) -> None:
+    def __init__(self, event_bus: "EventBus | None" = None, config: "Any | None" = None) -> None:
         self._state = UpdateState()
         self._stop_event = asyncio.Event()
         self._event_bus = event_bus
+        self._config = config
         self._notified_sha = ""
+        self._notified_stable_sha = ""
         self._load_current_version()
         self._check_post_update_status()
 
@@ -217,6 +219,11 @@ class UpdateManager:
                 self._state.changelog = ""
 
             self._state.state = "idle"
+
+            # Auto-update: check stable tag separately and apply if enabled
+            if getattr(self._config, "auto_update_stable", False):
+                await self._check_stable_auto_update()
+
             return self._state.update_available
 
         except Exception as e:
@@ -224,6 +231,24 @@ class UpdateManager:
             self._state.state = "idle"
             logger.warning("Update check failed: %s", e)
             return False
+
+    async def _check_stable_auto_update(self) -> None:
+        """Check the :stable tag and trigger update if a new version is found."""
+        try:
+            stable_labels = await self._fetch_remote_labels(tag="stable")
+            if stable_labels is None:
+                return
+            stable_sha = stable_labels.get("org.opencontainers.image.revision", "")
+            if not stable_sha or stable_sha == self._state.current.sha:
+                return
+            if stable_sha == self._notified_stable_sha:
+                return
+            self._notified_stable_sha = stable_sha
+            stable_version = stable_labels.get("org.opencontainers.image.version", "stable")
+            logger.info("Auto-update: stable release %s detected, applying", stable_version)
+            await self.execute_update(tag="stable")
+        except Exception as e:
+            logger.warning("Stable auto-update check failed: %s", e)
 
     def _check_docker_available(self) -> str | None:
         """Check if Docker SDK and socket are available.
@@ -576,8 +601,8 @@ except Exception as e:
             logger.debug("Failed to fetch commit changelog: %s", e)
             return ""
 
-    async def _fetch_remote_labels(self) -> dict | None:
-        """Fetch OCI labels from the latest GHCR image manifest.
+    async def _fetch_remote_labels(self, tag: str = "latest") -> dict | None:
+        """Fetch OCI labels from a GHCR image manifest for the given tag.
 
         Uses the GHCR v2 API with anonymous token for public repos.
         GHCR redirects blob fetches to Azure storage, so follow_redirects
@@ -607,8 +632,8 @@ except Exception as e:
                 ),
             }
 
-            # 2. Get the manifest for :latest
-            manifest_url = "https://ghcr.io/v2/jd3ip/power-master/manifests/latest"
+            # 2. Get the manifest for the requested tag
+            manifest_url = f"https://ghcr.io/v2/jd3ip/power-master/manifests/{tag}"
             resp = await client.get(manifest_url, headers=headers)
             if resp.status_code != 200:
                 logger.warning("GHCR manifest fetch failed: %d", resp.status_code)

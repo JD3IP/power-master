@@ -1,6 +1,8 @@
 # Power Master - Default Configuration
 # Override in config.yaml (gitignored)
 
+auto_update_stable: false   # Automatically install updates tagged as stable
+
 battery:
   capacity_wh: 10000
   max_charge_rate_w: 5000

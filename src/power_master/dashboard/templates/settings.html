@@ -1221,12 +1221,24 @@
         <button type="button" class="btn" id="sys-check-btn" onclick="checkForUpdate()">Check Now</button>
         {% if not is_read_only %}
         <button type="button" class="btn btn-primary" id="sys-update-btn" onclick="triggerUpdate()" style="display:none;">Update Now</button>
-        <button type="button" class="btn" id="sys-stable-btn" onclick="triggerStableUpdate()">Update to Stable</button>
         {% endif %}
         <span id="sys-no-docker" style="display:none; font-size: 12px; color: var(--text-muted);">
             Self-update unavailable — Docker socket not mounted
         </span>
     </div>
+
+    {% if not is_read_only %}
+    <div style="margin-top: 16px;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px;">
+            <input type="checkbox" name="auto_update_stable" form="settings-form"
+                   {% if config.auto_update_stable %}checked{% endif %}>
+            <span>Auto Update</span>
+        </label>
+        <p style="margin: 4px 0 0 24px; font-size: 12px; color: var(--text-muted);">
+            Automatically install updates when a new stable release is available.
+        </p>
+    </div>
+    {% endif %}
 
     <div id="sys-changelog" style="display:none; margin-top: 16px;">
         <h3 style="font-size: 14px; margin-bottom: 8px; color: var(--text-primary);">What's New</h3>
@@ -1596,29 +1608,6 @@ function triggerUpdate() {
         alert('Update request failed: ' + err);
         btn.disabled = false;
         btn.textContent = 'Update Now';
-    });
-}
-
-function triggerStableUpdate() {
-    if (!confirm('Update Power Master to the stable release? The system will restart.')) return;
-    var btn = document.getElementById('sys-stable-btn');
-    btn.disabled = true;
-    btn.textContent = 'Updating...';
-    fetch('/api/system/update/stable', { method: 'POST' })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-        if (data.status === 'error') {
-            alert('Update failed: ' + data.message);
-            btn.disabled = false;
-            btn.textContent = 'Update to Stable';
-        } else {
-            refreshSystemInfo();
-        }
-    })
-    .catch(function(err) {
-        alert('Update request failed: ' + err);
-        btn.disabled = false;
-        btn.textContent = 'Update to Stable';
     });
 }
 

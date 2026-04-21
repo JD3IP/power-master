@@ -33,6 +33,7 @@ def _parse_form_to_config(form_data: dict[str, str]) -> dict[str, Any]:
 
 # All checkbox field paths — these are sent as "on" if checked, absent if unchecked
 CHECKBOX_FIELDS = {
+    "auto_update_stable",
     "planning.optimiser_enabled",
     "providers.solar.calibration_enabled",
     "storm.enabled",
