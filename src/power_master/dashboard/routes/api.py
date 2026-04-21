@@ -128,8 +128,8 @@ async def system_health(request: Request) -> dict:
     # Last telemetry age
     last_telemetry_age_seconds = None
     telemetry = control_loop.state.last_telemetry if control_loop else None
-    if telemetry and telemetry.recorded_at:
-        age = (datetime.now(timezone.utc) - telemetry.recorded_at).total_seconds()
+    if telemetry and telemetry.timestamp:
+        age = (datetime.now(timezone.utc) - telemetry.timestamp).total_seconds()
         last_telemetry_age_seconds = max(0, int(age))
 
     # Plan health
