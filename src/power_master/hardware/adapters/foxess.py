@@ -234,122 +234,122 @@ class FoxESSAdapter:
         """
         try:
             async with self._lock:
-            def _s16(raw: int) -> int:
-                return raw - 0x10000 if raw >= 0x8000 else raw
+                def _s16(raw: int) -> int:
+                    return raw - 0x10000 if raw >= 0x8000 else raw
 
-            def _s32_auto(hi: int, lo: int) -> int:
-                """Combine two 16-bit words into a signed 32-bit int, auto-detecting word order."""
-                v_be = (hi << 16) | lo
-                v_le = (lo << 16) | hi
-                if v_be & 0x80000000:
-                    v_be -= 0x100000000
-                if v_le & 0x80000000:
-                    v_le -= 0x100000000
-                return v_be if abs(v_be) <= abs(v_le) else v_le
+                def _s32_auto(hi: int, lo: int) -> int:
+                    """Combine two 16-bit words into a signed 32-bit int, auto-detecting word order."""
+                    v_be = (hi << 16) | lo
+                    v_le = (lo << 16) | hi
+                    if v_be & 0x80000000:
+                        v_be -= 0x100000000
+                    if v_le & 0x80000000:
+                        v_le -= 0x100000000
+                    return v_be if abs(v_be) <= abs(v_le) else v_le
 
-            # Read PV registers individually via FC4 (input registers)
-            # 39279=PV1_LO, 39280=PV1_HI, 39281=PV2_LO, 39282=PV2_HI
-            async def _read_pv_reg(addr: int) -> int:
+                # Read PV registers individually via FC4 (input registers)
+                # 39279=PV1_LO, 39280=PV1_HI, 39281=PV2_LO, 39282=PV2_HI
+                async def _read_pv_reg(addr: int) -> int:
+                    try:
+                        r = await self._client.read_input_registers(addr, count=1, device_id=self._config.unit_id)
+                    except Exception:
+                        self._connected = False
+                        raise
+                    if r.isError():
+                        self._connected = False
+                        raise IOError(f"Modbus read error at PV input register {addr}: {r}")
+                    return r.registers[0]
+
+                pv1_lo = await _read_pv_reg(Registers.PV1_POWER_LO)
+                pv1_hi = await _read_pv_reg(Registers.PV1_POWER_HI)
+                pv2_lo = await _read_pv_reg(Registers.PV2_POWER_LO)
+                pv2_hi = await _read_pv_reg(Registers.PV2_POWER_HI)
+                pv3_lo = await _read_pv_reg(Registers.PV3_POWER_LO)
+                pv3_hi = await _read_pv_reg(Registers.PV3_POWER_HI)
+                pv4_lo = await _read_pv_reg(Registers.PV4_POWER_LO)
+                pv4_hi = await _read_pv_reg(Registers.PV4_POWER_HI)
+                pv1_power = _s32_auto(pv1_hi, pv1_lo)
+                pv2_power = _s32_auto(pv2_hi, pv2_lo)
+                pv3_power = _s32_auto(pv3_hi, pv3_lo)
+                pv4_power = _s32_auto(pv4_hi, pv4_lo)
+
+                # Bulk read input registers 31014-31024 (11 registers) in one transaction
+                base = Registers.GRID_METER  # 31014
+                count = Registers.BATTERY_SOC - base + 1  # 31024 - 31014 + 1 = 11
                 try:
-                    r = await self._client.read_input_registers(addr, count=1, device_id=self._config.unit_id)
+                    result = await self._client.read_input_registers(
+                        base, count=count, device_id=self._config.unit_id
+                    )
                 except Exception:
                     self._connected = False
+                    if self._config.connection_type == "tcp":
+                        transport = getattr(self._client, 'transport', None)
+                        logger.warning(
+                            "TCP DIAG: connection lost during bulk_read_input, transport=%s, client.connected=%s",
+                            "closing" if transport and transport.is_closing() else "none/ok",
+                            self._client.connected if self._client else "no_client",
+                        )
                     raise
-                if r.isError():
+                if result.isError():
                     self._connected = False
-                    raise IOError(f"Modbus read error at PV input register {addr}: {r}")
-                return r.registers[0]
+                    raise IOError(f"Modbus bulk read error at input registers {base}-{base+count-1}: {result}")
 
-            pv1_lo = await _read_pv_reg(Registers.PV1_POWER_LO)
-            pv1_hi = await _read_pv_reg(Registers.PV1_POWER_HI)
-            pv2_lo = await _read_pv_reg(Registers.PV2_POWER_LO)
-            pv2_hi = await _read_pv_reg(Registers.PV2_POWER_HI)
-            pv3_lo = await _read_pv_reg(Registers.PV3_POWER_LO)
-            pv3_hi = await _read_pv_reg(Registers.PV3_POWER_HI)
-            pv4_lo = await _read_pv_reg(Registers.PV4_POWER_LO)
-            pv4_hi = await _read_pv_reg(Registers.PV4_POWER_HI)
-            pv1_power = _s32_auto(pv1_hi, pv1_lo)
-            pv2_power = _s32_auto(pv2_hi, pv2_lo)
-            pv3_power = _s32_auto(pv3_hi, pv3_lo)
-            pv4_power = _s32_auto(pv4_hi, pv4_lo)
+                regs = result.registers
+                grid_power_raw = _s16(regs[Registers.GRID_METER - base])
+                load_power_raw = _s16(regs[Registers.LOAD_POWER - base])
+                bat_voltage_raw = _s16(regs[Registers.BATTERY_VOLTAGE - base])
+                battery_power_raw = _s16(regs[Registers.BATTERY_POWER - base])
+                bat_temp_raw = _s16(regs[Registers.BATTERY_TEMP - base])
+                soc_pct = regs[Registers.BATTERY_SOC - base]
 
-            # Bulk read input registers 31014-31024 (11 registers) in one transaction
-            base = Registers.GRID_METER  # 31014
-            count = Registers.BATTERY_SOC - base + 1  # 31024 - 31014 + 1 = 11
-            try:
-                result = await self._client.read_input_registers(
-                    base, count=count, device_id=self._config.unit_id
+                # Read actual work mode from holding register 41000
+                work_mode_raw = await self._read_uint16(Registers.WORK_MODE)
+
+                # Flip battery sign: KH positive=discharge → our positive=charging
+                battery_power = -battery_power_raw
+                # Flip grid sign: KH positive=export → our positive=import
+                grid_power = -grid_power_raw
+
+                solar_power = max(0, pv1_power) + max(0, pv2_power) + max(0, pv3_power) + max(0, pv4_power)
+                if solar_power == 0:
+                    # PV power registers unavailable on this firmware; derive from energy balance
+                    solar_power = max(0, load_power_raw + (-battery_power_raw) - (-grid_power_raw))
+                load_power = max(0, load_power_raw)
+                work_mode_name = KH_WORK_MODES.get(work_mode_raw, f"Unknown({work_mode_raw})")
+
+                # Infer detailed mode from power flow for more granularity
+                hw_mode = self.infer_hw_mode(battery_power, solar_power, grid_power)
+
+                # Success: reset failure counter
+                self._consecutive_failures = 0
+
+                return Telemetry(
+                    soc=soc_pct / 100.0,
+                    battery_power_w=battery_power,
+                    solar_power_w=solar_power,
+                    grid_power_w=grid_power,
+                    load_power_w=load_power,
+                    battery_voltage=bat_voltage_raw / 10.0,
+                    battery_temp_c=bat_temp_raw / 10.0,
+                    inverter_mode=hw_mode,
+                    raw_data={
+                        "pv1_power": pv1_power,
+                        "pv2_power": pv2_power,
+                        "pv3_power": pv3_power,
+                        "pv4_power": pv4_power,
+                        "solar_power": solar_power,
+                        "battery_power_raw": battery_power_raw,
+                        "battery_power": battery_power,
+                        "soc_pct": soc_pct,
+                        "grid_power_raw": grid_power_raw,
+                        "grid_power": grid_power,
+                        "load_power": load_power_raw,
+                        "battery_voltage_raw": bat_voltage_raw,
+                        "battery_temp_raw": bat_temp_raw,
+                        "work_mode_register": work_mode_raw,
+                        "work_mode_name": work_mode_name,
+                    },
                 )
-            except Exception:
-                self._connected = False
-                if self._config.connection_type == "tcp":
-                    transport = getattr(self._client, 'transport', None)
-                    logger.warning(
-                        "TCP DIAG: connection lost during bulk_read_input, transport=%s, client.connected=%s",
-                        "closing" if transport and transport.is_closing() else "none/ok",
-                        self._client.connected if self._client else "no_client",
-                    )
-                raise
-            if result.isError():
-                self._connected = False
-                raise IOError(f"Modbus bulk read error at input registers {base}-{base+count-1}: {result}")
-
-            regs = result.registers
-            grid_power_raw = _s16(regs[Registers.GRID_METER - base])
-            load_power_raw = _s16(regs[Registers.LOAD_POWER - base])
-            bat_voltage_raw = _s16(regs[Registers.BATTERY_VOLTAGE - base])
-            battery_power_raw = _s16(regs[Registers.BATTERY_POWER - base])
-            bat_temp_raw = _s16(regs[Registers.BATTERY_TEMP - base])
-            soc_pct = regs[Registers.BATTERY_SOC - base]
-
-            # Read actual work mode from holding register 41000
-            work_mode_raw = await self._read_uint16(Registers.WORK_MODE)
-
-            # Flip battery sign: KH positive=discharge → our positive=charging
-            battery_power = -battery_power_raw
-            # Flip grid sign: KH positive=export → our positive=import
-            grid_power = -grid_power_raw
-
-            solar_power = max(0, pv1_power) + max(0, pv2_power) + max(0, pv3_power) + max(0, pv4_power)
-            if solar_power == 0:
-                # PV power registers unavailable on this firmware; derive from energy balance
-                solar_power = max(0, load_power_raw + (-battery_power_raw) - (-grid_power_raw))
-            load_power = max(0, load_power_raw)
-            work_mode_name = KH_WORK_MODES.get(work_mode_raw, f"Unknown({work_mode_raw})")
-
-            # Infer detailed mode from power flow for more granularity
-            hw_mode = self.infer_hw_mode(battery_power, solar_power, grid_power)
-
-            # Success: reset failure counter
-            self._consecutive_failures = 0
-
-            return Telemetry(
-                soc=soc_pct / 100.0,
-                battery_power_w=battery_power,
-                solar_power_w=solar_power,
-                grid_power_w=grid_power,
-                load_power_w=load_power,
-                battery_voltage=bat_voltage_raw / 10.0,
-                battery_temp_c=bat_temp_raw / 10.0,
-                inverter_mode=hw_mode,
-                raw_data={
-                    "pv1_power": pv1_power,
-                    "pv2_power": pv2_power,
-                    "pv3_power": pv3_power,
-                    "pv4_power": pv4_power,
-                    "solar_power": solar_power,
-                    "battery_power_raw": battery_power_raw,
-                    "battery_power": battery_power,
-                    "soc_pct": soc_pct,
-                    "grid_power_raw": grid_power_raw,
-                    "grid_power": grid_power,
-                    "load_power": load_power_raw,
-                    "battery_voltage_raw": bat_voltage_raw,
-                    "battery_temp_raw": bat_temp_raw,
-                    "work_mode_register": work_mode_raw,
-                    "work_mode_name": work_mode_name,
-                },
-            )
         except Exception:
             self._consecutive_failures += 1
             raise
