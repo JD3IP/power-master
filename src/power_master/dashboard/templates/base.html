@@ -155,32 +155,5 @@
     {% endif %}
 
     <script src="/static/app.js?v=17" defer></script>
-    <div id="sw-update-banner" style="display:none">
-        <span>Update available</span>
-        <button onclick="swApplyUpdate()">Refresh</button>
-    </div>
-    <script>
-    if ('serviceWorker' in navigator) {
-        let _refreshing = false;
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-            if (!_refreshing) { _refreshing = true; location.reload(); }
-        });
-        navigator.serviceWorker.register('/sw.js').then(reg => {
-            reg.addEventListener('updatefound', () => {
-                const sw = reg.installing;
-                sw.addEventListener('statechange', () => {
-                    if (sw.state === 'installed' && navigator.serviceWorker.controller) {
-                        document.getElementById('sw-update-banner').style.display = 'flex';
-                    }
-                });
-            });
-        });
-    }
-    function swApplyUpdate() {
-        navigator.serviceWorker.getRegistration().then(reg => {
-            if (reg && reg.waiting) reg.waiting.postMessage('skipWaiting');
-        });
-    }
-    </script>
 </body>
 </html>

@@ -540,7 +540,7 @@ class Application:
         # ── 15. Self-update manager ───────────────────────────
         from power_master.updater import UpdateManager
 
-        updater = UpdateManager()
+        updater = UpdateManager(event_bus=event_bus)
         self._tasks.append(asyncio.create_task(
             updater.run(), name="update_checker",
         ))

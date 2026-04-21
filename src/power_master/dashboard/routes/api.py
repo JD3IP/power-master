@@ -4,11 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
-
-_SERVER_START = int(time.time())
 
 import httpx
 from fastapi import APIRouter, Request
@@ -1590,15 +1587,12 @@ async def trigger_update(request: Request) -> dict:
     return result
 
 
-@router.get("/sw.js")
-async def service_worker() -> Response:
-    content = f"""// pm-sw v{_SERVER_START}
-self.addEventListener('message', e => {{
-  if (e.data === 'skipWaiting') self.skipWaiting();
-}});
-"""
-    return Response(
-        content=content,
-        media_type="application/javascript",
-        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
-    )
+@router.post("/system/update/stable")
+async def trigger_stable_update(request: Request) -> dict:
+    """Trigger a self-update to the stable tag."""
+    require_admin(request)
+    updater = getattr(request.app.state, "updater", None)
+    if updater is None:
+        return JSONResponse({"status": "error", "message": "Update manager not available"}, 503)
+    result = await updater.execute_update(tag="stable")
+    return result

@@ -16,8 +16,12 @@ import platform
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import httpx
+
+if TYPE_CHECKING:
+    from power_master.notifications.bus import EventBus
 
 try:
     import docker as docker_sdk
@@ -73,9 +77,11 @@ class UpdateState:
 class UpdateManager:
     """Manages version checking and self-updates via GHCR + Docker."""
 
-    def __init__(self) -> None:
+    def __init__(self, event_bus: "EventBus | None" = None) -> None:
         self._state = UpdateState()
         self._stop_event = asyncio.Event()
+        self._event_bus = event_bus
+        self._notified_sha = ""
         self._load_current_version()
         self._check_post_update_status()
 
@@ -193,6 +199,19 @@ class UpdateManager:
                     self._state.current.version,
                     remote_version,
                 )
+                if self._event_bus and self._notified_sha != remote_sha:
+                    self._notified_sha = remote_sha
+                    from power_master.notifications.bus import Event, Tier
+                    await self._event_bus.publish(Event(
+                        name="update_available",
+                        severity="info",
+                        title="Power Master update available",
+                        message=(
+                            f"Version {remote_version} is ready. "
+                            f"Current: {self._state.current.version}."
+                        ),
+                        tier=Tier.ATTENTION,
+                    ))
             else:
                 self._state.update_available = False
                 self._state.changelog = ""
@@ -234,13 +253,13 @@ class UpdateManager:
         """Whether the Docker socket is reachable for self-updates."""
         return self._check_docker_available() is None
 
-    async def execute_update(self) -> dict:
-        """Pull the latest image and restart the container.
+    async def execute_update(self, tag: str = "latest") -> dict:
+        """Pull the specified image tag and restart the container.
 
         Returns a status dict. The actual restart happens asynchronously —
         this method returns before the container is recreated.
         """
-        if not self._state.update_available:
+        if tag == "latest" and not self._state.update_available:
             return {"status": "error", "message": "No update available"}
 
         if self._state.state in ("downloading", "restarting"):
@@ -255,15 +274,15 @@ class UpdateManager:
             return {"status": "error", "message": docker_err}
 
         self._state.state = "downloading"
-        self._state.progress_message = "Pulling new image..."
+        self._state.progress_message = f"Pulling {tag} image..."
 
         try:
             # 1. Pull the new image via Docker SDK (through mounted socket)
-            logger.info("Pulling %s:latest ...", GHCR_IMAGE)
+            logger.info("Pulling %s:%s ...", GHCR_IMAGE, tag)
             client = docker_sdk.from_env()
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
-                None, lambda: client.images.pull(GHCR_IMAGE, tag="latest")
+                None, lambda: client.images.pull(GHCR_IMAGE, tag=tag)
             )
             logger.info("Image pulled successfully")
 
