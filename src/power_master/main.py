@@ -29,6 +29,21 @@ logger = logging.getLogger(__name__)
 from power_master import __version__ as VERSION
 
 
+# ── Module-level helpers for executor tasks ──────────────────────────
+
+def _fit_solar_model_sync(
+    samples: list, system_peak_w: float, tz_name: str, trained_at: datetime | None = None,
+):
+    """Non-async wrapper for solar calibration fitting (runs in thread pool)."""
+    from power_master.forecast.solar_calibration import fit_calibration_model
+    return fit_calibration_model(
+        samples,
+        system_peak_w=system_peak_w,
+        tz_name=tz_name,
+        trained_at=trained_at,
+    )
+
+
 class Application:
     """Main application lifecycle manager.
 
@@ -55,6 +70,11 @@ class Application:
         # Solar calibration model (lazy-fitted, refreshed on stale)
         self._solar_calibration_model = None
         self._solar_calibration_last_fit = None
+
+        # Telemetry batching
+        self._telemetry_buffer: list[dict] = []
+        self._telemetry_buffer_lock = asyncio.Lock()
+        self._telemetry_buffer_flush_time = 0.0
 
         # Notification correlation state for open-state incidents
         self._spike_correlation_id: str | None = None
@@ -91,6 +111,7 @@ class Application:
         # ── 1. Database ──────────────────────────────────────
         db = await init_db(self.config.db.path)
         repo = Repository(db)
+        await repo.check_integrity()
         await self.config_manager.save_version(db)
         logger.info("Database initialised")
 
@@ -220,7 +241,11 @@ class Application:
         from power_master.control.loop import ControlLoop
         from power_master.control.manual_override import ManualOverride
 
-        manual_override = ManualOverride()
+        # Try to restore persisted override (if < 60 min old)
+        override_path = Path(self.config.data_dir) / "manual_override.json"
+        manual_override = ManualOverride.load(override_path)
+        if manual_override is None:
+            manual_override = ManualOverride()
         anti_oscillation = AntiOscillationGuard(self.config.anti_oscillation)
 
         control_loop = ControlLoop(
@@ -231,24 +256,50 @@ class Application:
         )
         self._control_loop = control_loop
 
-        # Register telemetry callback: store in DB + history + MQTT
-        async def on_telemetry(telemetry):
-            # Store in database with error boundary
+        # Wrap manual override set/clear to persist state
+        original_set = manual_override.set
+        original_clear = manual_override.clear
+
+        def _set_and_persist(
+            mode, power_w=0, timeout_seconds=None, source="user",
+        ) -> None:
+            original_set(mode, power_w=power_w, timeout_seconds=timeout_seconds, source=source)
+            manual_override.save(override_path)
+
+        def _clear_and_persist(reason: str = "user") -> None:
+            original_clear(reason)
             try:
-                await repo.store_telemetry(
-                    soc=telemetry.soc,
-                    battery_power_w=telemetry.battery_power_w,
-                    solar_power_w=telemetry.solar_power_w,
-                    grid_power_w=telemetry.grid_power_w,
-                    load_power_w=telemetry.load_power_w,
-                    battery_voltage=telemetry.battery_voltage,
-                    battery_temp_c=telemetry.battery_temp_c,
-                    inverter_mode=telemetry.inverter_mode,
-                    grid_available=telemetry.grid_available,
-                    raw_data=telemetry.raw_data,
-                )
+                override_path.unlink(missing_ok=True)
             except Exception:
-                logger.exception("Failed to store telemetry to database")
+                logger.debug("Failed to delete persisted override file", exc_info=True)
+
+        manual_override.set = _set_and_persist
+        manual_override.clear = _clear_and_persist
+
+        # Register telemetry callback: buffer for DB + history + MQTT
+        async def on_telemetry(telemetry):
+            # Buffer telemetry for batch commit (10 records or 30s)
+            async with self._telemetry_buffer_lock:
+                self._telemetry_buffer.append({
+                    "soc": telemetry.soc,
+                    "battery_power_w": telemetry.battery_power_w,
+                    "solar_power_w": telemetry.solar_power_w,
+                    "grid_power_w": telemetry.grid_power_w,
+                    "load_power_w": telemetry.load_power_w,
+                    "battery_voltage": telemetry.battery_voltage,
+                    "battery_temp_c": telemetry.battery_temp_c,
+                    "inverter_mode": telemetry.inverter_mode,
+                    "grid_available": telemetry.grid_available,
+                    "raw_data": telemetry.raw_data,
+                })
+                # Flush if buffer hits 10 records
+                if len(self._telemetry_buffer) >= 10:
+                    try:
+                        await repo.store_telemetry_batch(self._telemetry_buffer)
+                        self._telemetry_buffer.clear()
+                        self._telemetry_buffer_flush_time = time.monotonic()
+                    except Exception:
+                        logger.exception("Failed to flush telemetry batch")
 
             # Buffer for history aggregation
             try:
@@ -440,6 +491,12 @@ class Application:
             name="history_flusher",
         ))
 
+        # Telemetry buffer flush (every 30s)
+        self._tasks.append(asyncio.create_task(
+            self._telemetry_flush_loop(repo),
+            name="telemetry_flusher",
+        ))
+
         # Forecast samples retention prune (once per hour)
         self._tasks.append(asyncio.create_task(
             self._forecast_prune_loop(repo),
@@ -532,6 +589,16 @@ class Application:
         # Stop control loop
         if self._control_loop:
             self._control_loop.stop()
+
+        # Flush telemetry buffer before shutdown
+        if self._repo:
+            async with self._telemetry_buffer_lock:
+                if self._telemetry_buffer:
+                    try:
+                        await self._repo.store_telemetry_batch(self._telemetry_buffer)
+                        self._telemetry_buffer.clear()
+                    except Exception:
+                        logger.exception("Failed to flush telemetry on shutdown")
 
         # Cancel background tasks
         for task in self._tasks:
@@ -849,6 +916,14 @@ class Application:
         last_weather = 0.0
         last_storm = 0.0
 
+        # Circuit breaker: track consecutive failures per provider
+        provider_failures: dict[str, int] = {
+            "tariff": 0,
+            "solar": 0,
+            "weather": 0,
+            "storm": 0,
+        }
+
         import time
 
         spike_was_active = False
@@ -860,96 +935,188 @@ class Application:
                 persist_enabled = self.config.providers.forecast_persistence_enabled
                 horizons = self.config.providers.forecast_horizons_hours
 
+                # Collect provider update tasks with timeouts and circuit breaker
+                update_tasks = []
+                update_keys = []
+
                 # Tariff update
                 if now - last_tariff >= tariff_interval:
-                    try:
-                        result = await aggregator.update_tariff()
-                        if result:
-                            health_checker.record_success("tariff")
+                    if provider_failures["tariff"] < 5:
+                        async def _update_tariff():
                             try:
-                                await history.record_price(result)
-                            except Exception:
-                                logger.exception("Failed to record tariff to history")
-                            if persist_enabled:
-                                try:
-                                    from power_master.forecast.persistence import persist_tariff_forecast
-                                    await persist_tariff_forecast(repo, result, horizons)
-                                except Exception:
-                                    logger.exception("Tariff forecast persistence failed")
-                            last_tariff = now
-                        else:
-                            health_checker.record_failure("tariff", "fetch failed")
-                    except Exception:
-                        logger.exception("Tariff provider update failed")
-                        health_checker.record_failure("tariff", "fetch failed")
+                                return await asyncio.wait_for(
+                                    aggregator.update_tariff(), timeout=10.0
+                                )
+                            except asyncio.TimeoutError:
+                                logger.warning("Tariff provider timeout")
+                                return None
+                        update_tasks.append(_update_tariff())
+                        update_keys.append("tariff")
+                    else:
+                        logger.warning(
+                            "Tariff provider disabled (5+ consecutive failures)"
+                        )
 
                 # Solar update
                 if now - last_solar >= solar_interval:
-                    try:
-                        result = await aggregator.update_solar()
-                        # Throttle retries by configured interval even on failures
-                        # to avoid excessive provider polling when endpoint is degraded.
-                        last_solar = now
-                        if result:
-                            health_checker.record_success("solar_forecast")
-                            if persist_enabled:
-                                try:
-                                    from power_master.forecast.persistence import persist_solar_forecast
-                                    n = await persist_solar_forecast(repo, result)
-                                    if n:
-                                        logger.debug("Persisted %d solar forecast samples", n)
-                                except Exception:
-                                    logger.exception("Solar forecast persistence failed")
-                        else:
-                            health_checker.record_failure("solar_forecast", "fetch failed")
-                    except Exception:
-                        logger.exception("Solar provider update failed")
-                        last_solar = now
-                        health_checker.record_failure("solar_forecast", "fetch failed")
+                    if provider_failures["solar"] < 5:
+                        async def _update_solar():
+                            try:
+                                return await asyncio.wait_for(
+                                    aggregator.update_solar(), timeout=10.0
+                                )
+                            except asyncio.TimeoutError:
+                                logger.warning("Solar provider timeout")
+                                return None
+                        update_tasks.append(_update_solar())
+                        update_keys.append("solar")
+                    else:
+                        logger.warning(
+                            "Solar provider disabled (5+ consecutive failures)"
+                        )
 
                 # Weather update
                 if now - last_weather >= weather_interval:
-                    try:
-                        result = await aggregator.update_weather()
-                        if result:
-                            health_checker.record_success("weather_forecast")
+                    if provider_failures["weather"] < 5:
+                        async def _update_weather():
                             try:
-                                await history.record_weather(result)
-                            except Exception:
-                                logger.exception("Failed to record weather to history")
-                            if persist_enabled:
-                                try:
-                                    from power_master.forecast.persistence import persist_weather_forecast
-                                    await persist_weather_forecast(repo, result, horizons)
-                                except Exception:
-                                    logger.exception("Weather forecast persistence failed")
-                            last_weather = now
-                        else:
-                            health_checker.record_failure("weather_forecast", "fetch failed")
-                    except Exception:
-                        logger.exception("Weather provider update failed")
-                        health_checker.record_failure("weather_forecast", "fetch failed")
+                                return await asyncio.wait_for(
+                                    aggregator.update_weather(), timeout=10.0
+                                )
+                            except asyncio.TimeoutError:
+                                logger.warning("Weather provider timeout")
+                                return None
+                        update_tasks.append(_update_weather())
+                        update_keys.append("weather")
+                    else:
+                        logger.warning(
+                            "Weather provider disabled (5+ consecutive failures)"
+                        )
 
                 # Storm update
                 if self.config.storm.enabled and now - last_storm >= storm_interval:
-                    try:
-                        result = await aggregator.update_storm()
-                        if result:
-                            health_checker.record_success("storm")
-                            storm_monitor.update(result.max_probability)
-                            if persist_enabled:
-                                try:
-                                    from power_master.forecast.persistence import persist_storm_forecast
-                                    await persist_storm_forecast(repo, result, horizons)
-                                except Exception:
-                                    logger.exception("Storm forecast persistence failed")
-                            last_storm = now
-                        elif health_checker.is_healthy("storm"):
-                            health_checker.record_failure("storm", "fetch failed")
-                    except Exception:
-                        logger.exception("Storm provider update failed")
-                        if health_checker.is_healthy("storm"):
-                            health_checker.record_failure("storm", "fetch failed")
+                    if provider_failures["storm"] < 5:
+                        async def _update_storm():
+                            try:
+                                return await asyncio.wait_for(
+                                    aggregator.update_storm(), timeout=10.0
+                                )
+                            except asyncio.TimeoutError:
+                                logger.warning("Storm provider timeout")
+                                return None
+                        update_tasks.append(_update_storm())
+                        update_keys.append("storm")
+                    else:
+                        logger.warning(
+                            "Storm provider disabled (5+ consecutive failures)"
+                        )
+
+                # Run all enabled provider updates in parallel
+                if update_tasks:
+                    results = await asyncio.gather(*update_tasks, return_exceptions=True)
+                    for key, result in zip(update_keys, results):
+                        if isinstance(result, Exception):
+                            logger.exception("Provider update %s raised exception", key)
+                            provider_failures[key] += 1
+                        elif result is None:
+                            provider_failures[key] += 1
+                        else:
+                            provider_failures[key] = 0  # Reset on success
+
+                # Process tariff result (if task ran)
+                if "tariff" in update_keys:
+                    idx = update_keys.index("tariff")
+                    result = results[idx]
+                    last_tariff = now
+                    if result and not isinstance(result, Exception):
+                        health_checker.record_success("tariff")
+                        try:
+                            await history.record_price(result)
+                        except Exception:
+                            logger.exception("Failed to record tariff to history")
+                        if persist_enabled:
+                            try:
+                                from power_master.forecast.persistence import persist_tariff_forecast
+                                await persist_tariff_forecast(repo, result, horizons)
+                            except Exception:
+                                logger.exception("Tariff forecast persistence failed")
+                    else:
+                        health_checker.record_failure("tariff", "fetch failed")
+
+                # Process solar result (if task ran)
+                if "solar" in update_keys:
+                    idx = update_keys.index("solar")
+                    result = results[idx]
+                    last_solar = now
+                    if result and not isinstance(result, Exception):
+                        health_checker.record_success("solar_forecast")
+                        if persist_enabled:
+                            try:
+                                from power_master.forecast.persistence import persist_solar_forecast
+                                n = await persist_solar_forecast(repo, result)
+                                if n:
+                                    logger.debug("Persisted %d solar forecast samples", n)
+                            except Exception:
+                                logger.exception("Solar forecast persistence failed")
+                    else:
+                        health_checker.record_failure("solar_forecast", "fetch failed")
+
+                # Process weather result (if task ran)
+                if "weather" in update_keys:
+                    idx = update_keys.index("weather")
+                    result = results[idx]
+                    last_weather = now
+                    if result and not isinstance(result, Exception):
+                        health_checker.record_success("weather_forecast")
+                        try:
+                            await history.record_weather(result)
+                        except Exception:
+                            logger.exception("Failed to record weather to history")
+                        if persist_enabled:
+                            try:
+                                from power_master.forecast.persistence import persist_weather_forecast
+                                await persist_weather_forecast(repo, result, horizons)
+                            except Exception:
+                                logger.exception("Weather forecast persistence failed")
+                    else:
+                        health_checker.record_failure("weather_forecast", "fetch failed")
+
+                # Process storm result (if task ran)
+                if "storm" in update_keys:
+                    idx = update_keys.index("storm")
+                    result = results[idx]
+                    last_storm = now
+                    if result and not isinstance(result, Exception):
+                        health_checker.record_success("storm")
+                        storm_monitor.update(result.max_probability)
+                        if persist_enabled:
+                            try:
+                                from power_master.forecast.persistence import persist_storm_forecast
+                                await persist_storm_forecast(repo, result, horizons)
+                            except Exception:
+                                logger.exception("Storm forecast persistence failed")
+                    elif health_checker.is_healthy("storm"):
+                        health_checker.record_failure("storm", "fetch failed")
+
+                # Check for stale forecasts (older than 1 hour) used by solver
+                now_utc = datetime.now(timezone.utc)
+                stale_threshold = now_utc - timedelta(hours=1)
+                plan = control_loop.state.current_plan
+                if plan is not None and plan.slots:
+                    forecasts_used = {
+                        "solar": aggregator.state.last_solar_update,
+                        "weather": aggregator.state.last_weather_update,
+                        "tariff": aggregator.state.last_tariff_update,
+                        "storm": aggregator.state.last_storm_update,
+                    }
+                    for name, last_update in forecasts_used.items():
+                        if last_update and last_update < stale_threshold:
+                            logger.warning(
+                                "Forecast staleness: %s is %.0f hours old "
+                                "(older than 1h threshold)",
+                                name,
+                                (now_utc - last_update).total_seconds() / 3600,
+                            )
 
                 # Publish storm/spike status via MQTT
                 if mqtt_publisher:
@@ -1113,6 +1280,29 @@ class Application:
                 pass
             await history.flush_telemetry()
             await checkpoint_wal()
+
+    async def _telemetry_flush_loop(self, repo):
+        """Flush telemetry buffer every 30 seconds."""
+        while not self._stop_event.is_set():
+            try:
+                await asyncio.wait_for(
+                    self._stop_event.wait(), timeout=30,
+                )
+                break
+            except asyncio.CancelledError:
+                raise
+            except asyncio.TimeoutError:
+                pass
+
+            # Flush pending telemetry records
+            async with self._telemetry_buffer_lock:
+                if self._telemetry_buffer:
+                    try:
+                        await repo.store_telemetry_batch(self._telemetry_buffer)
+                        self._telemetry_buffer.clear()
+                        self._telemetry_buffer_flush_time = time.monotonic()
+                    except Exception:
+                        logger.exception("Telemetry batch flush failed")
 
     async def _resilience_loop(self, resilience_mgr, event_bus=None):
         """Periodically evaluate resilience level."""
@@ -1798,7 +1988,6 @@ class Application:
 
         from power_master.forecast.solar_calibration import (
             build_training_set,
-            fit_calibration_model,
         )
 
         try:
@@ -1809,11 +1998,10 @@ class Application:
                 tz_name=solar_cfg.timezone,
                 reference_time=now,
             )
-            fitted_model = fit_calibration_model(
-                samples,
-                system_peak_w=peak_w,
-                tz_name=solar_cfg.timezone,
-                trained_at=now,
+            # Run model fitting in thread pool to avoid blocking event loop
+            loop = asyncio.get_event_loop()
+            fitted_model = await loop.run_in_executor(
+                None, _fit_solar_model_sync, samples, peak_w, solar_cfg.timezone, now,
             )
         except Exception:
             logger.exception("Solar calibration fit failed — using raw forecast")

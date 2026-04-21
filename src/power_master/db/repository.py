@@ -22,6 +22,14 @@ class Repository:
     def __init__(self, db: aiosqlite.Connection) -> None:
         self.db = db
 
+    async def check_integrity(self) -> None:
+        """Verify SQLite database integrity. Raises RuntimeError if corrupt."""
+        async with self.db.execute("PRAGMA integrity_check") as cursor:
+            row = await cursor.fetchone()
+            if row and row[0] != "ok":
+                raise RuntimeError(f"Database integrity check failed: {row[0]}")
+        logger.info("Database integrity check passed")
+
     # ── Telemetry ───────────────────────────────────────────
 
     async def store_telemetry(
@@ -69,6 +77,42 @@ class Repository:
         ) as cursor:
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
+
+    async def store_telemetry_batch(self, records: list[dict[str, Any]]) -> None:
+        """Bulk-insert telemetry records without individual commits.
+
+        Each record should have keys: soc, battery_power_w, solar_power_w,
+        grid_power_w, load_power_w, and optionally: battery_voltage,
+        battery_temp_c, inverter_mode, grid_available, raw_data.
+        """
+        if not records:
+            return
+
+        rows = [
+            (
+                r.get("recorded_at") or _now(),
+                r.get("soc", 0.5),
+                r.get("battery_power_w", 0),
+                r.get("solar_power_w", 0),
+                r.get("grid_power_w", 0),
+                r.get("load_power_w", 0),
+                r.get("battery_voltage"),
+                r.get("battery_temp_c"),
+                r.get("inverter_mode"),
+                1 if r.get("grid_available", True) else 0,
+                json.dumps(r.get("raw_data")) if r.get("raw_data") else None,
+            )
+            for r in records
+        ]
+        await self.db.executemany(
+            """INSERT INTO telemetry
+               (recorded_at, soc, battery_power_w, solar_power_w, grid_power_w,
+                load_power_w, battery_voltage, battery_temp_c, inverter_mode,
+                grid_available, raw_data_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            rows,
+        )
+        await self.db.commit()
 
     # ── Forecast Snapshots ──────────────────────────────────
 

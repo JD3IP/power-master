@@ -113,6 +113,7 @@ class FoxESSAdapter:
         self._connected = False
         self._lock = asyncio.Lock()
         self.firmware: dict[str, str] = {}
+        self._consecutive_failures: int = 0
 
     async def connect(self) -> None:
         """Establish Modbus connection to the inverter (TCP or RTU)."""
@@ -214,6 +215,11 @@ class FoxESSAdapter:
     async def is_connected(self) -> bool:
         return self._connected and self._client is not None and self._client.connected
 
+    @property
+    def is_online(self) -> bool:
+        """Check if inverter is online based on consecutive failure counter."""
+        return self._consecutive_failures < 3
+
     async def get_telemetry(self) -> Telemetry:
         """Read current telemetry from the inverter via Modbus.
 
@@ -226,7 +232,8 @@ class FoxESSAdapter:
               We flip the sign so our Telemetry convention holds:
               positive=import, negative=export.
         """
-        async with self._lock:
+        try:
+            async with self._lock:
             def _s16(raw: int) -> int:
                 return raw - 0x10000 if raw >= 0x8000 else raw
 
@@ -298,48 +305,54 @@ class FoxESSAdapter:
             # Read actual work mode from holding register 41000
             work_mode_raw = await self._read_uint16(Registers.WORK_MODE)
 
-        # Flip battery sign: KH positive=discharge → our positive=charging
-        battery_power = -battery_power_raw
-        # Flip grid sign: KH positive=export → our positive=import
-        grid_power = -grid_power_raw
+            # Flip battery sign: KH positive=discharge → our positive=charging
+            battery_power = -battery_power_raw
+            # Flip grid sign: KH positive=export → our positive=import
+            grid_power = -grid_power_raw
 
-        solar_power = max(0, pv1_power) + max(0, pv2_power) + max(0, pv3_power) + max(0, pv4_power)
-        if solar_power == 0:
-            # PV power registers unavailable on this firmware; derive from energy balance
-            solar_power = max(0, load_power_raw + (-battery_power_raw) - (-grid_power_raw))
-        load_power = max(0, load_power_raw)
-        work_mode_name = KH_WORK_MODES.get(work_mode_raw, f"Unknown({work_mode_raw})")
+            solar_power = max(0, pv1_power) + max(0, pv2_power) + max(0, pv3_power) + max(0, pv4_power)
+            if solar_power == 0:
+                # PV power registers unavailable on this firmware; derive from energy balance
+                solar_power = max(0, load_power_raw + (-battery_power_raw) - (-grid_power_raw))
+            load_power = max(0, load_power_raw)
+            work_mode_name = KH_WORK_MODES.get(work_mode_raw, f"Unknown({work_mode_raw})")
 
-        # Infer detailed mode from power flow for more granularity
-        hw_mode = self.infer_hw_mode(battery_power, solar_power, grid_power)
+            # Infer detailed mode from power flow for more granularity
+            hw_mode = self.infer_hw_mode(battery_power, solar_power, grid_power)
 
-        return Telemetry(
-            soc=soc_pct / 100.0,
-            battery_power_w=battery_power,
-            solar_power_w=solar_power,
-            grid_power_w=grid_power,
-            load_power_w=load_power,
-            battery_voltage=bat_voltage_raw / 10.0,
-            battery_temp_c=bat_temp_raw / 10.0,
-            inverter_mode=hw_mode,
-            raw_data={
-                "pv1_power": pv1_power,
-                "pv2_power": pv2_power,
-                "pv3_power": pv3_power,
-                "pv4_power": pv4_power,
-                "solar_power": solar_power,
-                "battery_power_raw": battery_power_raw,
-                "battery_power": battery_power,
-                "soc_pct": soc_pct,
-                "grid_power_raw": grid_power_raw,
-                "grid_power": grid_power,
-                "load_power": load_power_raw,
-                "battery_voltage_raw": bat_voltage_raw,
-                "battery_temp_raw": bat_temp_raw,
-                "work_mode_register": work_mode_raw,
-                "work_mode_name": work_mode_name,
-            },
-        )
+            # Success: reset failure counter
+            self._consecutive_failures = 0
+
+            return Telemetry(
+                soc=soc_pct / 100.0,
+                battery_power_w=battery_power,
+                solar_power_w=solar_power,
+                grid_power_w=grid_power,
+                load_power_w=load_power,
+                battery_voltage=bat_voltage_raw / 10.0,
+                battery_temp_c=bat_temp_raw / 10.0,
+                inverter_mode=hw_mode,
+                raw_data={
+                    "pv1_power": pv1_power,
+                    "pv2_power": pv2_power,
+                    "pv3_power": pv3_power,
+                    "pv4_power": pv4_power,
+                    "solar_power": solar_power,
+                    "battery_power_raw": battery_power_raw,
+                    "battery_power": battery_power,
+                    "soc_pct": soc_pct,
+                    "grid_power_raw": grid_power_raw,
+                    "grid_power": grid_power,
+                    "load_power": load_power_raw,
+                    "battery_voltage_raw": bat_voltage_raw,
+                    "battery_temp_raw": bat_temp_raw,
+                    "work_mode_register": work_mode_raw,
+                    "work_mode_name": work_mode_name,
+                },
+            )
+        except Exception:
+            self._consecutive_failures += 1
+            raise
 
     async def send_command(self, command: InverterCommand) -> CommandResult:
         """Send a control command to the inverter.

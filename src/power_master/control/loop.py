@@ -79,6 +79,9 @@ class ControlLoop:
         self._on_command: list = []
         self._on_plan_needed: list = []
 
+        # Track last staleness warning to avoid spam
+        self._last_staleness_warned_at: float | None = None
+
     @property
     def state(self) -> LoopState:
         return self._state
@@ -162,6 +165,29 @@ class ControlLoop:
         command = self._determine_command(telemetry)
         if command is None:
             return None
+
+        # 2a. Check plan staleness
+        plan = self._state.current_plan
+        if plan is not None:
+            now = time.monotonic()
+            stale_threshold = 2 * self._config.planning.evaluation_interval_seconds
+            plan_age_s = (datetime.now(timezone.utc) - plan.created_at).total_seconds()
+            if plan_age_s > stale_threshold:
+                # Warn at most once every 10 minutes
+                if self._last_staleness_warned_at is None or (now - self._last_staleness_warned_at) >= 600:
+                    logger.warning(
+                        "Tick %d: plan is stale (age=%ds, threshold=%ds)",
+                        self._state.tick_count, int(plan_age_s), int(stale_threshold),
+                    )
+                    self._last_staleness_warned_at = now
+            # Warn if horizon has passed with no current slot
+            if plan.horizon_end < datetime.now(timezone.utc):
+                current_slot = plan.get_current_slot()
+                if current_slot is None:
+                    logger.warning(
+                        "Tick %d: plan horizon has passed (end=%s) with no current slot",
+                        self._state.tick_count, plan.horizon_end.isoformat(),
+                    )
 
         # 2b. Skip dispatch if optimiser is disabled and this isn't a manual override
         if not self._config.planning.optimiser_enabled and command.source != "manual":
