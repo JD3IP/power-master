@@ -252,7 +252,7 @@ class Application:
         from power_master.control.manual_override import ManualOverride
 
         # Try to restore persisted override (if < 60 min old)
-        override_path = Path(self.config.data_dir) / "manual_override.json"
+        override_path = Path(self.config.db.path).parent / "manual_override.json"
         manual_override = ManualOverride.load(override_path)
         if manual_override is None:
             manual_override = ManualOverride()
