@@ -46,6 +46,7 @@ class OptimisationPlan:
     slots: list[PlanSlot]
     objective_score: float
     solver_time_ms: int
+    solver_status: str = "Optimal"
     active_constraints: list[str] = field(default_factory=list)
     reserve_state: dict | None = None
     metrics: dict = field(default_factory=dict)
