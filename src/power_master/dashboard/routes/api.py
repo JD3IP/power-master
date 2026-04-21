@@ -117,7 +117,7 @@ async def system_health(request: Request) -> dict:
     control_loop = getattr(request.app.state, "control_loop", None)
 
     # Inverter connectivity
-    adapter = getattr(request.app.state, "_adapter", None)
+    adapter = getattr(request.app.state, "adapter", None)
     inverter_online = False
     if adapter:
         try:
@@ -129,7 +129,6 @@ async def system_health(request: Request) -> dict:
     last_telemetry_age_seconds = None
     telemetry = control_loop.state.last_telemetry if control_loop else None
     if telemetry and telemetry.recorded_at:
-        import time
         age = (datetime.now(timezone.utc) - telemetry.recorded_at).total_seconds()
         last_telemetry_age_seconds = max(0, int(age))
 
@@ -140,26 +139,32 @@ async def system_health(request: Request) -> dict:
         plan = control_loop.state.current_plan
         plan_age = (datetime.now(timezone.utc) - plan.created_at).total_seconds()
         plan_age_seconds = max(0, int(plan_age))
-        plan_slots_remaining = len([s for s in plan.slots if s.slot_start > datetime.now(timezone.utc)])
+        plan_slots_remaining = len([s for s in plan.slots if s.start > datetime.now(timezone.utc)])
 
-    # Forecast data
+    # Forecast data — query each configured provider individually
     forecasts: dict[str, Any] = {}
     try:
-        latest_forecasts = await repo.get_latest_forecasts()
-        for fc in latest_forecasts:
-            provider = fc.get("provider_type", "unknown")
-            forecasts[provider] = {
-                "fetched_at": fc.get("fetched_at"),
-                "status": fc.get("status", "unknown"),
-            }
+        config = request.app.state.config
+        provider_types = [p for p in (
+            "solcast", "open_meteo", "bom", "forecast_solar",
+        ) if getattr(getattr(config.providers, p, None), "enabled", False)]
+        for provider_type in provider_types:
+            fc = await repo.get_latest_forecast(provider_type)
+            if fc:
+                forecasts[provider_type] = {
+                    "fetched_at": fc.get("fetched_at"),
+                    "status": "ok",
+                }
+            else:
+                forecasts[provider_type] = {"fetched_at": None, "status": "no data"}
     except Exception:
         pass
 
-    # Database size (estimate)
+    # Database size
     db_size_bytes = 0
     try:
         import os
-        db_path = getattr(request.app.state.config, "db", {}).get("path", ":memory:")
+        db_path = request.app.state.config.db.path
         if db_path != ":memory:" and os.path.exists(db_path):
             db_size_bytes = os.path.getsize(db_path)
     except Exception:
