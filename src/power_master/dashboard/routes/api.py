@@ -428,18 +428,27 @@ async def accounting_summary(request: Request) -> dict:
 
 @router.post("/accounting/reset-wacb")
 async def reset_wacb(request: Request) -> dict:
-    """Reset battery cost basis and stored value to user-specified values."""
+    """Reset battery cost basis using c/kWh only; stored_wh derived from live SOC."""
     accounting_engine = getattr(request.app.state, "accounting", None)
     if not accounting_engine:
         return {"error": "Accounting engine not available"}
     body = await request.json()
     new_wacb = float(body.get("wacb_cents", 0))
-    new_stored_value = float(body.get("stored_value_cents", 0))
+    if new_wacb <= 0:
+        return {"error": "wacb_cents must be greater than 0"}
+
+    # Derive stored_wh from current SOC and battery capacity
+    config = request.app.state.config
+    control_loop = getattr(request.app.state, "control_loop", None)
+    capacity_wh = config.battery.capacity_wh
+    soc = 0.5  # default fallback
+    if control_loop and control_loop.state and control_loop.state.last_telemetry:
+        soc = control_loop.state.last_telemetry.soc / 100.0
+    stored_wh = soc * capacity_wh
+
     tracker = accounting_engine.cost_basis
     tracker._state.wacb_cents = new_wacb
-    # Back-calculate stored_wh from stored_value and wacb
-    if new_wacb > 0:
-        tracker._state.stored_wh = (new_stored_value / new_wacb) * 1000
+    tracker._state.stored_wh = stored_wh
     tracker._notify_change()
     return {
         "wacb_cents": round(tracker.wacb_cents, 1),

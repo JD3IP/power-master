@@ -266,14 +266,10 @@
     </div>
 
     <h2>Battery Cost Basis Reset</h2>
-    <small class="form-hint" style="display:block; margin-bottom:10px;">Override the live WACB tracking values. This resets the in-memory accounting engine to a known state.</small>
+    <small class="form-hint" style="display:block; margin-bottom:10px;">Override the live WACB tracking values. This resets the in-memory accounting engine to a known state. The stored capacity is derived from current battery SOC at reset time.</small>
     <div class="form-group">
         <label for="wacb_reset_cents">Cost Basis (c/kWh)</label>
         <input type="number" id="wacb_reset_cents" step="0.1" min="0" value="" placeholder="e.g. 5.0">
-    </div>
-    <div class="form-group">
-        <label for="wacb_reset_value">Stored Value (cents)</label>
-        <input type="number" id="wacb_reset_value" step="0.1" min="0" value="" placeholder="e.g. 250.0">
     </div>
     {% if not is_read_only %}
     <button type="button" class="btn btn-primary" onclick="resetWACB()">Reset Cost Basis</button>

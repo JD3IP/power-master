@@ -2110,16 +2110,15 @@ function applyGeocode(lat, lon, el) {
 // ── WACB Reset (Battery Cost Basis) ─────────────────
 function resetWACB() {
     var wacb = parseFloat(document.getElementById('wacb_reset_cents').value);
-    var stored = parseFloat(document.getElementById('wacb_reset_value').value);
     var status = document.getElementById('wacb-reset-status');
-    if (isNaN(wacb) || isNaN(stored)) {
-        if (status) status.textContent = 'Please enter both values.';
+    if (isNaN(wacb)) {
+        if (status) status.textContent = 'Please enter a cost basis value.';
         return;
     }
     fetch('/api/accounting/reset-wacb', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({wacb_cents: wacb, stored_value_cents: stored}),
+        body: JSON.stringify({wacb_cents: wacb}),
     })
     .then(function(r) { return r.json(); })
     .then(function(data) {
