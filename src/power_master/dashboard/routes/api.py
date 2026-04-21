@@ -1002,6 +1002,8 @@ async def inverter_diagnostics(request: Request) -> dict:
         async with adapter._lock:
             await read_input_i32("PV1 Power", Registers.PV1_POWER_LO, Registers.PV1_POWER_HI, "W")
             await read_input_i32("PV2 Power", Registers.PV2_POWER_LO, Registers.PV2_POWER_HI, "W")
+            await read_input_i32("PV3 Power", Registers.PV3_POWER_LO, Registers.PV3_POWER_HI, "W")
+            await read_input_i32("PV4 Power", Registers.PV4_POWER_LO, Registers.PV4_POWER_HI, "W")
             await read_input_i16("Grid / Meter", Registers.GRID_METER, "W")
             await read_input_i16("Load Power", Registers.LOAD_POWER, "W")
             await read_input_i16("Battery Power", Registers.BATTERY_POWER, "W")

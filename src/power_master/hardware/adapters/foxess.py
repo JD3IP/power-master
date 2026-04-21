@@ -47,6 +47,10 @@ class Registers:
     PV1_POWER_LO = 39279
     PV2_POWER_HI = 39282    # I32 high word — combine with PV2_POWER_LO; raw value in watts
     PV2_POWER_LO = 39281
+    PV3_POWER_HI = 39284    # I32 high word — combine with PV3_POWER_LO; raw value in watts
+    PV3_POWER_LO = 39283
+    PV4_POWER_HI = 39286    # I32 high word — combine with PV4_POWER_LO; raw value in watts
+    PV4_POWER_LO = 39285
     GRID_METER = 31014      # I16, watts (KH raw: positive=export, negative=import; we negate)
     LOAD_POWER = 31016      # I16, watts (home consumption)
     BATTERY_VOLTAGE = 31020  # I16, volts (gain 10)
@@ -253,8 +257,14 @@ class FoxESSAdapter:
             pv1_hi = await _read_pv_reg(Registers.PV1_POWER_HI)
             pv2_lo = await _read_pv_reg(Registers.PV2_POWER_LO)
             pv2_hi = await _read_pv_reg(Registers.PV2_POWER_HI)
+            pv3_lo = await _read_pv_reg(Registers.PV3_POWER_LO)
+            pv3_hi = await _read_pv_reg(Registers.PV3_POWER_HI)
+            pv4_lo = await _read_pv_reg(Registers.PV4_POWER_LO)
+            pv4_hi = await _read_pv_reg(Registers.PV4_POWER_HI)
             pv1_power = _s32_auto(pv1_hi, pv1_lo)
             pv2_power = _s32_auto(pv2_hi, pv2_lo)
+            pv3_power = _s32_auto(pv3_hi, pv3_lo)
+            pv4_power = _s32_auto(pv4_hi, pv4_lo)
 
             # Bulk read input registers 31014-31024 (11 registers) in one transaction
             base = Registers.GRID_METER  # 31014
@@ -293,7 +303,7 @@ class FoxESSAdapter:
         # Flip grid sign: KH positive=export → our positive=import
         grid_power = -grid_power_raw
 
-        solar_power = max(0, pv1_power) + max(0, pv2_power)
+        solar_power = max(0, pv1_power) + max(0, pv2_power) + max(0, pv3_power) + max(0, pv4_power)
         if solar_power == 0:
             # PV power registers unavailable on this firmware; derive from energy balance
             solar_power = max(0, load_power_raw + (-battery_power_raw) - (-grid_power_raw))
@@ -315,6 +325,8 @@ class FoxESSAdapter:
             raw_data={
                 "pv1_power": pv1_power,
                 "pv2_power": pv2_power,
+                "pv3_power": pv3_power,
+                "pv4_power": pv4_power,
                 "solar_power": solar_power,
                 "battery_power_raw": battery_power_raw,
                 "battery_power": battery_power,
