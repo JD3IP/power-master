@@ -1,0 +1,25 @@
+name: Promote to stable
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_tag:
+        description: 'Tag to promote (e.g. latest, v1.2.3)'
+        required: true
+        default: 'latest'
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: |
+          docker pull ghcr.io/jd3ip/power-master:${{ inputs.source_tag }}
+          docker tag  ghcr.io/jd3ip/power-master:${{ inputs.source_tag }} ghcr.io/jd3ip/power-master:stable
+          docker push ghcr.io/jd3ip/power-master:stable
