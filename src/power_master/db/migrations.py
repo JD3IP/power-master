@@ -64,6 +64,8 @@ async def _apply_migrations(
         await _migrate_v1_to_v2(db)
     if from_version < 3:
         await _migrate_v2_to_v3(db)
+    if from_version < 4:
+        await _migrate_v3_to_v4(db)
 
 
 async def _migrate_v1_to_v2(db: aiosqlite.Connection) -> None:
@@ -125,3 +127,31 @@ async def _migrate_v2_to_v3(db: aiosqlite.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_notif_log_correlation ON notification_log(correlation_id)"
     )
     logger.info("Migrated to v3: notification_log table created")
+
+
+async def _migrate_v3_to_v4(db: aiosqlite.Connection) -> None:
+    """Add command_audit_log table for command execution audit trail."""
+    await db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS command_audit_log (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            issued_at       TEXT NOT NULL,
+            mode            TEXT NOT NULL,
+            power_w         INTEGER NOT NULL,
+            source          TEXT NOT NULL,
+            source_type     TEXT NOT NULL,
+            reason          TEXT NOT NULL,
+            priority        INTEGER NOT NULL,
+            result          TEXT NOT NULL DEFAULT 'pending',
+            latency_ms      INTEGER,
+            created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        )
+        """
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_audit_issued ON command_audit_log(issued_at)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_audit_source_type ON command_audit_log(source_type, issued_at)"
+    )
+    logger.info("Migrated to v4: command_audit_log table created")
