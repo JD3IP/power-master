@@ -2317,3 +2317,12 @@ function resetWACB() {
         });
     });
 })();
+
+function toggleWeatherCard(card) {
+    card.classList.toggle('expanded');
+}
+
+function toggleStormDetail() {
+    var panel = document.getElementById('storm-detail-panel');
+    if (panel) panel.classList.toggle('open');
+}

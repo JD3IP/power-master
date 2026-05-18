@@ -38,6 +38,15 @@ def _weather_icon(cloud_avg: float, precip_sum: float, wind_max: float) -> str:
     return "sun"
 
 
+_WEATHER_DESCRIPTIONS = {
+    "sun": "Sunny",
+    "partly": "Partly Cloudy",
+    "cloud": "Overcast",
+    "rain": "Rain",
+    "wind": "Windy",
+}
+
+
 def _scheduled_load_names(slot: dict) -> list[str]:
     """Extract scheduled load names from a persisted plan slot row."""
     raw = slot.get("scheduled_loads_json")
@@ -188,6 +197,7 @@ async def overview(request: Request) -> HTMLResponse:
     weather = None
     weather_forecast_days: list[dict] = []
     storm_active = False
+    storm_alerts: list[dict] = []
     aggregator = getattr(request.app.state, "aggregator", None)
     if aggregator:
         agg_state = aggregator.state
@@ -215,20 +225,43 @@ async def overview(request: Request) -> HTMLResponse:
                 cloud_avg = sum(clouds) / max(len(clouds), 1)
                 precip_sum = sum(precips)
                 wind_max = max(winds) if winds else 0.0
+                icon = _weather_icon(cloud_avg, precip_sum, wind_max)
+                hourly_slots = [
+                    {
+                        "time": s.time.astimezone(local_tz).strftime("%H:%M"),
+                        "temp_c": round(s.temperature_c, 1),
+                        "precip_mm": round(s.precipitation_mm, 1),
+                        "wind_ms": round(s.wind_speed_ms, 1),
+                    }
+                    for s in day_slots
+                ]
                 weather_forecast_days.append(
                     {
                         "label": label,
-                        "icon": _weather_icon(cloud_avg, precip_sum, wind_max),
+                        "icon": icon,
+                        "description": _WEATHER_DESCRIPTIONS.get(icon, icon.capitalize()),
                         "temp_max_c": round(max(temps), 1),
                         "temp_min_c": round(min(temps), 1),
                         "cloud_avg_pct": round(cloud_avg, 0),
                         "precip_mm": round(precip_sum, 1),
                         "wind_max_ms": round(wind_max, 1),
+                        "hourly_slots": hourly_slots,
                     }
                 )
         storm_threshold = getattr(config, "storm", None)
         prob_threshold = getattr(storm_threshold, "probability_threshold", 0.5) if storm_threshold else 0.5
         storm_active = agg_state.storm_probability >= prob_threshold
+        if agg_state.storm and agg_state.storm.alerts:
+            _storm_tz = resolve_timezone(getattr(config.load_profile, "timezone", "UTC"))
+            for _alert in agg_state.storm.alerts:
+                storm_alerts.append({
+                    "location": _alert.location,
+                    "severity": _alert.severity,
+                    "probability": round(_alert.probability * 100),
+                    "description": _alert.description,
+                    "valid_from": _alert.valid_from.astimezone(_storm_tz).strftime("%a %d %b %H:%M") if _alert.valid_from else "",
+                    "valid_to": _alert.valid_to.astimezone(_storm_tz).strftime("%a %d %b %H:%M") if _alert.valid_to else "",
+                })
 
     # Upcoming prices for next 3 hours (6 x 30-min slots), from plan slots
     # with tariff forecast fallback.
@@ -454,6 +487,7 @@ async def overview(request: Request) -> HTMLResponse:
             "buy_price_bands": buy_price_bands,
             "sell_price_bands": sell_price_bands,
             "storm_active": storm_active,
+            "storm_alerts": storm_alerts,
             "devices": devices,
             "prev_plan_event": prev_plan_event,
             "next_plan_event": next_plan_event,

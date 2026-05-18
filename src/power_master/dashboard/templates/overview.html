@@ -287,14 +287,31 @@
             <div class="weather-forecast-grid">
                 {% if weather_forecast_days %}
                     {% for day in weather_forecast_days %}
-                    <div class="weather-day-card">
-                        <div class="weather-day-text">
-                            <div class="weather-day-head">{{ day.label }}</div>
-                            <div class="weather-day-main">{{ "%.0f"|format(day.temp_min_c) }}&deg; / {{ "%.0f"|format(day.temp_max_c) }}&deg;</div>
-                            <div class="weather-day-meta">{{ day.cloud_avg_pct|int }}% cloud &middot; {{ "%.1f"|format(day.precip_mm) }}mm</div>
+                    <div class="weather-day-card" onclick="toggleWeatherCard(this)">
+                        <div class="weather-day-top">
+                            <div class="weather-day-text">
+                                <div class="weather-day-head">{{ day.label }}</div>
+                                <div class="weather-day-main">{{ "%.0f"|format(day.temp_min_c) }}&deg; / {{ "%.0f"|format(day.temp_max_c) }}&deg;</div>
+                                <div class="weather-day-meta">{{ day.cloud_avg_pct|int }}% cloud &middot; {{ "%.1f"|format(day.precip_mm) }}mm</div>
+                            </div>
+                            <div class="weather-day-icon">
+                                <img src="/static/weather/{{ day.icon }}.svg" alt="{{ day.icon }} weather">
+                            </div>
                         </div>
-                        <div class="weather-day-icon">
-                            <img src="/static/weather/{{ day.icon }}.svg" alt="{{ day.icon }} weather">
+                        <div class="weather-day-expand">
+                            <div class="weather-expand-summary">{{ day.description }} &middot; {{ day.wind_max_ms }} m/s wind</div>
+                            {% if day.hourly_slots %}
+                            <div class="weather-hourly">
+                                {% for slot in day.hourly_slots %}
+                                <div class="weather-hourly-row">
+                                    <span class="wh-time">{{ slot.time }}</span>
+                                    <span class="wh-temp">{{ slot.temp_c | round | int }}&deg;</span>
+                                    <span class="wh-rain">{{ "%.1f"|format(slot.precip_mm) }}mm</span>
+                                    <span class="wh-wind">{{ slot.wind_ms }}m/s</span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
                         </div>
                     </div>
                     {% endfor %}
@@ -306,7 +323,7 @@
                 <span class="dash-label">Storm</span>
                 <span class="dash-value" id="storm-status">
                     {% if storm_active %}
-                        <span class="storm-pill storm-pill-alert">
+                        <span class="storm-pill storm-pill-alert" onclick="toggleStormDetail()" style="cursor:pointer">
                             Warning active
                         </span>
                     {% else %}
@@ -316,6 +333,23 @@
                     {% endif %}
                 </span>
             </div>
+            {% if storm_active and storm_alerts %}
+            <div class="storm-detail-panel" id="storm-detail-panel">
+                {% for alert in storm_alerts %}
+                <div class="storm-alert-card">
+                    <div class="storm-alert-header">
+                        <span class="storm-severity storm-severity--{{ alert.severity }}">{{ alert.severity | capitalize }}</span>
+                        <span class="storm-prob">{{ alert.probability }}%</span>
+                    </div>
+                    {% if alert.location %}<div class="storm-alert-location">{{ alert.location }}</div>{% endif %}
+                    {% if alert.description %}<div class="storm-alert-desc">{{ alert.description }}</div>{% endif %}
+                    {% if alert.valid_from or alert.valid_to %}
+                    <div class="storm-alert-valid">{{ alert.valid_from }}{% if alert.valid_to %} &rarr; {{ alert.valid_to }}{% endif %}</div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
         </div>
     </div>
 

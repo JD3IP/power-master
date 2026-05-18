@@ -1776,6 +1776,14 @@ h2:first-child {
     border-radius: 8px;
     padding: 10px;
     display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    cursor: pointer;
+}
+
+.weather-day-top {
+    display: flex;
     align-items: center;
     justify-content: center;
     gap: 0;
@@ -1868,6 +1876,123 @@ h2:first-child {
     color: var(--accent-green);
     border-color: rgba(63, 185, 80, 0.6);
     background: rgba(63, 185, 80, 0.12);
+}
+
+/* ── Weather expand ──────────────────────── */
+
+.weather-day-expand {
+    display: none;
+    border-top: 1px solid var(--border);
+    margin-top: 8px;
+    padding-top: 8px;
+}
+
+.weather-day-card.expanded .weather-day-expand {
+    display: block;
+}
+
+.weather-expand-summary {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+    text-align: center;
+}
+
+.weather-hourly {
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+.weather-hourly-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 0;
+    font-size: 11px;
+}
+
+.wh-time {
+    color: var(--text-muted);
+    min-width: 36px;
+}
+
+.wh-temp {
+    font-weight: 600;
+    color: var(--text-primary);
+    min-width: 30px;
+    text-align: right;
+}
+
+.wh-rain {
+    color: var(--accent-blue);
+    min-width: 38px;
+    text-align: right;
+}
+
+.wh-wind {
+    color: var(--text-secondary);
+    min-width: 42px;
+    text-align: right;
+}
+
+/* ── Storm detail panel ──────────────────── */
+
+.storm-detail-panel {
+    display: none;
+    margin-top: 6px;
+}
+
+.storm-detail-panel.open {
+    display: block;
+}
+
+.storm-alert-card {
+    background: rgba(248, 81, 73, 0.08);
+    border: 1px solid rgba(248, 81, 73, 0.3);
+    border-radius: 8px;
+    padding: 10px;
+    margin-top: 4px;
+    font-size: 12px;
+}
+
+.storm-alert-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.storm-severity {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.storm-severity--severe { color: var(--accent-red); }
+.storm-severity--moderate { color: #e3b341; }
+.storm-severity--low { color: var(--accent-green); }
+
+.storm-prob {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent-red);
+}
+
+.storm-alert-location {
+    font-weight: 600;
+    margin-bottom: 3px;
+    color: var(--text-primary);
+}
+
+.storm-alert-desc {
+    color: var(--text-secondary);
+    line-height: 1.4;
+    margin-bottom: 3px;
+}
+
+.storm-alert-valid {
+    font-size: 11px;
+    color: var(--text-muted);
 }
 
 /* ── Operating Status Bar ──────────────────────── */
