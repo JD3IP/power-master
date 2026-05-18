@@ -306,9 +306,19 @@ class UpdateManager:
             logger.info("Pulling %s:%s ...", GHCR_IMAGE, tag)
             client = docker_sdk.from_env()
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                None, lambda: client.images.pull(GHCR_IMAGE, tag=tag)
-            )
+            try:
+                await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None, lambda: client.images.pull(GHCR_IMAGE, tag=tag)
+                    ),
+                    timeout=300.0,
+                )
+            except asyncio.TimeoutError:
+                self._state.state = "failed"
+                self._state.error = "Image pull timed out after 5 minutes"
+                self._state.progress_message = ""
+                logger.error("Image pull timed out after 5 minutes")
+                return {"status": "error", "message": "Image pull timed out after 5 minutes"}
             logger.info("Image pulled successfully")
 
             # 2. Write update status so the new container knows it just updated
@@ -719,6 +729,12 @@ except Exception as e:
             UPDATE_STATUS_FILE.write_text(json.dumps(data))
         except Exception:
             logger.warning("Failed to write update status", exc_info=True)
+
+    def reset_state(self) -> None:
+        """Reset a stuck downloading/restarting/failed state back to idle."""
+        self._state.state = "idle"
+        self._state.error = ""
+        self._state.progress_message = ""
 
     def to_dict(self) -> dict:
         """Serialize state for API/SSE consumption."""

@@ -1587,6 +1587,17 @@ async def trigger_update(request: Request) -> dict:
     return result
 
 
+@router.post("/system/update/reset")
+async def reset_update_state(request: Request) -> dict:
+    """Reset a stuck update state back to idle."""
+    require_admin(request)
+    updater = getattr(request.app.state, "updater", None)
+    if updater is None:
+        return JSONResponse({"status": "error", "message": "Update manager not available"}, 503)
+    updater.reset_state()
+    return {"status": "ok", "message": "Update state reset"}
+
+
 @router.post("/system/update/stable")
 async def trigger_stable_update(request: Request) -> dict:
     """Trigger a self-update to the stable tag."""
