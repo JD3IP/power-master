@@ -447,7 +447,20 @@ try:
 
     print(f"Creating new container from {new_image}...")
     client.containers.run(new_image, **run_kwargs)
-    print(f"Container {name} recreated successfully")
+    # Wait and verify the container actually stays running — a crash on startup
+    # looks like success without this check because containers.run(detach=True)
+    # returns immediately without waiting for the process to stay alive.
+    time.sleep(8)
+    try:
+        new_container = client.containers.get(name)
+        state = new_container.attrs.get("State", {})
+        if not state.get("Running"):
+            exit_code = state.get("ExitCode", -1)
+            logs = new_container.logs(tail=30).decode("utf-8", errors="replace")
+            raise Exception(f"New container exited immediately (code {exit_code}):\n{logs}")
+        print(f"Container {name} recreated and running successfully")
+    except docker.errors.NotFound:
+        raise Exception(f"New container {name} not found after creation")
     try:
         client.containers.get(name + "-old").remove(force=True)
         print(f"Old container removed")
