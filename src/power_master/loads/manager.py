@@ -75,6 +75,10 @@ class LoadManager:
         # Track loads activated by scheduler vs externally
         self._scheduler_activated: set[str] = set()  # Loads turned ON by our scheduler
 
+        # Retry / lock state for scheduled OFF commands
+        self._pending_off: set[str] = set()   # OFF issued but not yet confirmed
+        self._confirmed_off: set[str] = set() # OFF confirmed — ignore state until next ON decision
+
     def register(self, controller: LoadController) -> None:
         """Register a load controller."""
         self._controllers[controller.load_id] = controller
@@ -383,53 +387,76 @@ class LoadManager:
             should_be_on = controller.name in scheduled_names
             status = await controller.get_status()
 
-            if should_be_on and status.state != LoadState.ON:
-                success = await self._verified_command(
-                    controller, "on", "scheduled", repo=repo,
-                )
-                cmd = LoadCommand(load_id=load_id, action="on", reason="scheduled", success=success)
-                commands.append(cmd)
-                self._command_history.append(cmd)
-                if success:
-                    self._scheduler_activated.add(load_id)
-                    # Persist immediately so we can turn off after restart
-                    if repo is not None:
-                        try:
-                            await repo.store_historical(
-                                data_type=f"load_scheduler_activated_{load_id}",
-                                value=1.0,
-                                source="runtime_tracker",
-                                resolution="1day",
-                            )
-                        except Exception:
-                            pass
-            elif not should_be_on and status.state == LoadState.ON:
-                # Only turn off loads that WE activated via scheduler.
-                # Externally activated loads (physical button, app) are left
-                # running and their runtime is credited toward minimums.
-                if load_id in self._scheduler_activated and load_id not in self._shed_loads:
+            if should_be_on:
+                # New control decision: this load should be ON — clear any OFF lock state
+                self._pending_off.discard(load_id)
+                self._confirmed_off.discard(load_id)
+
+                if status.state != LoadState.ON:
                     success = await self._verified_command(
-                        controller, "off", "schedule_ended", repo=repo,
+                        controller, "on", "scheduled", repo=repo,
                     )
-                    cmd = LoadCommand(
-                        load_id=load_id, action="off", reason="schedule_ended", success=success,
-                    )
+                    cmd = LoadCommand(load_id=load_id, action="on", reason="scheduled", success=success)
                     commands.append(cmd)
                     self._command_history.append(cmd)
                     if success:
-                        self._scheduler_activated.discard(load_id)
-                        # Clear persisted flag
+                        self._scheduler_activated.add(load_id)
+                        # Persist immediately so we can turn off after restart
                         if repo is not None:
                             try:
                                 await repo.store_historical(
                                     data_type=f"load_scheduler_activated_{load_id}",
-                                    value=0.0,
+                                    value=1.0,
                                     source="runtime_tracker",
                                     resolution="1day",
                                 )
                             except Exception:
                                 pass
-                elif load_id not in self._scheduler_activated:
+            elif not should_be_on:
+                # Only enforce OFF for loads WE activated (or are retrying to turn off).
+                # Externally activated loads are left running.
+                if load_id in self._confirmed_off:
+                    # OFF already confirmed this slot — ignore any state changes (e.g. manual flip)
+                    pass
+                elif (load_id in self._scheduler_activated or load_id in self._pending_off) \
+                        and load_id not in self._shed_loads:
+                    if status.state == LoadState.ON:
+                        if load_id in self._pending_off:
+                            logger.info(
+                                "Retrying OFF command for '%s' (previous attempt unconfirmed)",
+                                controller.name,
+                            )
+                        success = await self._verified_command(
+                            controller, "off", "schedule_ended", repo=repo,
+                        )
+                        cmd = LoadCommand(
+                            load_id=load_id, action="off", reason="schedule_ended", success=success,
+                        )
+                        commands.append(cmd)
+                        self._command_history.append(cmd)
+                        if success:
+                            self._scheduler_activated.discard(load_id)
+                            self._pending_off.discard(load_id)
+                            self._confirmed_off.add(load_id)
+                            # Clear persisted flag
+                            if repo is not None:
+                                try:
+                                    await repo.store_historical(
+                                        data_type=f"load_scheduler_activated_{load_id}",
+                                        value=0.0,
+                                        source="runtime_tracker",
+                                        resolution="1day",
+                                    )
+                                except Exception:
+                                    pass
+                        else:
+                            self._pending_off.add(load_id)
+                    else:
+                        # Load already reads OFF — treat as confirmed without issuing a command
+                        self._scheduler_activated.discard(load_id)
+                        self._pending_off.discard(load_id)
+                        self._confirmed_off.add(load_id)
+                elif load_id not in self._scheduler_activated and load_id not in self._pending_off:
                     logger.debug(
                         "Load '%s' is ON externally — counting runtime, not turning off",
                         controller.name,
