@@ -2318,8 +2318,14 @@ function resetWACB() {
     });
 })();
 
-function toggleWeatherCard(card) {
-    card.classList.toggle('expanded');
+function toggleWeatherExpand(idx) {
+    document.querySelectorAll('.weather-expand-panel').forEach(function(p, i) {
+        if (i === idx) {
+            p.classList.toggle('open');
+        } else {
+            p.classList.remove('open');
+        }
+    });
 }
 
 function toggleStormDetail() {

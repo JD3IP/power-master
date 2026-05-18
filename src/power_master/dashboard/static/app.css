@@ -1776,17 +1776,10 @@ h2:first-child {
     border-radius: 8px;
     padding: 10px;
     display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0;
-    cursor: pointer;
-}
-
-.weather-day-top {
-    display: flex;
     align-items: center;
     justify-content: center;
     gap: 0;
+    cursor: pointer;
 }
 
 .weather-day-text {
@@ -1880,14 +1873,14 @@ h2:first-child {
 
 /* ── Weather expand ──────────────────────── */
 
-.weather-day-expand {
+.weather-expand-panel {
     display: none;
     border-top: 1px solid var(--border);
     margin-top: 8px;
     padding-top: 8px;
 }
 
-.weather-day-card.expanded .weather-day-expand {
+.weather-expand-panel.open {
     display: block;
 }
 

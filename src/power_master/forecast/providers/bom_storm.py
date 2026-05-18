@@ -41,6 +41,8 @@ STORM_KEYWORDS = {
     "flash flooding": 0.8,
 }
 
+CANCELLATION_KEYWORDS = {"cancellation", "cancelled", "cancel", "all clear", "finalised", "finalized"}
+
 # Severity mapping for warning product IDs
 WARNING_PRODUCT_SEVERITY: dict[str, tuple[str, float]] = {
     "IDQ21033": ("severe", 0.9),    # Severe Thunderstorm Warning
@@ -116,6 +118,8 @@ class BOMStormProvider(StormProvider):
                     continue
 
                 precis = precis_elem.text.lower()
+                if any(kw in precis for kw in CANCELLATION_KEYWORDS):
+                    continue
                 probability = self._assess_storm_probability(precis)
 
                 if probability > 0.0:
@@ -221,6 +225,11 @@ class BOMStormProvider(StormProvider):
         combined_text = " ".join(warning_texts[:3])
         if not combined_text:
             combined_text = f"Active weather warning ({product_id})"
+
+        # Skip cancellation notices — they confirm the warning is over
+        if any(kw in combined_text.lower() for kw in CANCELLATION_KEYWORDS):
+            logger.info("Skipping %s — cancellation notice", product_id)
+            return alerts
 
         # Assess probability from warning text, use at least the product severity
         keyword_prob = self._assess_storm_probability(combined_text.lower())

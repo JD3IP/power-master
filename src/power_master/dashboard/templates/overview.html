@@ -287,31 +287,14 @@
             <div class="weather-forecast-grid">
                 {% if weather_forecast_days %}
                     {% for day in weather_forecast_days %}
-                    <div class="weather-day-card" onclick="toggleWeatherCard(this)">
-                        <div class="weather-day-top">
-                            <div class="weather-day-text">
-                                <div class="weather-day-head">{{ day.label }}</div>
-                                <div class="weather-day-main">{{ "%.0f"|format(day.temp_min_c) }}&deg; / {{ "%.0f"|format(day.temp_max_c) }}&deg;</div>
-                                <div class="weather-day-meta">{{ day.cloud_avg_pct|int }}% cloud &middot; {{ "%.1f"|format(day.precip_mm) }}mm</div>
-                            </div>
-                            <div class="weather-day-icon">
-                                <img src="/static/weather/{{ day.icon }}.svg" alt="{{ day.icon }} weather">
-                            </div>
+                    <div class="weather-day-card" onclick="toggleWeatherExpand({{ loop.index0 }})">
+                        <div class="weather-day-text">
+                            <div class="weather-day-head">{{ day.label }}</div>
+                            <div class="weather-day-main">{{ "%.0f"|format(day.temp_min_c) }}&deg; / {{ "%.0f"|format(day.temp_max_c) }}&deg;</div>
+                            <div class="weather-day-meta">{{ day.cloud_avg_pct|int }}% cloud &middot; {{ "%.1f"|format(day.precip_mm) }}mm</div>
                         </div>
-                        <div class="weather-day-expand">
-                            <div class="weather-expand-summary">{{ day.description }} &middot; {{ day.wind_max_ms }} m/s wind</div>
-                            {% if day.hourly_slots %}
-                            <div class="weather-hourly">
-                                {% for slot in day.hourly_slots %}
-                                <div class="weather-hourly-row">
-                                    <span class="wh-time">{{ slot.time }}</span>
-                                    <span class="wh-temp">{{ slot.temp_c | round | int }}&deg;</span>
-                                    <span class="wh-rain">{{ "%.1f"|format(slot.precip_mm) }}mm</span>
-                                    <span class="wh-wind">{{ slot.wind_ms }}m/s</span>
-                                </div>
-                                {% endfor %}
-                            </div>
-                            {% endif %}
+                        <div class="weather-day-icon">
+                            <img src="/static/weather/{{ day.icon }}.svg" alt="{{ day.icon }} weather">
                         </div>
                     </div>
                     {% endfor %}
@@ -319,6 +302,23 @@
                     <div class="weather-day-empty">No weather forecast data</div>
                 {% endif %}
             </div>
+            {% for day in weather_forecast_days %}
+            <div class="weather-expand-panel" id="weather-expand-{{ loop.index0 }}">
+                <div class="weather-expand-summary">{{ day.description }} &middot; {{ day.wind_max_ms }} m/s wind</div>
+                {% if day.hourly_slots %}
+                <div class="weather-hourly">
+                    {% for slot in day.hourly_slots %}
+                    <div class="weather-hourly-row">
+                        <span class="wh-time">{{ slot.time }}</span>
+                        <span class="wh-temp">{{ slot.temp_c | round | int }}&deg;</span>
+                        <span class="wh-rain">{{ "%.1f"|format(slot.precip_mm) }}mm</span>
+                        <span class="wh-wind">{{ slot.wind_ms }}m/s</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
             <div class="dash-row">
                 <span class="dash-label">Storm</span>
                 <span class="dash-value" id="storm-status">
