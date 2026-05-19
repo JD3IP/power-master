@@ -1221,6 +1221,7 @@
         <button type="button" class="btn" id="sys-check-btn" onclick="checkForUpdate()">Check Now</button>
         {% if not is_read_only %}
         <button type="button" class="btn btn-primary" id="sys-update-btn" onclick="triggerUpdate()" style="display:none;">Update Now</button>
+        <button type="button" class="btn" id="sys-reset-btn" onclick="resetUpdateState()" style="display:none; color: var(--text-muted);">Reset</button>
         {% endif %}
         <span id="sys-no-docker" style="display:none; font-size: 12px; color: var(--text-muted);">
             Self-update unavailable — Docker socket not mounted
@@ -1520,6 +1521,11 @@ function refreshSystemInfo() {
             if (progressBar) progressBar.style.display = 'none';
         }
 
+        var resetBtn = document.getElementById('sys-reset-btn');
+        if (resetBtn) {
+            resetBtn.style.display = (data.state === 'downloading' || data.state === 'restarting' || data.state === 'failed') ? 'inline-block' : 'none';
+        }
+
         // Show changelog if available
         var changelogContainer = document.getElementById('sys-changelog');
         var changelogContent = document.getElementById('sys-changelog-content');
@@ -1608,6 +1614,18 @@ function triggerUpdate() {
         alert('Update request failed: ' + err);
         btn.disabled = false;
         btn.textContent = 'Update Now';
+    });
+}
+
+function resetUpdateState() {
+    var btn = document.getElementById('sys-reset-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Resetting...'; }
+    fetch('/api/system/update/reset', { method: 'POST' })
+    .then(function(r) { return r.json(); })
+    .then(function() { refreshSystemInfo(); })
+    .catch(function() { refreshSystemInfo(); })
+    .finally(function() {
+        if (btn) { btn.disabled = false; btn.textContent = 'Reset'; }
     });
 }
 
