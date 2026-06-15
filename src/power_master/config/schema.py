@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import re
+from datetime import date
 from typing import Literal
+from zoneinfo import ZoneInfo, available_timezones
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class BatteryConfig(BaseModel):
@@ -148,13 +151,343 @@ class StormProviderConfig(BaseModel):
     validity_seconds: int = 21600
 
 
+# ============================================================================
+# TOU Tariff DSL Models (per plan §3.1)
+# ============================================================================
+
+class BandBase(BaseModel):
+    """Base band definition shared by import and free windows."""
+    descriptor: str = Field(description="Band name/identifier (e.g., 'peak', 'off-peak')")
+    windows: list[str] = Field(
+        default_factory=list,
+        description="List of time windows in HH:MM-HH:MM format. Empty list = default/shoulder band."
+    )
+    rate_c_per_kwh: float = Field(description="Rate in cents per kWh")
+
+    @field_validator("windows")
+    @classmethod
+    def validate_windows(cls, v: list[str]) -> list[str]:
+        """Validate window format HH:MM-HH:MM with valid hour/minute ranges.
+
+        Midnight-crossing windows (e.g., 22:00-07:00) are allowed.
+        """
+        for window in v:
+            if not isinstance(window, str):
+                raise ValueError(f"Window must be string, got {type(window)}")
+            if not re.match(r"^\d{2}:\d{2}-\d{2}:\d{2}$", window):
+                raise ValueError(f"Window must match HH:MM-HH:MM format, got '{window}'")
+            start_str, end_str = window.split("-")
+            start_h, start_m = map(int, start_str.split(":"))
+            end_h, end_m = map(int, end_str.split(":"))
+
+            if not (0 <= start_h <= 23) or not (0 <= start_m <= 59):
+                raise ValueError(f"Invalid start time in window '{window}': {start_str}")
+            if not (0 <= end_h <= 23) or not (0 <= end_m <= 59):
+                raise ValueError(f"Invalid end time in window '{window}': {end_str}")
+
+        return v
+
+
+class FreeWindowConfig(BaseModel):
+    """Free/subsidised import window (capped per day)."""
+    name: str = Field(description="Window name (e.g., 'four4free')")
+    windows: list[str] = Field(description="Time windows in HH:MM-HH:MM format")
+    rate_c_per_kwh: float = Field(description="Rate (typically 0.0 for free)")
+    cap_kwh_per_day: float = Field(description="Daily cap in kWh (resets at local midnight)")
+    applies_to_channel: str = Field(
+        default="general",
+        description="Channel this applies to (e.g., 'general', 'controlled_load')"
+    )
+    over_cap_falls_back_to: str = Field(
+        description="Band descriptor to use when daily cap is exhausted"
+    )
+
+    @field_validator("windows")
+    @classmethod
+    def validate_windows(cls, v: list[str]) -> list[str]:
+        """Validate window format; delegate to BandBase validator."""
+        BandBase.validate_windows(v)
+        return v
+
+
+class FeedInTier(BaseModel):
+    """Per-day volume tier for feed-in (export) rates."""
+    up_to_kwh_per_day: float | None = Field(
+        default=None,
+        description="Tier cap in kWh/day; None = open-ended (must be last tier)"
+    )
+    rate_c_per_kwh: float = Field(description="Rate in cents per kWh for this tier")
+
+
+class FeedInBand(BaseModel):
+    """Feed-in (export) band with optional volume tiers."""
+    name: str = Field(description="Band name (e.g., 'evening-premium')")
+    windows: list[str] = Field(
+        default_factory=list,
+        description="Time windows in HH:MM-HH:MM format. Empty = applies to all times (fallback)."
+    )
+    # Support both flat rate (rate_c_per_kwh) and tiered (tiers) shapes
+    tiers: list[FeedInTier] = Field(
+        default_factory=list,
+        description="Volume tiers (mutually exclusive with rate_c_per_kwh)"
+    )
+    rate_c_per_kwh: float | None = Field(
+        default=None,
+        description="Flat rate (if tiers not used). Mutually exclusive with tiers."
+    )
+
+    @field_validator("windows")
+    @classmethod
+    def validate_windows(cls, v: list[str]) -> list[str]:
+        """Validate window format."""
+        BandBase.validate_windows(v)
+        return v
+
+    @model_validator(mode="after")
+    def validate_shape_and_tiers(self) -> FeedInBand:
+        """Ensure either tiers or flat rate is set (not both), and tiers are ordered."""
+        # Check that exactly one of tiers or rate_c_per_kwh is set
+        has_tiers = len(self.tiers) > 0
+        has_flat_rate = self.rate_c_per_kwh is not None
+
+        if has_tiers and has_flat_rate:
+            raise ValueError(
+                f"FeedInBand '{self.name}': cannot specify both 'tiers' and 'rate_c_per_kwh'"
+            )
+        if not has_tiers and not has_flat_rate:
+            raise ValueError(
+                f"FeedInBand '{self.name}': must specify either 'tiers' or 'rate_c_per_kwh'"
+            )
+
+        # Validate tier ordering: non-null up_to_kwh_per_day must be ascending
+        # and at most one null (open-ended) tier, which must be last
+        non_null_tiers = [(t.up_to_kwh_per_day, i) for i, t in enumerate(self.tiers) if t.up_to_kwh_per_day is not None]
+        null_tiers = [i for i, t in enumerate(self.tiers) if t.up_to_kwh_per_day is None]
+
+        if len(null_tiers) > 1:
+            raise ValueError(
+                f"FeedInBand '{self.name}': at most one tier with null up_to_kwh_per_day allowed"
+            )
+
+        if null_tiers and non_null_tiers:
+            last_non_null_idx = non_null_tiers[-1][1]
+            null_idx = null_tiers[0]
+            if last_non_null_idx > null_idx:
+                raise ValueError(
+                    f"FeedInBand '{self.name}': null up_to_kwh_per_day tier must come last"
+                )
+
+        # Check ascending order of non-null caps
+        for i in range(len(non_null_tiers) - 1):
+            curr_cap, curr_idx = non_null_tiers[i]
+            next_cap, next_idx = non_null_tiers[i + 1]
+            if curr_cap >= next_cap:
+                raise ValueError(
+                    f"FeedInBand '{self.name}': tier caps must be strictly ascending, "
+                    f"but tier {curr_idx} ({curr_cap} kWh) >= tier {next_idx} ({next_cap} kWh)"
+                )
+
+        return self
+
+
+class CreditConfig(BaseModel):
+    """Conditional daily reward (e.g., ZEROHERO evening low-import credit)."""
+    name: str = Field(description="Credit name (e.g., 'zerohero-evening')")
+    type: str = Field(description="Credit type (e.g., 'low_import_window')")
+    windows: list[str] = Field(description="Time windows in HH:MM-HH:MM format")
+    max_import_kwh_per_hour: float = Field(
+        description="Max hourly import threshold to earn the credit"
+    )
+    reward_dollars_per_day: float = Field(description="Daily reward in dollars if earned")
+    enforcement: str = Field(
+        default="soft",
+        description="'soft' (penalty) or 'hard' (constraint+slack)"
+    )
+    credit_priority_weight: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Weight [0,1] to trade credit vs. other objectives (e.g., export revenue)"
+    )
+
+    @field_validator("windows")
+    @classmethod
+    def validate_windows(cls, v: list[str]) -> list[str]:
+        """Validate window format."""
+        BandBase.validate_windows(v)
+        return v
+
+    @field_validator("enforcement")
+    @classmethod
+    def validate_enforcement(cls, v: str) -> str:
+        """Validate enforcement mode."""
+        if v not in ("soft", "hard"):
+            raise ValueError(f"enforcement must be 'soft' or 'hard', got '{v}'")
+        return v
+
+
+class BillingCycleConfig(BaseModel):
+    """Billing cycle metadata (for supply charge and reporting; free allowance is per-DAY)."""
+    length_days: int = Field(description="Cycle length in days")
+    anchor_date: date = Field(description="Cycle start reference (YYYY-MM-DD)")
+
+
+class VPPConfig(BaseModel):
+    """VPP seam (stub only; no active logic this milestone)."""
+    enabled: bool = Field(
+        default=False,
+        description="Future: yield control / accept event pricing (OpenADR-style)"
+    )
+
+
+class TariffVersion(BaseModel):
+    """Versioned tariff definition (valid between dates)."""
+    valid_from: date = Field(description="Version effective date (YYYY-MM-DD)")
+    valid_until: date | None = Field(
+        default=None,
+        description="Version end date (None = open-ended, superseded by next version)"
+    )
+    import_bands: list[BandBase] = Field(
+        description="Import bands; one with empty windows = default/shoulder band"
+    )
+    free_windows: list[FreeWindowConfig] = Field(
+        default_factory=list,
+        description="Free/subsidised import windows with daily caps"
+    )
+    feed_in_bands: list[FeedInBand] = Field(
+        default_factory=list,
+        description="Export bands with optional volume tiers"
+    )
+    credits: list[CreditConfig] = Field(
+        default_factory=list,
+        description="Conditional daily rewards"
+    )
+
+    @model_validator(mode="after")
+    def validate_version(self) -> TariffVersion:
+        """Validate version: must have at least one import band (incl. default)."""
+        if not self.import_bands:
+            raise ValueError(
+                f"TariffVersion valid_from={self.valid_from}: must have at least one import_band"
+            )
+
+        # Check that there is at least one default band (with no windows)
+        default_bands = [b for b in self.import_bands if not b.windows]
+        if not default_bands:
+            raise ValueError(
+                f"TariffVersion valid_from={self.valid_from}: must have at least one "
+                "import_band with no windows (default/shoulder band)"
+            )
+
+        # Validate band name references in free_windows
+        import_band_descriptors = {b.descriptor for b in self.import_bands}
+        for fw in self.free_windows:
+            if fw.over_cap_falls_back_to not in import_band_descriptors:
+                raise ValueError(
+                    f"TariffVersion valid_from={self.valid_from}, "
+                    f"free_window '{fw.name}': over_cap_falls_back_to '{fw.over_cap_falls_back_to}' "
+                    f"does not match any import_band descriptor. Available: {import_band_descriptors}"
+                )
+
+        return self
+
+
+class TariffPlanConfig(BaseModel):
+    """TOU tariff plan definition (selected via providers.tariff.type: 'tou')."""
+    versions: list[TariffVersion] = Field(
+        description="Versioned definitions ordered by valid_from date"
+    )
+    billing_cycle: BillingCycleConfig = Field(
+        description="Billing cycle for supply charge / reporting"
+    )
+    vpp: VPPConfig = Field(
+        default_factory=VPPConfig,
+        description="VPP seam (stub only)"
+    )
+    supply_charge_c_per_day: float = Field(
+        description="Daily supply charge in cents"
+    )
+
+    @model_validator(mode="after")
+    def validate_plan(self) -> TariffPlanConfig:
+        """Validate plan: must have at least one version."""
+        if not self.versions:
+            raise ValueError("TariffPlanConfig: must have at least one version")
+        return self
+
+
 class TariffProviderConfig(BaseModel):
-    type: str = "amber"
-    api_key: str = ""
-    site_id: str = ""
-    update_interval_seconds: int = 300
-    validity_seconds: int = 300
-    max_requests_per_5min: int = 50
+    """Tariff provider configuration (supports 'amber' legacy path and new 'tou')."""
+    type: str = Field(
+        default="amber",
+        description="'amber' (legacy spot pricing) | 'tou' (TOU tariff from DSL) | future types"
+    )
+    # Amber legacy fields (kept for backward compatibility)
+    api_key: str = Field(default="", description="Amber API key (for type='amber')")
+    site_id: str = Field(default="", description="Amber site ID (for type='amber')")
+    update_interval_seconds: int = Field(default=300, description="Update interval in seconds")
+    validity_seconds: int = Field(default=300, description="Data validity in seconds")
+    max_requests_per_5min: int = Field(default=50, description="Rate limit for Amber API")
+
+    # TOU tariff fields
+    timezone: str | None = Field(
+        default=None,
+        description="IANA timezone (REQUIRED when type='tou'). E.g., 'Australia/Brisbane'"
+    )
+    plan: TariffPlanConfig | None = Field(
+        default=None,
+        description="TOU tariff plan DSL (REQUIRED when type='tou')"
+    )
+
+    # Grid charge policy (universal knob per plan §5.6)
+    grid_charge_policy: str = Field(
+        default="free_window_and_solar_only",
+        description="'free_window_and_solar_only' (default, no panic-import) | 'allow_arbitrage'"
+    )
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, v: str | None, info) -> str | None:
+        """Validate timezone is a valid IANA zone (required when type='tou')."""
+        data = info.data
+        if data.get("type") == "tou" and not v:
+            raise ValueError(
+                "timezone is REQUIRED when type='tou' (e.g., 'Australia/Brisbane')"
+            )
+
+        if v is not None:
+            # Check if it's a valid IANA timezone
+            try:
+                ZoneInfo(v)
+            except KeyError:
+                raise ValueError(
+                    f"Invalid IANA timezone: '{v}'. "
+                    f"Must be a valid timezone name (e.g., 'Australia/Brisbane')"
+                )
+
+        return v
+
+    @model_validator(mode="after")
+    def validate_tou_requirements(self) -> TariffProviderConfig:
+        """Validate TOU-specific requirements."""
+        if self.type == "tou":
+            if not self.plan:
+                raise ValueError(
+                    "plan is REQUIRED when type='tou'"
+                )
+            if not self.timezone:
+                raise ValueError(
+                    "timezone is REQUIRED when type='tou'"
+                )
+
+        # Validate grid_charge_policy
+        if self.grid_charge_policy not in ("free_window_and_solar_only", "allow_arbitrage"):
+            raise ValueError(
+                f"grid_charge_policy must be 'free_window_and_solar_only' or 'allow_arbitrage', "
+                f"got '{self.grid_charge_policy}'"
+            )
+
+        return self
 
 
 class ProvidersConfig(BaseModel):
