@@ -48,16 +48,27 @@ def _make_mqtt_config(**kwargs) -> MQTTLoadEndpointConfig:
     return MQTTLoadEndpointConfig(**defaults)
 
 
-def _make_plan(n_slots: int = 8, solar_w: float = 0.0, load_w: float = 500.0) -> OptimisationPlan:
-    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+def _make_plan(
+    n_slots: int = 8,
+    solar_w: float = 0.0,
+    load_w: float = 500.0,
+    start: datetime | None = None,
+) -> OptimisationPlan:
+    # Fixed anchor time: 2026-06-16 02:00 UTC = Brisbane 12:00 (noon)
+    # This ensures tests are deterministic regardless of wall-clock time of day.
+    # Tests that need a specific time window (e.g., testing evening slots) should
+    # pass an explicit start= parameter.
+    if start is None:
+        start = datetime(2026, 6, 16, 2, 0, tzinfo=timezone.utc)
+    now = start.replace(minute=0, second=0, microsecond=0)
     slots = []
     for i in range(n_slots):
-        start = now + timedelta(minutes=30 * i)
-        end = start + timedelta(minutes=30)
+        slot_start = now + timedelta(minutes=30 * i)
+        slot_end = slot_start + timedelta(minutes=30)
         slots.append(PlanSlot(
             index=i,
-            start=start,
-            end=end,
+            start=slot_start,
+            end=slot_end,
             mode=SlotMode.SELF_USE,
             solar_forecast_w=solar_w,
             load_forecast_w=load_w,
