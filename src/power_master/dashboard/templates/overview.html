@@ -220,6 +220,69 @@
     </div>
     {% endif %}
 
+    <!-- ── EV Charger Status (visible only when enabled) ──── -->
+    {% if ev_context %}
+    <div class="dash-panel dash-panel--compact">
+        <div class="dash-panel-title">EV Charger</div>
+        <div class="dash-panel-body">
+            <!-- Charger rated power and controllable state -->
+            <div class="dash-row">
+                <span class="dash-label">Capacity</span>
+                <span class="dash-value">
+                    {{ "%.1f"|format(ev_context.charger_kw) }} kW
+                    {% if not ev_context.controllable %}
+                        <span style="font-size: 0.85em; color: var(--text-muted);">
+                            (monitored — dumb timer, not yet controllable)
+                        </span>
+                    {% else %}
+                        <span style="font-size: 0.85em; color: var(--text-muted);">
+                            (controllable)
+                        </span>
+                    {% endif %}
+                </span>
+            </div>
+
+            <!-- Charge window and expected nightly draw -->
+            {% if ev_context.charge_window is not none or ev_context.expected_nightly_kwh is not none %}
+            <div class="dash-row">
+                <span class="dash-label">Nightly Charge</span>
+                <span class="dash-value">
+                    {% if ev_context.charge_window %}{{ ev_context.charge_window }}{% else %}--{% endif %}
+                    {% if ev_context.expected_nightly_kwh is not none %}
+                        • {{ "%.1f"|format(ev_context.expected_nightly_kwh) }} kWh expected
+                    {% endif %}
+                </span>
+            </div>
+            {% endif %}
+
+            <!-- Charging modes -->
+            <div class="dash-row">
+                <span class="dash-label">Modes</span>
+                <span class="dash-value">
+                    {% set modes = [] %}
+                    {% if ev_context.mode_min_nightly_kwh is not none %}
+                        {% set _ = modes.append("Min " + ("%.1f"|format(ev_context.mode_min_nightly_kwh)) + " kWh") %}
+                    {% endif %}
+                    {% if ev_context.mode_opportunistic %}
+                        {% set _ = modes.append("Opportunistic") %}
+                    {% endif %}
+                    {% if modes|length > 0 %}
+                        {{ modes|join(", ") }}
+                    {% else %}
+                        Off (awaiting control, Phase 4)
+                    {% endif %}
+                </span>
+            </div>
+
+            <!-- Solver awareness note -->
+            <div class="dash-row" style="font-size: 0.9em; color: var(--text-muted);">
+                <span class="dash-label" style="font-size: 0.9em;">Status</span>
+                <span class="dash-value" style="font-size: 0.9em;">Solver provisions battery for EV draw</span>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- ── ENERGY COST Panel ───────────────────────── -->
     <div class="dash-panel">
         <div class="dash-panel-title">Energy Cost</div>

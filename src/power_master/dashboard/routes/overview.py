@@ -571,6 +571,18 @@ async def overview(request: Request) -> HTMLResponse:
 
         tou_context["credit_status"] = credit_status
 
+    # EV awareness view: when enabled, show charger state, window, and mode config
+    ev_context = None
+    if config.ev.enabled:
+        ev_context = {
+            "charger_kw": config.ev.charger_kw,
+            "controllable": config.ev.controllable,
+            "charge_window": config.ev.charge_window,
+            "expected_nightly_kwh": config.ev.expected_nightly_kwh,
+            "mode_min_nightly_kwh": config.ev.mode.min_nightly_kwh,
+            "mode_opportunistic": config.ev.mode.opportunistic,
+        }
+
     return templates.TemplateResponse(
         request,
         "overview.html",
@@ -594,6 +606,7 @@ async def overview(request: Request) -> HTMLResponse:
             "prev_plan_event": prev_plan_event,
             "next_plan_event": next_plan_event,
             "tou_context": tou_context,
+            "ev_context": ev_context,
         },
     )
 
