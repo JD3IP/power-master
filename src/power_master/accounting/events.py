@@ -20,9 +20,10 @@ class AccountingEvent:
     cost_basis_cents: int = 0  # WACB-based cost of discharged energy
     profit_loss_cents: int = 0  # For arbitrage: revenue - cost_basis
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    provider_type: str = "amber"  # "amber" | "tou" | other provider types; for era segmentation
 
 
-def create_import_event(energy_wh: int, rate_cents: float) -> AccountingEvent:
+def create_import_event(energy_wh: int, rate_cents: float, provider_type: str = "amber") -> AccountingEvent:
     """Create an event for grid import (cost)."""
     kwh = energy_wh / 1000
     cost = int(kwh * rate_cents)
@@ -31,10 +32,13 @@ def create_import_event(energy_wh: int, rate_cents: float) -> AccountingEvent:
         energy_wh=energy_wh,
         rate_cents=rate_cents,
         cost_cents=cost,
+        provider_type=provider_type,
     )
 
 
-def create_export_event(energy_wh: int, rate_cents: float, cost_basis_cents: int = 0) -> AccountingEvent:
+def create_export_event(
+    energy_wh: int, rate_cents: float, cost_basis_cents: int = 0, provider_type: str = "amber",
+) -> AccountingEvent:
     """Create an event for grid export (revenue)."""
     kwh = energy_wh / 1000
     revenue = int(kwh * rate_cents)
@@ -46,10 +50,11 @@ def create_export_event(energy_wh: int, rate_cents: float, cost_basis_cents: int
         cost_cents=-revenue,  # Negative = revenue
         cost_basis_cents=cost_basis_cents,
         profit_loss_cents=profit,
+        provider_type=provider_type,
     )
 
 
-def create_self_consumption_event(energy_wh: int, avoided_rate_cents: float) -> AccountingEvent:
+def create_self_consumption_event(energy_wh: int, avoided_rate_cents: float, provider_type: str = "amber") -> AccountingEvent:
     """Create an event for self-consumption (avoided import cost)."""
     kwh = energy_wh / 1000
     value = int(kwh * avoided_rate_cents)
@@ -58,4 +63,5 @@ def create_self_consumption_event(energy_wh: int, avoided_rate_cents: float) -> 
         energy_wh=energy_wh,
         rate_cents=avoided_rate_cents,
         cost_cents=-value,  # Negative = savings
+        provider_type=provider_type,
     )

@@ -66,6 +66,8 @@ async def _apply_migrations(
         await _migrate_v2_to_v3(db)
     if from_version < 4:
         await _migrate_v3_to_v4(db)
+    if from_version < 5:
+        await _migrate_v4_to_v5(db)
 
 
 async def _migrate_v1_to_v2(db: aiosqlite.Connection) -> None:
@@ -155,3 +157,14 @@ async def _migrate_v3_to_v4(db: aiosqlite.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_audit_source_type ON command_audit_log(source_type, issued_at)"
     )
     logger.info("Migrated to v4: command_audit_log table created")
+
+
+async def _migrate_v4_to_v5(db: aiosqlite.Connection) -> None:
+    """Add provider_type column to accounting_events for era segmentation (Amber→TOU cutover)."""
+    await db.execute(
+        "ALTER TABLE accounting_events ADD COLUMN provider_type TEXT NOT NULL DEFAULT 'amber'"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_events_provider ON accounting_events(provider_type, started_at)"
+    )
+    logger.info("Migrated to v5: provider_type column added to accounting_events")

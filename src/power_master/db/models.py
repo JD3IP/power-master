@@ -1,6 +1,6 @@
 """SQL table definitions for all database tables."""
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 TABLES = [
     # ── Config ──────────────────────────────────────────────
@@ -169,12 +169,14 @@ TABLES = [
         billing_cycle_id    INTEGER,
         plan_id             INTEGER,
         notes               TEXT,
+        provider_type       TEXT NOT NULL DEFAULT 'amber',
         FOREIGN KEY (billing_cycle_id) REFERENCES billing_cycles(id),
         FOREIGN KEY (plan_id) REFERENCES optimisation_plans(id)
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_events_billing ON accounting_events(billing_cycle_id)",
     "CREATE INDEX IF NOT EXISTS idx_events_type ON accounting_events(event_type, started_at)",
+    "CREATE INDEX IF NOT EXISTS idx_events_provider ON accounting_events(provider_type, started_at)",
 
     # ── Billing Cycles ──────────────────────────────────────
     """

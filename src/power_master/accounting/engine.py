@@ -41,6 +41,7 @@ class AccountingEngine:
     """Orchestrates all financial tracking for the system.
 
     Called by the control loop to record energy flows and compute P&L.
+    Supports provider/era segmentation for cutover scenarios (e.g., Amber → TOU).
     """
 
     def __init__(self, config: AppConfig, initial_soc: float = 0.5, initial_wacb: float = 0.0) -> None:
@@ -51,6 +52,8 @@ class AccountingEngine:
         self._billing = BillingCycleManager(config.accounting.billing_cycle_day)
         self._events: list[AccountingEvent] = []
         self._repo = None
+        # Provider/era tracking: set dynamically via set_provider_type() if provider changes
+        self._provider_type = config.providers.tariff.type if hasattr(config.providers.tariff, 'type') else "amber"
 
     async def init_persistence(self, repo) -> None:
         """Load persisted accounting state and wire up auto-save."""
@@ -172,9 +175,18 @@ class AccountingEngine:
                 rate_cents=int(event.rate_cents),
                 cost_basis_cents=event.cost_basis_cents,
                 profit_loss_cents=event.profit_loss_cents,
+                provider_type=event.provider_type,
             )
         except Exception:
             logger.warning("Failed to persist accounting event", exc_info=True)
+
+    def set_provider_type(self, provider_type: str) -> None:
+        """Set the active provider type for subsequent accounting events.
+
+        Called when switching tariffs (e.g., Amber → TOU).
+        """
+        self._provider_type = provider_type
+        logger.info("Accounting provider/era changed to: %s", provider_type)
 
     @property
     def wacb_cents(self) -> float:
@@ -188,9 +200,14 @@ class AccountingEngine:
     def billing(self) -> BillingCycleManager:
         return self._billing
 
+    @property
+    def provider_type(self) -> str:
+        """Current active provider type (for era segmentation)."""
+        return self._provider_type
+
     async def record_grid_import(self, energy_wh: int, rate_cents: float) -> AccountingEvent:
         """Record grid import: cost to buy + WACB update if charging."""
-        event = create_import_event(energy_wh, rate_cents)
+        event = create_import_event(energy_wh, rate_cents, provider_type=self._provider_type)
         self._events.append(event)
 
         cycle = self._billing.get_or_create_cycle()
@@ -211,7 +228,7 @@ class AccountingEngine:
     async def record_grid_export(self, energy_wh: int, rate_cents: float) -> AccountingEvent:
         """Record grid export: revenue + P&L calculation."""
         cost_basis = round(self._cost_basis.record_discharge(energy_wh))
-        event = create_export_event(energy_wh, rate_cents, cost_basis)
+        event = create_export_event(energy_wh, rate_cents, cost_basis, provider_type=self._provider_type)
         self._events.append(event)
 
         cycle = self._billing.get_or_create_cycle()
@@ -226,7 +243,7 @@ class AccountingEngine:
 
     async def record_self_consumption(self, energy_wh: int, avoided_rate_cents: float) -> AccountingEvent:
         """Record self-consumption: savings from using PV/battery instead of grid."""
-        event = create_self_consumption_event(energy_wh, avoided_rate_cents)
+        event = create_self_consumption_event(energy_wh, avoided_rate_cents, provider_type=self._provider_type)
         self._events.append(event)
 
         cycle = self._billing.get_or_create_cycle()
@@ -270,3 +287,10 @@ class AccountingEngine:
     def get_recent_events(self, count: int = 50) -> list[AccountingEvent]:
         """Get the most recent accounting events."""
         return self._events[-count:]
+
+    def get_events_by_provider(self, provider_type: str) -> list[AccountingEvent]:
+        """Get all in-memory accounting events for a specific provider/era.
+
+        Useful for debugging or testing provider cutover scenarios.
+        """
+        return [e for e in self._events if e.provider_type == provider_type]

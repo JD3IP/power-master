@@ -562,16 +562,17 @@ class Repository:
         billing_cycle_id: int | None = None,
         plan_id: int | None = None,
         notes: str | None = None,
+        provider_type: str = "amber",
     ) -> int:
         now = _now()
         async with self.db.execute(
             """INSERT INTO accounting_events
                (event_type, started_at, energy_wh, cost_cents, rate_cents,
-                cost_basis_cents, profit_loss_cents, billing_cycle_id, plan_id, notes)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                cost_basis_cents, profit_loss_cents, billing_cycle_id, plan_id, notes, provider_type)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 event_type, now, energy_wh, cost_cents, rate_cents,
-                cost_basis_cents, profit_loss_cents, billing_cycle_id, plan_id, notes,
+                cost_basis_cents, profit_loss_cents, billing_cycle_id, plan_id, notes, provider_type,
             ),
         ) as cursor:
             row_id = cursor.lastrowid
@@ -583,6 +584,26 @@ class Repository:
             "SELECT * FROM accounting_events WHERE started_at >= ? ORDER BY started_at DESC",
             (cutoff_iso,),
         ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+    async def get_accounting_events_by_provider(
+        self, provider_type: str, start_iso: str | None = None, end_iso: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Query accounting events filtered by provider type and optional date range.
+
+        Useful for era-based reporting after a provider/tariff cutover.
+        """
+        query = "SELECT * FROM accounting_events WHERE provider_type = ?"
+        params: list[Any] = [provider_type]
+        if start_iso is not None:
+            query += " AND started_at >= ?"
+            params.append(start_iso)
+        if end_iso is not None:
+            query += " AND started_at <= ?"
+            params.append(end_iso)
+        query += " ORDER BY started_at"
+        async with self.db.execute(query, params) as cursor:
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
 
