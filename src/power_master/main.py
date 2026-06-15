@@ -1760,15 +1760,39 @@ class Application:
         export_rate_cents = [5.0] * n_slots
         is_spike = [False] * n_slots
 
+        # Phase 2: Volume-tiered export structures
+        from power_master.optimisation.solver import ExportTier, ExportTierStructure
+        export_tier_structures = [ExportTierStructure() for _ in range(n_slots)]
+
         if state.has_tariff and state.tariff:
             matched_count = 0
             unmatched = []
+            # Get tariff provider if available (Phase 2: volume-tiered export)
+            tariff_provider = aggregator.tariff_provider
+
             for i, t in enumerate(slot_start_times):
                 tariff_slot = state.tariff.get_slot_at(t)
                 if tariff_slot:
                     import_rate_cents[i] = tariff_slot.import_price_cents
                     export_rate_cents[i] = tariff_slot.export_price_cents
                     is_spike[i] = tariff_slot.import_price_cents >= self.config.arbitrage.spike_threshold_cents
+
+                    # Phase 2: Build tier structure from StaticTariffProvider (if available)
+                    if tariff_provider and hasattr(tariff_provider, "get_export_tier_structure"):
+                        local_time = t.astimezone(tariff_provider._tz) if hasattr(tariff_provider, "_tz") else t
+                        local_date = local_time.date()
+                        in_tiered, tier_tuples = tariff_provider.get_export_tier_structure(local_time, local_date)
+                        if in_tiered and tier_tuples:
+                            tiers = [
+                                ExportTier(up_to_kwh_per_day=cap, rate_c_per_kwh=rate)
+                                for cap, rate in tier_tuples
+                            ]
+                            export_tier_structures[i] = ExportTierStructure(
+                                in_tiered_window=True,
+                                tiers=tiers,
+                                local_date=local_date,
+                            )
+
                     matched_count += 1
                 else:
                     unmatched.append(i)
@@ -1788,6 +1812,7 @@ class Application:
                     import_rate_cents[i] = import_rate_cents[nearest]
                     export_rate_cents[i] = export_rate_cents[nearest]
                     is_spike[i] = is_spike[nearest]
+                    export_tier_structures[i] = export_tier_structures[nearest]
 
             tariff_slots = state.tariff.slots
             gap_filled = len(unmatched)
@@ -1828,6 +1853,7 @@ class Application:
             storm_active=storm_monitor.is_active,
             storm_reserve_soc=storm_monitor.reserve_soc,
             slot_start_times=slot_start_times,
+            export_tier_structures=export_tier_structures,
         )
 
         # Run solver in thread pool to avoid blocking

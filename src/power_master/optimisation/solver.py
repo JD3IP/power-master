@@ -33,6 +33,83 @@ from power_master.timezone_utils import resolve_timezone
 logger = logging.getLogger(__name__)
 
 
+def _add_export_tier_constraints(
+    prob: pulp.LpProblem,
+    t: int,
+    grid_export: pulp.LpVariable,
+    export_tier_vars: list[pulp.LpVariable],
+    tier_struct: "ExportTierStructure",
+    slot_hours: float,
+) -> None:
+    """Add per-slot tier decomposition constraints.
+
+    For slots in tiered windows: sum_k export_tier_k[t] == grid_export[t].
+    For non-tiered slots: export_tier_vars[t] is empty; no constraint needed.
+    """
+    if not export_tier_vars:
+        return
+
+    # Decomposition: sum of tier exports = total export
+    prob += pulp.lpSum(export_tier_vars) == grid_export, f"export_tier_decomp_{t}"
+
+
+def _add_export_tier_caps(
+    prob: pulp.LpProblem,
+    n_slots: int,
+    slot_hours: float,
+    export_tier_vars: list[list[pulp.LpVariable]],
+    tier_structs: list["ExportTierStructure"],
+) -> None:
+    """Add per-day cumulative tier cap constraints.
+
+    For each tier k with a non-null cap, sum the kWh exported in that tier
+    across all slots of the same local day, and enforce <= cap_kwh_per_day.
+
+    Open-ended tiers (cap=None) have no constraint.
+    """
+    from datetime import date
+    from collections import defaultdict
+
+    # Group slots by (local_date, tier_index)
+    # tier_slots[date][tier_index] = list of slot indices
+    tier_slots: dict[tuple[date, int], list[int]] = defaultdict(list)
+
+    for t in range(n_slots):
+        struct = tier_structs[t]
+        if not struct or not struct.in_tiered_window or not struct.tiers:
+            continue
+
+        local_date = struct.local_date
+        if not local_date:
+            continue
+
+        for k in range(len(struct.tiers)):
+            tier_slots[(local_date, k)].append(t)
+
+    # For each (date, tier) with a cap, add cumulative constraint
+    for (local_date, tier_idx), slot_list in tier_slots.items():
+        struct = tier_structs[slot_list[0]]  # Any slot on this date works
+        tier = struct.tiers[tier_idx]
+
+        # Only add cap constraint if tier has a non-None cap
+        if tier.up_to_kwh_per_day is None:
+            continue
+
+        # Sum of kWh for this tier on this day <= cap_kwh_per_day
+        cap_kwh = tier.up_to_kwh_per_day
+        export_terms = []
+        for t in slot_list:
+            if t < len(export_tier_vars) and tier_idx < len(export_tier_vars[t]):
+                # Convert watts to kWh: power_W * slot_hours / 1000
+                export_terms.append(export_tier_vars[t][tier_idx] * slot_hours / 1000)
+
+        if export_terms:
+            prob += (
+                pulp.lpSum(export_terms) <= cap_kwh,
+                f"export_tier_cap_{local_date}_{tier_idx}",
+            )
+
+
 def dampen_price(price_cents: float, threshold_cents: int, factor: float) -> float:
     """Dampen extreme prices above the threshold.
 
@@ -65,6 +142,32 @@ def dampen_price_weighted(
 
 
 @dataclass
+class ExportTier:
+    """Per-tier export rate cap and pricing.
+
+    Attributes:
+        up_to_kwh_per_day: Cumulative cap for this tier (None = open-ended, last tier only).
+        rate_c_per_kwh: Rate in cents/kWh for kWh in this tier.
+    """
+    up_to_kwh_per_day: float | None
+    rate_c_per_kwh: float
+
+
+@dataclass
+class ExportTierStructure:
+    """Per-slot tiered export structure (if any).
+
+    Attributes:
+        in_tiered_window: bool — True if this slot is in a tiered feed-in window.
+        tiers: list[ExportTier] — tiers for this slot (empty if flat FiT).
+        local_date: date — local calendar date (for per-day cap resetting).
+    """
+    in_tiered_window: bool = False
+    tiers: list[ExportTier] | None = None
+    local_date: datetime | None = None
+
+
+@dataclass
 class SolverInputs:
     """All inputs needed by the solver for a single optimisation run."""
 
@@ -86,9 +189,20 @@ class SolverInputs:
     # Timing
     slot_start_times: list[datetime] | None = None
 
+    # Volume-tiered export (Phase 2)
+    # Per-slot tier structure for tiered feed-in windows (empty/None = flat FiT).
+    export_tier_structures: list[ExportTierStructure] | None = None
+
     @property
     def n_slots(self) -> int:
         return len(self.solar_forecast_w)
+
+    @property
+    def has_tiered_export(self) -> bool:
+        """True if any slot has tiered export structure."""
+        if not self.export_tier_structures:
+            return False
+        return any(s.in_tiered_window for s in self.export_tier_structures)
 
 
 def solve(
@@ -138,6 +252,19 @@ def solve(
     # Curtailment: excess solar that can't be absorbed (battery full + export blocked)
     curtail = [pulp.LpVariable(f"curtail_{t}", 0) for t in range(n)]
 
+    # ── Volume-tiered export variables (Phase 2) ──
+    # Per-tier export power per slot: export_tier_k[t] (watts, for slots in tiered windows)
+    export_tier_vars = []  # List[List[LpVariable]] — [slot][tier]
+    if inputs.has_tiered_export:
+        for t in range(n):
+            tier_vars = []
+            struct = inputs.export_tier_structures[t] if inputs.export_tier_structures else None
+            if struct and struct.in_tiered_window and struct.tiers:
+                for k in range(len(struct.tiers)):
+                    var = pulp.LpVariable(f"export_tier_{k}_{t}", 0, max_grid)
+                    tier_vars.append(var)
+            export_tier_vars.append(tier_vars)
+
     # Slack variables
     safety_slack = [pulp.LpVariable(f"safety_slack_{t}", 0) for t in range(n)]
     storm_slack = []
@@ -177,6 +304,14 @@ def solve(
             grid_import[t], grid_export[t], charge[t], discharge[t],
             self_consumed[t], curtail[t],
         )
+
+        # Volume-tiered export decomposition constraint (Phase 2)
+        if export_tier_vars and export_tier_vars[t]:
+            _add_export_tier_constraints(
+                prob, t, grid_export[t], export_tier_vars[t],
+                inputs.export_tier_structures[t],
+                slot_hours,
+            )
 
         # Arbitrage gate (blocks grid export, not self-use discharge)
         add_arbitrage_gate(
@@ -223,6 +358,13 @@ def solve(
                 daytime_slack.append(ds)
                 add_daytime_soc_minimum(prob, t, soc[t], reserve_target, ds)
 
+    # ── Per-day cumulative tier cap constraints (Phase 2) ──
+    if inputs.has_tiered_export and export_tier_vars:
+        _add_export_tier_caps(
+            prob, n, slot_hours, export_tier_vars,
+            inputs.export_tier_structures,
+        )
+
     # ── Objective ── (uses dampened import prices to avoid overreaction to spikes)
     build_objective(
         prob, n, slot_hours,
@@ -230,6 +372,7 @@ def solve(
         config.fixed_costs.hedging_per_kwh_cents,
         grid_import, grid_export, self_consumed,
         safety_slack, storm_slack, evening_slack, morning_slack, daytime_slack,
+        export_tier_vars, inputs.export_tier_structures,
     )
 
     # ── Solve ──

@@ -398,3 +398,45 @@ class StaticTariffProvider(TariffProvider):
                     return True
 
         return False
+
+    def get_export_tier_structure(self, local_time: datetime, local_date: date):
+        """Get the export tier structure for a given local time (Phase 2).
+
+        Returns a tuple (in_tiered_window, tiers) where:
+        - in_tiered_window: True if this time is in a feed-in band with tiers.
+        - tiers: List of (up_to_kwh_per_day, rate_c_per_kwh) if in-window, else None.
+
+        For flat-FiT plans (no tiers), returns (False, None).
+
+        Args:
+            local_time: Local timezone-aware datetime
+            local_date: Local calendar date
+
+        Returns:
+            (in_tiered_window: bool, tiers: list[tuple] | None)
+        """
+        # Find the active version for this date
+        active_version = self._get_active_version(local_date)
+        if not active_version:
+            return (False, None)
+
+        hm = (local_time.hour, local_time.minute)
+
+        # Check each feed-in band in order
+        for band in active_version.feed_in_bands:
+            if band.windows and not self._time_in_windows(hm, band.windows):
+                continue
+            # This band matches (either no windows or in-window)
+            if band.tiers:
+                # Tiered band: return the tier structure
+                tiers = [
+                    (tier.up_to_kwh_per_day, tier.rate_c_per_kwh)
+                    for tier in band.tiers
+                ]
+                return (True, tiers)
+            else:
+                # Flat-rate band: no tiers
+                return (False, None)
+
+        # No band matched; return no tiers (flat FiT, likely 0c default)
+        return (False, None)

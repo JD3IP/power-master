@@ -78,6 +78,11 @@ class ForecastAggregator:
     def spike_detector(self) -> SpikeDetector:
         return self._spike
 
+    @property
+    def tariff_provider(self) -> TariffProvider | None:
+        """Expose the tariff provider for use by the solver (Phase 2)."""
+        return self._tariff
+
     async def update_solar(self) -> SolarForecast | None:
         """Fetch latest solar forecast."""
         if self._solar is None:

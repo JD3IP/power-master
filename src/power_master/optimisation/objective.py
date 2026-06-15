@@ -49,15 +49,20 @@ def build_objective(
     evening_soc_slack: list[pulp.LpVariable],
     morning_soc_slack: list[pulp.LpVariable],
     daytime_soc_slack: list[pulp.LpVariable],
+    export_tier_vars: list[list[pulp.LpVariable]] | None = None,
+    tier_structs: list[any] | None = None,
     weights: ObjectiveWeights | None = None,
 ) -> None:
     """Add the minimisation objective to the problem.
 
     Net Cost = SUM over t:
       + import_rate_t * grid_import_t * slot_hours  (import cost)
-      - export_rate_t * grid_export_t * slot_hours  (export revenue)
+      - export_revenue_t * slot_hours               (export revenue, tiered or flat)
       + hedging_rate * grid_import_t * slot_hours    (hedging cost)
       + penalties - rewards
+
+    For tiered export: revenue = SUM_k (tier_k_rate * export_tier_k[t]).
+    For flat export: revenue = export_rate[t] * grid_export[t] (backward compat).
     """
     w = weights or ObjectiveWeights()
 
@@ -70,8 +75,28 @@ def build_objective(
         cost_terms.append(import_rate[t] * grid_import[t] * kwh)
         # Hedging cost on all imports
         cost_terms.append(hedging_rate * grid_import[t] * kwh)
+
         # Export revenue (subtract = good)
-        cost_terms.append(-export_rate[t] * grid_export[t] * kwh)
+        # Check if this slot has tiered export
+        has_tiers = (
+            export_tier_vars
+            and t < len(export_tier_vars)
+            and export_tier_vars[t]
+            and tier_structs
+            and t < len(tier_structs)
+            and tier_structs[t].in_tiered_window
+        )
+
+        if has_tiers:
+            # Tiered export revenue: sum_k (tier_rate_k * export_tier_k[t])
+            for k in range(len(export_tier_vars[t])):
+                tier = tier_structs[t].tiers[k]
+                tier_rate = tier.rate_c_per_kwh
+                cost_terms.append(-tier_rate * export_tier_vars[t][k] * kwh)
+        else:
+            # Flat export revenue (backward compat for non-tiered plans)
+            cost_terms.append(-export_rate[t] * grid_export[t] * kwh)
+
         # Self-consumption reward
         cost_terms.append(-w.self_consume_reward * self_consumed_solar[t] * kwh)
         # Early-charge bias: penalise later grid imports slightly so the solver
