@@ -440,9 +440,11 @@ class TariffProviderConfig(BaseModel):
     )
 
     # Grid charge policy (universal knob per plan §5.6)
+    # Default "allow_arbitrage" preserves legacy Amber behaviour.
+    # Switch to "free_window_and_solar_only" when using TOU tariffs to prevent panic-import.
     grid_charge_policy: str = Field(
-        default="free_window_and_solar_only",
-        description="'free_window_and_solar_only' (default, no panic-import) | 'allow_arbitrage'"
+        default="allow_arbitrage",
+        description="'free_window_and_solar_only' (no panic-import, for TOU) | 'allow_arbitrage' (legacy Amber behaviour)"
     )
 
     @field_validator("timezone")

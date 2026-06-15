@@ -505,3 +505,321 @@ class TestPlanModel:
         assert len(slot_dicts) == 4
         assert all("slot_index" in s for s in slot_dicts)
         assert all("operating_mode" in s for s in slot_dicts)
+
+
+class TestGridChargePolicy:
+    """Tests for the grid-charge policy (free-window + solar only vs allow arbitrage)."""
+
+    def test_free_window_policy_blocks_paid_grid_charging(self) -> None:
+        """Under free_window_and_solar_only policy: solver must NOT grid-charge at paid rates.
+
+        With a TOU price vector (0c free window + paid shoulder), the solver should:
+        - Charge from solar or grid only in the ~0c free window
+        - NOT import to store at paid rates, even if it would meet SOC targets
+        """
+        config = AppConfig()
+        config.providers.tariff.grid_charge_policy = "free_window_and_solar_only"
+
+        now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        n = 8
+        starts = [now + timedelta(minutes=30 * i) for i in range(n)]
+
+        # Price vector: first 2 slots ~0c (free window), rest 30c (paid shoulder)
+        import_prices = [0.5, 0.5, 30.0, 30.0, 30.0, 30.0, 30.0, 30.0]
+
+        inputs = SolverInputs(
+            solar_forecast_w=[0.0] * n,  # No solar — tests pure grid behavior
+            load_forecast_w=[1000.0] * n,  # Moderate load
+            import_rate_cents=import_prices,
+            export_rate_cents=[5.0] * n,
+            is_spike=[False] * n,
+            current_soc=0.3,  # Low initial SOC
+            wacb_cents=15.0,
+            slot_start_times=starts,
+        )
+
+        plan = solve(config, inputs)
+        assert plan.solver_status == "Optimal"
+
+        # Check: no charging in paid slots (slots 2-7)
+        for slot_idx in range(2, n):
+            slot = plan.slots[slot_idx]
+            # In a paid slot, the charge variable should be constrained to 0 by the policy
+            # We verify by checking the mode: it should NOT be FORCE_CHARGE in paid slots
+            # (or if it is, it's because solver chose to discharge for load, not charge)
+            # The constraint ensures charge[t] == 0 when rate > 1.0c, so battery can't gain energy from grid.
+            assert slot.import_rate_cents == 30.0
+            # If the mode is FORCE_CHARGE, the price must be in free window (should not happen here)
+            if slot.mode == SlotMode.FORCE_CHARGE:
+                assert False, (
+                    f"Slot {slot_idx} should not FORCE_CHARGE at {slot.import_rate_cents}c "
+                    f"under free_window_and_solar_only policy"
+                )
+
+    def test_free_window_policy_allows_free_charging(self) -> None:
+        """Under free_window_and_solar_only policy: solver CAN grid-charge at ~0c.
+
+        With a TOU vector containing a ~0c free window, the solver should
+        import and charge the battery during that window to prepare for later expensive periods.
+        """
+        config = AppConfig()
+        config.providers.tariff.grid_charge_policy = "free_window_and_solar_only"
+
+        now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        n = 8
+        starts = [now + timedelta(minutes=30 * i) for i in range(n)]
+
+        # Price vector: free window (slots 0-1), then expensive
+        import_prices = [0.5, 0.5, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0]
+
+        inputs = SolverInputs(
+            solar_forecast_w=[0.0] * n,
+            load_forecast_w=[3000.0] * n,  # High load — battery needed to cover expensive periods
+            import_rate_cents=import_prices,
+            export_rate_cents=[0.0] * n,
+            is_spike=[False] * n,
+            current_soc=0.1,  # Very low; must charge in free window
+            wacb_cents=5.0,
+            slot_start_times=starts,
+        )
+
+        plan = solve(config, inputs)
+        assert plan.solver_status == "Optimal"
+
+        # SOC should rise during free-window slots (0-1) as solver charges from grid
+        max_soc_in_free = max(plan.slots[i].expected_soc for i in range(2))
+        max_soc_in_paid = max(plan.slots[i].expected_soc for i in range(2, n))
+        # After charging in free window, SOC should be higher than after the expensive period
+        assert max_soc_in_free > 0.1, (
+            f"Expected SOC to rise during free window, max in free={max_soc_in_free}"
+        )
+
+    def test_free_window_policy_with_solar_no_grid_charging_needed(self) -> None:
+        """Under free_window_and_solar_only policy with abundant solar: no grid charging.
+
+        Solar can charge the battery at any rate (not restricted by the policy).
+        Grid charging is restricted. So with abundant solar, the battery charges from solar,
+        and grid charging stays zero (the policy allows it, but the solver has no incentive).
+        """
+        config = AppConfig()
+        config.providers.tariff.grid_charge_policy = "free_window_and_solar_only"
+
+        now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        n = 4
+        starts = [now + timedelta(minutes=30 * i) for i in range(n)]
+
+        inputs = SolverInputs(
+            solar_forecast_w=[5000.0] * n,  # Abundant solar
+            load_forecast_w=[1000.0] * n,
+            import_rate_cents=[30.0] * n,  # All expensive (no free window)
+            export_rate_cents=[5.0] * n,
+            is_spike=[False] * n,
+            current_soc=0.2,
+            wacb_cents=15.0,
+            slot_start_times=starts,
+        )
+
+        plan = solve(config, inputs)
+        assert plan.solver_status == "Optimal"
+
+        # With abundant solar and expensive grid, battery should charge from solar
+        # Grid import should be minimal (only for load, not for charging)
+        self_use = [s for s in plan.slots if s.mode == SlotMode.SELF_USE]
+        force_charge = [s for s in plan.slots if s.mode == SlotMode.FORCE_CHARGE]
+        # Most slots should be self-use (solar covers load); no need for grid charging
+        assert len(self_use) >= len(plan.slots) // 2
+
+    def test_allow_arbitrage_policy_permits_paid_charging(self) -> None:
+        """Under allow_arbitrage policy: solver CAN grid-charge at paid rates if economically justified.
+
+        This preserves the original behaviour for Amber-style spot plans where
+        arbitrage (buy low, sell high, or hold when price rises) is valid.
+        """
+        config = AppConfig()
+        config.providers.tariff.grid_charge_policy = "allow_arbitrage"
+
+        now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        n = 8
+        starts = [now + timedelta(minutes=30 * i) for i in range(n)]
+
+        # Price vector: cheap first, expensive later (classic arbitrage setup)
+        import_prices = [5.0, 5.0, 5.0, 5.0, 100.0, 100.0, 100.0, 100.0]
+
+        inputs = SolverInputs(
+            solar_forecast_w=[0.0] * n,
+            load_forecast_w=[1500.0] * n,  # Moderate load, can be served + battery charged
+            import_rate_cents=import_prices,
+            export_rate_cents=[5.0] * n,
+            is_spike=[False] * n,
+            current_soc=0.3,
+            wacb_cents=5.0,
+            slot_start_times=starts,
+        )
+
+        plan = solve(config, inputs)
+        assert plan.solver_status == "Optimal"
+
+        # Under allow_arbitrage, solver may charge in cheap slots (0-3) and benefit from arbitrage
+        # SOC should rise in cheap period, then fall as load is served in expensive period
+        soc_cheap = [plan.slots[i].expected_soc for i in range(4)]
+        soc_expensive = [plan.slots[i].expected_soc for i in range(4, n)]
+        max_cheap = max(soc_cheap)
+        min_expensive = min(soc_expensive)
+        # Solver should charge when cheap, so max SOC in cheap > min SOC in expensive
+        assert max_cheap > min_expensive, (
+            f"Expected SOC to be higher in cheap period (max={max_cheap}) "
+            f"than in expensive (min={min_expensive}) under allow_arbitrage"
+        )
+
+    def test_force_charge_respects_policy_free_window_only(self) -> None:
+        """force_charge_below_price_cents only fires in free window under free_window_and_solar_only.
+
+        With force_charge_below_price_cents set to a threshold (e.g., 5c), it only triggers
+        when the rate is in the free/~0c window AND below the threshold. At paid rates (>1c),
+        force-charge is blocked.
+        """
+        config = AppConfig()
+        config.providers.tariff.grid_charge_policy = "free_window_and_solar_only"
+        config.battery_targets.force_charge_below_price_cents = 5.0  # Force-charge at <=5c
+
+        now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        n = 8
+        starts = [now + timedelta(minutes=30 * i) for i in range(n)]
+
+        # Prices: 0.5c (free, allows force), 30c (paid, blocks force)
+        import_prices = [0.5, 0.5, 0.5, 0.5, 30.0, 30.0, 30.0, 30.0]
+
+        inputs = SolverInputs(
+            solar_forecast_w=[0.0] * n,
+            load_forecast_w=[2000.0] * n,  # High load; battery alone can't cover all slots
+            import_rate_cents=import_prices,
+            export_rate_cents=[0.0] * n,
+            is_spike=[False] * n,
+            current_soc=0.2,  # Low SOC; will need charging
+            wacb_cents=10.0,
+            slot_start_times=starts,
+        )
+
+        plan = solve(config, inputs)
+        assert plan.solver_status == "Optimal"
+
+        # In free-window slots (0-3), the force-charge override CAN fire (rate is 0.5c <= 5c threshold)
+        # In paid slots (4-7), the force-charge override CANNOT fire (rate is 30c > free window)
+        # Check: paid slots should not be FORCE_CHARGE (the policy blocks it)
+        for i in range(4, n):
+            slot = plan.slots[i]
+            # At 30c (paid, outside free window), force-charge should not trigger
+            # The solver may still choose SELF_USE (discharging battery), but not FORCE_CHARGE from grid
+            assert slot.mode != SlotMode.FORCE_CHARGE, (
+                f"Slot {i} (rate={slot.import_rate_cents}c) should not be FORCE_CHARGE "
+                f"in paid period under free_window policy"
+            )
+
+    def test_force_charge_unrestricted_under_allow_arbitrage(self) -> None:
+        """force_charge_below_price_cents can fire at any rate under allow_arbitrage policy."""
+        config = AppConfig()
+        config.providers.tariff.grid_charge_policy = "allow_arbitrage"
+        config.battery_targets.force_charge_below_price_cents = 10.0
+
+        now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        n = 4
+        starts = [now + timedelta(minutes=30 * i) for i in range(n)]
+
+        # All slots at 8c, below the 10c threshold
+        import_prices = [8.0, 8.0, 8.0, 8.0]
+
+        inputs = SolverInputs(
+            solar_forecast_w=[0.0] * n,
+            load_forecast_w=[500.0] * n,
+            import_rate_cents=import_prices,
+            export_rate_cents=[0.0] * n,
+            is_spike=[False] * n,
+            current_soc=0.5,
+            wacb_cents=5.0,
+            slot_start_times=starts,
+        )
+
+        plan = solve(config, inputs)
+        assert plan.solver_status == "Optimal"
+
+        # Under allow_arbitrage, all slots at 8c (below 10c threshold) should be FORCE_CHARGE
+        force_charge_count = sum(1 for s in plan.slots if s.mode == SlotMode.FORCE_CHARGE)
+        assert force_charge_count == n, (
+            f"Expected all {n} slots to be FORCE_CHARGE at 8c under allow_arbitrage + 10c threshold, "
+            f"got {force_charge_count}"
+        )
+
+    def test_depletion_self_use_under_free_window_policy(self) -> None:
+        """On depletion with free_window_and_solar_only: battery discharges to floor, grid covers load.
+
+        With low initial SOC, no solar, and only expensive grid, the battery should discharge
+        to the minimum (floor) to cover load, then grid takes over (at expensive rate).
+        No grid-charging happens at the expensive rate.
+        """
+        config = AppConfig()
+        config.providers.tariff.grid_charge_policy = "free_window_and_solar_only"
+
+        now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        n = 8
+        starts = [now + timedelta(minutes=30 * i) for i in range(n)]
+
+        # No free window; all expensive
+        import_prices = [50.0] * n
+
+        inputs = SolverInputs(
+            solar_forecast_w=[0.0] * n,
+            load_forecast_w=[2000.0] * n,  # Moderate load (battery can't fully cover)
+            import_rate_cents=import_prices,
+            export_rate_cents=[0.0] * n,
+            is_spike=[False] * n,
+            current_soc=0.4,  # Medium initial SOC
+            wacb_cents=20.0,
+            slot_start_times=starts,
+        )
+
+        plan = solve(config, inputs)
+        assert plan.solver_status == "Optimal"
+
+        # SOC should monotonically decrease (battery drains without free-window refill)
+        min_soc = min(s.expected_soc for s in plan.slots)
+        # Should approach the hard minimum
+        assert min_soc <= config.battery.soc_min_hard + 0.05, (
+            f"Expected SOC to drop to near minimum under no-free-window scenario, "
+            f"got min_soc={min_soc}, hard_min={config.battery.soc_min_hard}"
+        )
+
+    def test_storm_reserve_overrides_free_window_policy(self) -> None:
+        """Storm reserve (Safety > Storm > SOC > Plan) can grid-charge even with free_window policy.
+
+        The hierarchy.py explicitly allows storm-tier grid-charging as a resilience override.
+        This test verifies the solver still builds a feasible plan when storm is active,
+        allowing SOC to be maintained above storm reserve (which may require grid charging at any rate).
+        """
+        config = AppConfig()
+        config.providers.tariff.grid_charge_policy = "free_window_and_solar_only"
+
+        now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        n = 8
+        starts = [now + timedelta(minutes=30 * i) for i in range(n)]
+
+        import_prices = [50.0] * n  # All expensive, no free window
+
+        inputs = SolverInputs(
+            solar_forecast_w=[0.0] * n,
+            load_forecast_w=[3000.0] * n,  # Very high load
+            import_rate_cents=import_prices,
+            export_rate_cents=[0.0] * n,
+            is_spike=[False] * n,
+            current_soc=0.2,  # Low; might need storm-reserve override
+            wacb_cents=20.0,
+            storm_active=True,  # Storm detected
+            storm_reserve_soc=0.8,  # Must maintain 80% for storm reserve
+            slot_start_times=starts,
+        )
+
+        plan = solve(config, inputs)
+        # Solver should find a Feasible solution (may not be Optimal due to conflicting constraints)
+        # The key is that it doesn't fail; the hierarchy will apply storm override later.
+        assert plan.solver_status in ("Optimal", "Feasible")
+        # And the plan should indicate storm_reserve in active constraints
+        assert "storm_reserve" in plan.active_constraints

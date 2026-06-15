@@ -18,6 +18,7 @@ from power_master.optimisation.constraints import (
     add_daytime_soc_minimum,
     add_energy_balance,
     add_evening_soc_target,
+    add_grid_charge_policy,
     add_morning_soc_minimum,
     add_power_limits,
     add_safety_limits,
@@ -184,6 +185,14 @@ def solve(
             config.arbitrage.break_even_delta_cents,
         )
 
+        # Grid-charge policy: free-window + solar only (or allow arbitrage)
+        add_grid_charge_policy(
+            prob, t, grid_import[t], charge[t],
+            inputs.import_rate_cents[t],
+            policy=config.providers.tariff.grid_charge_policy,
+            free_rate_threshold_cents=1.0,  # ~0c: allow charging in free/0c windows
+        )
+
         # Spike constraints
         add_spike_constraints(prob, t, charge[t], inputs.is_spike[t])
 
@@ -247,6 +256,7 @@ def solve(
         active_constraints.append("storm_reserve")
 
     force_charge_threshold = config.battery_targets.force_charge_below_price_cents
+    grid_charge_policy = config.providers.tariff.grid_charge_policy
 
     for t in range(n):
         charge_val = pulp.value(charge[t]) or 0
@@ -261,11 +271,24 @@ def solve(
         )
         # Cheap-price override: force grid charging whenever buy price is at or
         # below the configured threshold, regardless of solver decision.
-        if (
-            force_charge_threshold > 0
-            and float(inputs.import_rate_cents[t]) <= force_charge_threshold
-        ):
-            mode = SlotMode.FORCE_CHARGE
+        # Under "free_window_and_solar_only" policy: only allow force-charge at ~0c
+        # (the free window), not at paid rates. This prevents panic-import.
+        if force_charge_threshold > 0:
+            slot_import_rate = float(inputs.import_rate_cents[t])
+            allow_force_charge = False
+
+            if grid_charge_policy == "free_window_and_solar_only":
+                # Only force-charge if at the free/0c rate AND below the configured threshold
+                free_rate_threshold = 1.0  # ~0c tolerance
+                allow_force_charge = (
+                    slot_import_rate <= free_rate_threshold and
+                    slot_import_rate <= force_charge_threshold
+                )
+            else:  # "allow_arbitrage" — original unrestricted behaviour
+                allow_force_charge = slot_import_rate <= force_charge_threshold
+
+            if allow_force_charge:
+                mode = SlotMode.FORCE_CHARGE
         power = _determine_target_power(
             mode=mode,
             discharge_w=discharge_val,
