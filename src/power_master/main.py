@@ -150,12 +150,16 @@ class Application:
             self._create_providers()
         )
 
-        # ── 3b. Free-window cap tracker (TOU tariffs only) ──────
-        # Wire cap tracker and event emitter to the TOU provider if active
+        # ── 3b. Free-window cap tracker, export tier ledger, daily credit tracker (TOU only) ──
+        # Wire cap tracker, export tier ledger, and daily credit tracker to TOU provider
         from power_master.accounting.free_window_cap import FreeWindowCapTracker
+        from power_master.accounting.export_tier_ledger import ExportTierLedger
+        from power_master.accounting.daily_credit_tracker import DailyCreditTracker
         from power_master.tariff.events import TariffEventEmitter
 
         free_window_cap_tracker = None
+        export_tier_ledger = None
+        daily_credit_tracker = None
         tariff_event_emitter = TariffEventEmitter()
         await tariff_event_emitter.init_persistence(repo)
 
@@ -164,7 +168,7 @@ class Application:
             and self.config.providers.tariff.type == "tou"
             and self.config.providers.tariff.plan
         ):
-            # Get the active version to find free windows
+            # Get the active version to find free windows, feed-in tiers, and credits
             from datetime import date
             today = date.today()
             plan = self.config.providers.tariff.plan
@@ -202,6 +206,68 @@ class Application:
                     free_window.cap_kwh_per_day,
                     free_window.name,
                 )
+
+            # If there are tiered feed-in bands, create and wire the export tier ledger
+            if active_version and active_version.feed_in_bands:
+                # Find tiered feed-in bands and construct tier structure
+                for band in active_version.feed_in_bands:
+                    if band.tiers:  # Only process tiered bands
+                        # Build tier structure: {tier_name: cap_kwh}
+                        tier_structure = {}
+                        for tier in band.tiers:
+                            tier_name = f"{band.name}_tier{len(tier_structure) + 1}"
+                            tier_structure[tier_name] = tier.up_to_kwh_per_day
+
+                        if tier_structure:
+                            export_tier_ledger = ExportTierLedger(
+                                timezone_name=self.config.providers.tariff.timezone,
+                                tier_structure=tier_structure,
+                                repo=None,
+                            )
+                            await export_tier_ledger.init_persistence(repo)
+                            logger.info(
+                                "Wired export tier ledger for band '%s': %s",
+                                band.name,
+                                tier_structure,
+                            )
+                            break  # Use the first tiered band for now
+
+            # If there are low_import_window credits, create and wire the daily credit tracker
+            if active_version and active_version.credits:
+                for credit in active_version.credits:
+                    if credit.type == "low_import_window":
+                        # Calculate total threshold kWh from per-hour threshold
+                        total_window_hours = 0.0
+                        for window_str in credit.windows:
+                            start_str, end_str = window_str.split("-")
+                            sh, sm = map(int, start_str.split(":"))
+                            eh, em = map(int, end_str.split(":"))
+                            # Duration in hours (simplified; doesn't account for DST)
+                            if (eh, em) > (sh, sm):
+                                total_window_hours += (eh - sh) + (em - sm) / 60.0
+                            else:
+                                # Midnight-crossing
+                                total_window_hours += (24 - sh) + eh + (em - sm) / 60.0
+
+                        threshold_kwh = credit.max_import_kwh_per_hour * total_window_hours
+
+                        daily_credit_tracker = DailyCreditTracker(
+                            timezone_name=self.config.providers.tariff.timezone,
+                            credit_name=credit.name,
+                            window_name="-".join(credit.windows),
+                            threshold_kwh=threshold_kwh,
+                            reward_dollars=credit.reward_dollars_per_day,
+                            repo=None,
+                        )
+                        await daily_credit_tracker.init_persistence(repo)
+                        logger.info(
+                            "Wired daily credit tracker '%s': threshold=%.3f kWh, "
+                            "reward=$%.2f",
+                            credit.name,
+                            threshold_kwh,
+                            credit.reward_dollars_per_day,
+                        )
+                        break  # Use the first low_import_window credit for now
 
         # ── 4. Forecast aggregator ───────────────────────────
         from power_master.forecast.aggregator import ForecastAggregator
@@ -467,6 +533,49 @@ class Application:
                                             cap_kwh_per_day=cap,
                                         )
 
+                    # ── Increment daily credit tracker from measured in-window import ──
+                    if daily_credit_tracker:
+                        from datetime import datetime
+                        from zoneinfo import ZoneInfo
+
+                        now_local = datetime.now(ZoneInfo(self.config.providers.tariff.timezone))
+                        hm = (now_local.hour, now_local.minute)
+
+                        # Find the active version and low_import_window credits
+                        from datetime import date as date_cls
+                        today = date_cls.today()
+                        plan = self.config.providers.tariff.plan
+                        active_version = None
+                        for version in plan.versions:
+                            if version.valid_from <= today:
+                                if version.valid_until is None or version.valid_until >= today:
+                                    if active_version is None or version.valid_from > active_version.valid_from:
+                                        active_version = version
+
+                        if active_version:
+                            # Check if time is in any low_import_window credit window
+                            in_credit_window = False
+                            credit_config = None
+                            for credit in active_version.credits:
+                                if credit.type == "low_import_window":
+                                    if _time_in_windows(hm, credit.windows):
+                                        in_credit_window = True
+                                        credit_config = credit
+                                        break
+
+                            if in_credit_window and credit_config:
+                                # Record the import in the credit tracker
+                                result = await daily_credit_tracker.record_in_window_import(import_wh)
+                                logger.debug(
+                                    "DailyCreditTracker: %.3f kWh imported in window, "
+                                    "total=%.3f kWh (threshold=%.3f kWh), status=%s, earned=$%.2f",
+                                    import_wh / 1000.0,
+                                    result["import_total_kwh"],
+                                    result["threshold_kwh"],
+                                    result["status"],
+                                    result["earned_dollars"],
+                                )
+
                 # If battery is also charging from grid
                 if battery_w > 0:
                     grid_charge_w = min(battery_w, grid_w)
@@ -478,6 +587,50 @@ class Application:
                 export_wh = round(abs(grid_w) * tick_hours)
                 if export_wh > 0:
                     await accounting.record_grid_export(export_wh, export_rate)
+
+                    # ── Increment export tier ledger from measured tiered feed-in export ──
+                    if export_tier_ledger:
+                        from datetime import datetime
+                        from zoneinfo import ZoneInfo
+
+                        now_local = datetime.now(ZoneInfo(self.config.providers.tariff.timezone))
+                        hm = (now_local.hour, now_local.minute)
+
+                        # Find the active version and tiered feed-in bands
+                        from datetime import date as date_cls
+                        today = date_cls.today()
+                        plan = self.config.providers.tariff.plan
+                        active_version = None
+                        for version in plan.versions:
+                            if version.valid_from <= today:
+                                if version.valid_until is None or version.valid_until >= today:
+                                    if active_version is None or version.valid_from > active_version.valid_from:
+                                        active_version = version
+
+                        if active_version:
+                            # Check if time is in any tiered feed-in window
+                            in_tiered_window = False
+                            tiered_band = None
+                            for band in active_version.feed_in_bands:
+                                if band.tiers:  # Only check tiered bands
+                                    # Check if time is in this band's windows
+                                    if not band.windows or _time_in_windows(hm, band.windows):
+                                        in_tiered_window = True
+                                        tiered_band = band
+                                        break
+
+                            if in_tiered_window and tiered_band:
+                                # Record the export in the tier ledger
+                                result = await export_tier_ledger.record_export(export_wh, export_rate)
+                                if result["tier_name"]:
+                                    logger.debug(
+                                        "ExportTierLedger: %.2f kWh exported to tier '%s', "
+                                        "now %.2f kWh in tier, revenue %d cents",
+                                        export_wh / 1000.0,
+                                        result["tier_name"],
+                                        result["kwh_in_tier"],
+                                        result["revenue_cents"],
+                                    )
 
             # Solar charging battery
             if battery_w > 0 and solar_w > 0 and grid_w <= 0:
@@ -684,6 +837,8 @@ class Application:
         app.state.adapter = adapter
         # TOU tariff support (dashboard needs these for TOU-aware view)
         app.state.free_window_cap_tracker = free_window_cap_tracker
+        app.state.export_tier_ledger = export_tier_ledger
+        app.state.daily_credit_tracker = daily_credit_tracker
         app.state.tariff_event_emitter = tariff_event_emitter
 
         import uvicorn
