@@ -76,6 +76,111 @@ class TestProviderCreation:
         solar, weather, storm, tariff = app._create_providers()
         assert tariff is not None
 
+    def test_creates_amber_tariff_provider_when_type_is_amber(self, config_manager) -> None:
+        """Test that type='amber' with api_key creates AmberProvider."""
+        config = AppConfig(
+            providers={
+                "tariff": {
+                    "type": "amber",
+                    "api_key": "test-key",
+                    "site_id": "test-site",
+                }
+            },
+        )
+        app = Application(config, config_manager)
+        solar, weather, storm, tariff = app._create_providers()
+
+        assert tariff is not None
+        from power_master.tariff.providers.amber import AmberProvider
+        assert isinstance(tariff, AmberProvider)
+
+    def test_creates_tou_tariff_provider_when_type_is_tou(self, config_manager) -> None:
+        """Test that type='tou' with valid plan config creates StaticTariffProvider."""
+        from datetime import date
+        from power_master.config.schema import (
+            TariffPlanConfig,
+            TariffVersion,
+            BandBase,
+            BillingCycleConfig,
+            VPPConfig,
+        )
+
+        config = AppConfig(
+            providers={
+                "tariff": {
+                    "type": "tou",
+                    "timezone": "Australia/Brisbane",
+                    "plan": TariffPlanConfig(
+                        versions=[
+                            TariffVersion(
+                                valid_from=date(2026, 6, 1),
+                                import_bands=[
+                                    BandBase(
+                                        descriptor="off-peak",
+                                        windows=["10:00-14:00"],
+                                        rate_c_per_kwh=0.0,
+                                    ),
+                                    BandBase(
+                                        descriptor="shoulder",
+                                        windows=[],  # default band
+                                        rate_c_per_kwh=34.1,
+                                    ),
+                                ],
+                            )
+                        ],
+                        billing_cycle=BillingCycleConfig(
+                            length_days=28,
+                            anchor_date=date(2026, 6, 1),
+                        ),
+                        supply_charge_c_per_day=148.5,
+                        vpp=VPPConfig(enabled=False),
+                    ),
+                }
+            },
+        )
+        app = Application(config, config_manager)
+        solar, weather, storm, tariff = app._create_providers()
+
+        assert tariff is not None
+        from power_master.tariff.providers.static_tou import StaticTariffProvider
+        assert isinstance(tariff, StaticTariffProvider)
+
+    def test_fails_on_unknown_tariff_type(self, config_manager) -> None:
+        """Test that an unknown tariff type raises ValueError."""
+        config = AppConfig(
+            providers={
+                "tariff": {
+                    "type": "unknown_type",
+                }
+            },
+        )
+        app = Application(config, config_manager)
+
+        with pytest.raises(ValueError) as exc_info:
+            app._create_providers()
+
+        assert "Unknown tariff type: 'unknown_type'" in str(exc_info.value)
+        assert "Valid types are: 'amber', 'tou'" in str(exc_info.value)
+
+    def test_amber_tariff_defaults_to_type_amber(self, config_manager) -> None:
+        """Test that tariff type defaults to 'amber' (backward compatibility)."""
+        # Not specifying type should default to 'amber'
+        config = AppConfig(
+            providers={
+                "tariff": {
+                    "api_key": "test-key",
+                    "site_id": "test-site",
+                }
+            },
+        )
+        app = Application(config, config_manager)
+        solar, weather, storm, tariff = app._create_providers()
+
+        # Should create Amber provider (default type='amber')
+        assert tariff is not None
+        from power_master.tariff.providers.amber import AmberProvider
+        assert isinstance(tariff, AmberProvider)
+
     def test_creates_storm_with_location(self, config_manager) -> None:
         config = AppConfig(
             storm={"enabled": True},

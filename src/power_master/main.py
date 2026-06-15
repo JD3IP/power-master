@@ -824,13 +824,39 @@ class Application:
             self._providers.append(storm_provider)
             logger.info("Storm provider: BOM (%s)", self.config.providers.storm.state_code)
 
-        # Tariff (Amber)
-        if self.config.providers.tariff.api_key:
-            from power_master.tariff.providers.amber import AmberProvider
+        # Tariff — dispatch on type (G4)
+        tariff_type = self.config.providers.tariff.type
+        if tariff_type == "amber":
+            # Amber requires api_key (preserve backward compat)
+            if self.config.providers.tariff.api_key:
+                from power_master.tariff.providers.amber import AmberProvider
 
-            tariff_provider = AmberProvider(self.config.providers.tariff)
+                tariff_provider = AmberProvider(self.config.providers.tariff)
+                self._providers.append(tariff_provider)
+                logger.info("Tariff provider: Amber Electric")
+        elif tariff_type == "tou":
+            from power_master.tariff.providers.static_tou import StaticTariffProvider
+
+            tariff_provider = StaticTariffProvider(self.config.providers.tariff)
             self._providers.append(tariff_provider)
-            logger.info("Tariff provider: Amber Electric")
+            logger.info("Tariff provider: Static TOU (DSL-based)")
+            # VPP seam stub (S3): no active logic yet, but log the configuration
+            if (
+                self.config.providers.tariff.plan
+                and self.config.providers.tariff.plan.vpp.enabled
+            ):
+                logger.info(
+                    "VPP seam present but inactive (enabled=%s). "
+                    "Future: yield-to-VPP-event / accept event pricing.",
+                    self.config.providers.tariff.plan.vpp.enabled,
+                )
+        else:
+            # Unknown type
+            raise ValueError(
+                f"Unknown tariff type: '{tariff_type}'. "
+                f"Valid types are: 'amber', 'tou'. "
+                f"Update providers.tariff.type in config."
+            )
 
         return solar_provider, weather_provider, storm_provider, tariff_provider
 
