@@ -340,17 +340,21 @@ class StaticTariffProvider(TariffProvider):
     def _get_active_version(self, local_date: date):
         """Find the TariffVersion active on a given local date.
 
-        Returns the latest version whose valid_from <= local_date and
-        (valid_until is None or valid_until >= local_date).
+        Boundary semantics (INCLUSIVE on both ends):
+        - A version is active on local_date if:
+          valid_from <= local_date <= valid_until (if valid_until is set)
+          OR valid_from <= local_date (if valid_until is None, open-ended)
+        - When multiple versions cover a date, prefer the latest valid_from (most recent).
 
         Args:
-            local_date: Local calendar date
+            local_date: Local calendar date (YYYY-MM-DD)
 
         Returns:
             TariffVersion or None if none match.
         """
         active = None
         for version in self._plan.versions:
+            # Check if version is active on this date (INCLUSIVE on both bounds)
             if version.valid_from <= local_date:
                 if version.valid_until is None or version.valid_until >= local_date:
                     # This version covers the date; prefer the latest valid_from

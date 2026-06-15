@@ -341,11 +341,19 @@ class VPPConfig(BaseModel):
 
 
 class TariffVersion(BaseModel):
-    """Versioned tariff definition (valid between dates)."""
-    valid_from: date = Field(description="Version effective date (YYYY-MM-DD)")
+    """Versioned tariff definition (valid between dates).
+
+    Boundary semantics:
+    - valid_from: INCLUSIVE — version is active from this date (local midnight onwards)
+    - valid_until: INCLUSIVE — version is active through end-of-day (23:59:59) on this date.
+      Next version's valid_from must be the following day or later.
+      None = open-ended; version remains active until superseded.
+    """
+    valid_from: date = Field(description="Version effective date (YYYY-MM-DD); INCLUSIVE")
     valid_until: date | None = Field(
         default=None,
-        description="Version end date (None = open-ended, superseded by next version)"
+        description="Version end date (YYYY-MM-DD); INCLUSIVE (active through end of this date). "
+                    "None = open-ended until superseded. Must be >= valid_from."
     )
     import_bands: list[BandBase] = Field(
         description="Import bands; one with empty windows = default/shoulder band"
@@ -365,7 +373,9 @@ class TariffVersion(BaseModel):
 
     @model_validator(mode="after")
     def validate_version(self) -> TariffVersion:
-        """Validate version: must have at least one import band (incl. default)."""
+        """Validate version: must have at least one import band (incl. default),
+        and valid_until >= valid_from if specified.
+        """
         if not self.import_bands:
             raise ValueError(
                 f"TariffVersion valid_from={self.valid_from}: must have at least one import_band"
@@ -389,11 +399,27 @@ class TariffVersion(BaseModel):
                     f"does not match any import_band descriptor. Available: {import_band_descriptors}"
                 )
 
+        # Validate valid_until >= valid_from
+        if self.valid_until is not None and self.valid_until < self.valid_from:
+            raise ValueError(
+                f"TariffVersion: valid_until ({self.valid_until}) cannot be before "
+                f"valid_from ({self.valid_from})"
+            )
+
         return self
 
 
 class TariffPlanConfig(BaseModel):
-    """TOU tariff plan definition (selected via providers.tariff.type: 'tou')."""
+    """TOU tariff plan definition (selected via providers.tariff.type: 'tou').
+
+    The version chain is validated for:
+    - No overlaps: two versions both active on the same date.
+    - No gaps: a date between the earliest valid_from and the latest bound that
+      no version covers (only checks between versions; doesn't require coverage
+      before the first version or after an open-ended last version).
+    - Open-ended semantics: a version with valid_until=None must be the last
+      (by date) in the chain.
+    """
     versions: list[TariffVersion] = Field(
         description="Versioned definitions ordered by valid_from date"
     )
@@ -410,9 +436,62 @@ class TariffPlanConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_plan(self) -> TariffPlanConfig:
-        """Validate plan: must have at least one version."""
+        """Validate plan: must have at least one version and no chain conflicts."""
         if not self.versions:
             raise ValueError("TariffPlanConfig: must have at least one version")
+
+        # Sort by valid_from for chain analysis
+        sorted_versions = sorted(self.versions, key=lambda v: v.valid_from)
+
+        # Check for overlap: two versions both active on the same date
+        for i in range(len(sorted_versions) - 1):
+            v_curr = sorted_versions[i]
+            v_next = sorted_versions[i + 1]
+
+            # v_curr covers [valid_from, valid_until or infinity)
+            # v_next covers [valid_from, valid_until or infinity)
+            # They overlap if v_next.valid_from <= v_curr.valid_until
+            if v_curr.valid_until is not None and v_next.valid_from <= v_curr.valid_until:
+                raise ValueError(
+                    f"TariffPlanConfig: version overlap detected. "
+                    f"Version 1 (valid_from={v_curr.valid_from}, valid_until={v_curr.valid_until}) "
+                    f"overlaps with version 2 (valid_from={v_next.valid_from}, "
+                    f"valid_until={v_next.valid_until}). "
+                    f"If v_next starts on or before v_curr.valid_until, they overlap."
+                )
+
+        # Check for gaps: a date between versions that no version covers
+        for i in range(len(sorted_versions) - 1):
+            v_curr = sorted_versions[i]
+            v_next = sorted_versions[i + 1]
+
+            # A gap exists if v_curr.valid_until < v_next.valid_from - 1 day
+            # (i.e., there is at least one day in between)
+            if v_curr.valid_until is not None:
+                from datetime import timedelta
+                day_after_curr_until = v_curr.valid_until + timedelta(days=1)
+                if day_after_curr_until < v_next.valid_from:
+                    raise ValueError(
+                        f"TariffPlanConfig: version gap detected. "
+                        f"Version 1 ends on {v_curr.valid_until}, "
+                        f"but version 2 doesn't start until {v_next.valid_from}. "
+                        f"Gap on {day_after_curr_until} to "
+                        f"{v_next.valid_from - timedelta(days=1)}."
+                    )
+
+        # Check for open-ended version not being last
+        # A version with valid_until=None must be the final/current version by date
+        for i, version in enumerate(sorted_versions):
+            if version.valid_until is None:
+                # This version is open-ended; check that no later version exists
+                if i < len(sorted_versions) - 1:
+                    raise ValueError(
+                        f"TariffPlanConfig: open-ended version (valid_from={version.valid_from}, "
+                        f"valid_until=None) is not the last version. "
+                        f"An open-ended version must be the final/current one in the chain. "
+                        f"Later versions: {[f'valid_from={v.valid_from}' for v in sorted_versions[i+1:]]}"
+                    )
+
         return self
 
 

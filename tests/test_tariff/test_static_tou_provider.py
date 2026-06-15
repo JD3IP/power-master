@@ -670,7 +670,12 @@ class TestFetchHistoricalDeterminism:
 
     @pytest.mark.asyncio
     async def test_fetch_historical_with_version_boundary(self) -> None:
-        """fetch_historical spans a version change boundary correctly."""
+        """fetch_historical spans a version change boundary correctly.
+
+        This tests that a 48-hour horizon crossing a version boundary
+        (e.g. v1 until 2026-06-30, v2 from 2026-07-01) correctly picks
+        v1 rates before the boundary and v2 rates after.
+        """
         config = TariffProviderConfig(
             type="tou",
             timezone="Australia/Brisbane",
@@ -678,7 +683,7 @@ class TestFetchHistoricalDeterminism:
                 versions=[
                     TariffVersion(
                         valid_from=date(2026, 6, 1),
-                        valid_until=date(2026, 6, 10),
+                        valid_until=date(2026, 6, 30),
                         import_bands=[
                             BandBase(
                                 descriptor="v1",
@@ -700,7 +705,7 @@ class TestFetchHistoricalDeterminism:
                         ],
                     ),
                     TariffVersion(
-                        valid_from=date(2026, 6, 11),
+                        valid_from=date(2026, 7, 1),
                         valid_until=None,
                         import_bands=[
                             BandBase(
@@ -732,41 +737,46 @@ class TestFetchHistoricalDeterminism:
         provider = StaticTariffProvider(config)
 
         # Query from v1 to v2
-        # Jun 10, 12:00 Brisbane = Jun 10, 02:00 UTC (in v1 window @ 25c)
-        # Jun 11, 12:00 Brisbane = Jun 11, 02:00 UTC (in v2 window @ 30c)
-        start = datetime(2026, 6, 10, 2, 0, tzinfo=timezone.utc)
-        end = datetime(2026, 6, 11, 2, 0, tzinfo=timezone.utc)
+        # Jun 30, 12:00 Brisbane = Jun 30, 02:00 UTC (in v1 window @ 25c)
+        # Jul 01, 12:00 Brisbane = Jul 01, 02:00 UTC (in v2 window @ 30c)
+        start = datetime(2026, 6, 30, 2, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 7, 1, 2, 0, tzinfo=timezone.utc)
 
         schedule = await provider.fetch_historical(start, end)
 
         # 24 hours = 48 slots
         assert len(schedule.slots) == 48
 
-        # First slot should be v1
-        assert schedule.slots[0].import_price_cents == 25.0
-
-        # Scan for a slot on Jun 11 at 12:00 Brisbane (in v2 window @ 30c)
+        # Find slots on Jun 30 and Jul 01 in the window time (10:00-14:00)
+        # Note: window boundaries are [start, end) — so 10:00-14:00 includes 10:00-13:59 but not 14:00
         tz = ZoneInfo("Australia/Brisbane")
-        found_v2 = False
-        debug_slots_11 = []
+        v1_slots = []
+        v2_slots = []
+
         for slot in schedule.slots:
             slot_local = slot.start.astimezone(tz)
-            if slot_local.date() == date(2026, 6, 11):
-                debug_slots_11.append((slot_local, slot.descriptor, slot.import_price_cents))
-            if slot_local.date() == date(2026, 6, 11) and 11 <= slot_local.hour <= 13 and slot_local.minute == 0:
-                assert slot.import_price_cents == 30.0, f"Slot at {slot_local} has price {slot.import_price_cents} not 30.0"
-                assert slot.descriptor == "v2", f"Slot at {slot_local} has descriptor {slot.descriptor} not v2"
-                found_v2 = True
-                break
+            if slot_local.date() == date(2026, 6, 30) and 10 <= slot_local.hour < 14:
+                v1_slots.append((slot_local, slot.import_price_cents, slot.descriptor))
+            elif slot_local.date() == date(2026, 7, 1) and 10 <= slot_local.hour < 14:
+                v2_slots.append((slot_local, slot.import_price_cents, slot.descriptor))
 
-        # Debug output if not found
-        if not found_v2 and debug_slots_11:
-            import sys
-            print(f"\nDebug: Found {len(debug_slots_11)} slots on Jun 11:", file=sys.stderr)
-            for local_time, desc, price in debug_slots_11[:10]:
-                print(f"  {local_time}: {desc} @ {price}c", file=sys.stderr)
+        # Check that v1 slots use v1 rates (25c)
+        assert len(v1_slots) > 0, "No slots found on Jun 30 in the 10:00-14:00 window"
+        for local_time, price, desc in v1_slots:
+            assert price == 25.0, (
+                f"Jun 30 slot at {local_time} should be v1 @ 25c but is {price}c "
+                f"with descriptor {desc}"
+            )
+            assert desc == "v1", f"Jun 30 slot at {local_time} should have descriptor 'v1' but has '{desc}'"
 
-        assert found_v2, f"No v2 slot found at 12:00 on Jun 11 (checked {len(schedule.slots)} total slots)"
+        # Check that v2 slots use v2 rates (30c)
+        assert len(v2_slots) > 0, "No slots found on Jul 01 in the 10:00-14:00 window"
+        for local_time, price, desc in v2_slots:
+            assert price == 30.0, (
+                f"Jul 01 slot at {local_time} should be v2 @ 30c but is {price}c "
+                f"with descriptor {desc}"
+            )
+            assert desc == "v2", f"Jul 01 slot at {local_time} should have descriptor 'v2' but has '{desc}'"
 
 
 class TestTimeWindowEdgeCases:

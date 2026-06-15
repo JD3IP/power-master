@@ -755,3 +755,241 @@ class TestZEROHEROIntegration:
         assert len(version.feed_in_bands) == 3
         assert len(version.credits) == 1
         assert version.credits[0].enforcement == "soft"
+
+
+class TestTariffVersionBoundarySemantics:
+    """Tests for per-version boundary validation (valid_until >= valid_from)."""
+
+    def test_version_valid_until_before_valid_from(self) -> None:
+        """Version with valid_until < valid_from raises."""
+        with pytest.raises(ValidationError) as exc_info:
+            TariffVersion(
+                valid_from=date(2026, 6, 15),
+                valid_until=date(2026, 6, 10),  # Before valid_from
+                import_bands=[
+                    BandBase(descriptor="default", windows=[], rate_c_per_kwh=30.0),
+                ],
+            )
+        assert "valid_until" in str(exc_info.value) and "cannot be before" in str(exc_info.value)
+
+    def test_version_valid_until_equal_valid_from(self) -> None:
+        """Version with valid_until == valid_from is allowed (single-day version)."""
+        version = TariffVersion(
+            valid_from=date(2026, 6, 15),
+            valid_until=date(2026, 6, 15),
+            import_bands=[
+                BandBase(descriptor="default", windows=[], rate_c_per_kwh=30.0),
+            ],
+        )
+        assert version.valid_from == version.valid_until
+
+    def test_version_valid_until_after_valid_from(self) -> None:
+        """Version with valid_until > valid_from is allowed (normal multi-day version)."""
+        version = TariffVersion(
+            valid_from=date(2026, 6, 1),
+            valid_until=date(2026, 6, 30),
+            import_bands=[
+                BandBase(descriptor="default", windows=[], rate_c_per_kwh=30.0),
+            ],
+        )
+        assert version.valid_from < version.valid_until
+
+    def test_version_valid_until_none_is_allowed(self) -> None:
+        """Version with valid_until=None (open-ended) is allowed."""
+        version = TariffVersion(
+            valid_from=date(2026, 6, 1),
+            valid_until=None,
+            import_bands=[
+                BandBase(descriptor="default", windows=[], rate_c_per_kwh=30.0),
+            ],
+        )
+        assert version.valid_until is None
+
+
+class TestTariffPlanVersionChain:
+    """Tests for multi-version chain validation (overlaps, gaps, open-ended rules)."""
+
+    def test_single_open_ended_version_is_valid(self) -> None:
+        """A single version with valid_until=None is valid (common case)."""
+        plan = TariffPlanConfig(
+            versions=[
+                TariffVersion(
+                    valid_from=date(2026, 6, 1),
+                    valid_until=None,
+                    import_bands=[
+                        BandBase(descriptor="default", windows=[], rate_c_per_kwh=30.0),
+                    ],
+                )
+            ],
+            billing_cycle=BillingCycleConfig(length_days=28, anchor_date=date(2026, 6, 1)),
+            supply_charge_c_per_day=148.5,
+        )
+        assert len(plan.versions) == 1
+
+    def test_two_version_chain_no_gap_no_overlap(self) -> None:
+        """Two contiguous versions (v1 until 2026-06-30, v2 from 2026-07-01) is valid."""
+        plan = TariffPlanConfig(
+            versions=[
+                TariffVersion(
+                    valid_from=date(2026, 6, 1),
+                    valid_until=date(2026, 6, 30),
+                    import_bands=[
+                        BandBase(
+                            descriptor="v1",
+                            windows=["10:00-14:00"],
+                            rate_c_per_kwh=25.0,
+                        ),
+                        BandBase(
+                            descriptor="default",
+                            windows=[],
+                            rate_c_per_kwh=50.0,
+                        ),
+                    ],
+                ),
+                TariffVersion(
+                    valid_from=date(2026, 7, 1),
+                    valid_until=None,
+                    import_bands=[
+                        BandBase(
+                            descriptor="v2",
+                            windows=["10:00-14:00"],
+                            rate_c_per_kwh=30.0,
+                        ),
+                        BandBase(
+                            descriptor="default",
+                            windows=[],
+                            rate_c_per_kwh=45.0,
+                        ),
+                    ],
+                ),
+            ],
+            billing_cycle=BillingCycleConfig(length_days=28, anchor_date=date(2026, 6, 1)),
+            supply_charge_c_per_day=148.5,
+        )
+        assert len(plan.versions) == 2
+
+    def test_version_overlap_raises(self) -> None:
+        """Two overlapping versions (both active on same date) raises."""
+        with pytest.raises(ValidationError) as exc_info:
+            TariffPlanConfig(
+                versions=[
+                    TariffVersion(
+                        valid_from=date(2026, 6, 1),
+                        valid_until=date(2026, 6, 15),  # Ends on June 15
+                        import_bands=[
+                            BandBase(
+                                descriptor="v1",
+                                windows=["10:00-14:00"],
+                                rate_c_per_kwh=25.0,
+                            ),
+                            BandBase(descriptor="default", windows=[], rate_c_per_kwh=50.0),
+                        ],
+                    ),
+                    TariffVersion(
+                        valid_from=date(2026, 6, 10),  # Starts before v1 ends
+                        valid_until=None,
+                        import_bands=[
+                            BandBase(
+                                descriptor="v2",
+                                windows=["10:00-14:00"],
+                                rate_c_per_kwh=30.0,
+                            ),
+                            BandBase(descriptor="default", windows=[], rate_c_per_kwh=45.0),
+                        ],
+                    ),
+                ],
+                billing_cycle=BillingCycleConfig(length_days=28, anchor_date=date(2026, 6, 1)),
+                supply_charge_c_per_day=148.5,
+            )
+        assert "overlap" in str(exc_info.value).lower()
+
+    def test_version_gap_raises(self) -> None:
+        """A gap between versions (v1 until 2026-06-29, v2 from 2026-07-01) raises."""
+        with pytest.raises(ValidationError) as exc_info:
+            TariffPlanConfig(
+                versions=[
+                    TariffVersion(
+                        valid_from=date(2026, 6, 1),
+                        valid_until=date(2026, 6, 29),  # Ends on June 29
+                        import_bands=[
+                            BandBase(
+                                descriptor="v1",
+                                windows=["10:00-14:00"],
+                                rate_c_per_kwh=25.0,
+                            ),
+                            BandBase(descriptor="default", windows=[], rate_c_per_kwh=50.0),
+                        ],
+                    ),
+                    TariffVersion(
+                        valid_from=date(2026, 7, 1),  # Starts on July 1 (gap on June 30)
+                        valid_until=None,
+                        import_bands=[
+                            BandBase(
+                                descriptor="v2",
+                                windows=["10:00-14:00"],
+                                rate_c_per_kwh=30.0,
+                            ),
+                            BandBase(descriptor="default", windows=[], rate_c_per_kwh=45.0),
+                        ],
+                    ),
+                ],
+                billing_cycle=BillingCycleConfig(length_days=28, anchor_date=date(2026, 6, 1)),
+                supply_charge_c_per_day=148.5,
+            )
+        assert "gap" in str(exc_info.value).lower()
+
+    def test_open_ended_version_not_last_raises(self) -> None:
+        """An open-ended version (valid_until=None) that isn't the last raises."""
+        with pytest.raises(ValidationError) as exc_info:
+            TariffPlanConfig(
+                versions=[
+                    TariffVersion(
+                        valid_from=date(2026, 6, 1),
+                        valid_until=None,  # Open-ended
+                        import_bands=[
+                            BandBase(descriptor="default", windows=[], rate_c_per_kwh=50.0),
+                        ],
+                    ),
+                    TariffVersion(
+                        valid_from=date(2026, 7, 1),  # Another version after open-ended
+                        valid_until=None,
+                        import_bands=[
+                            BandBase(descriptor="default", windows=[], rate_c_per_kwh=45.0),
+                        ],
+                    ),
+                ],
+                billing_cycle=BillingCycleConfig(length_days=28, anchor_date=date(2026, 6, 1)),
+                supply_charge_c_per_day=148.5,
+            )
+        assert "open-ended" in str(exc_info.value).lower() and "last" in str(exc_info.value).lower()
+
+    def test_three_version_chain_sequential_valid(self) -> None:
+        """Three sequential versions with no gaps or overlaps is valid."""
+        plan = TariffPlanConfig(
+            versions=[
+                TariffVersion(
+                    valid_from=date(2026, 6, 1),
+                    valid_until=date(2026, 6, 30),
+                    import_bands=[
+                        BandBase(descriptor="default", windows=[], rate_c_per_kwh=50.0),
+                    ],
+                ),
+                TariffVersion(
+                    valid_from=date(2026, 7, 1),
+                    valid_until=date(2026, 7, 31),
+                    import_bands=[
+                        BandBase(descriptor="default", windows=[], rate_c_per_kwh=45.0),
+                    ],
+                ),
+                TariffVersion(
+                    valid_from=date(2026, 8, 1),
+                    valid_until=None,  # Open-ended
+                    import_bands=[
+                        BandBase(descriptor="default", windows=[], rate_c_per_kwh=40.0),
+                    ],
+                ),
+            ],
+            billing_cycle=BillingCycleConfig(length_days=28, anchor_date=date(2026, 6, 1)),
+            supply_charge_c_per_day=148.5,
+        )
+        assert len(plan.versions) == 3
