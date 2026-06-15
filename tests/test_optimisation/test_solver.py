@@ -21,8 +21,15 @@ def _make_inputs(
     wacb: float = 10.0,
     spike_slots: list[int] | None = None,
     storm: bool = False,
+    start: datetime | None = None,
 ) -> SolverInputs:
-    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    # Fixed anchor time: 2026-06-16 02:00 UTC = Brisbane 12:00 (noon)
+    # This ensures SOC-target penalties do NOT fire for generic scenarios.
+    # Tests that need a specific time window (e.g., evening/morning SOC target) should
+    # pass an explicit start= parameter.
+    if start is None:
+        start = datetime(2026, 6, 16, 2, 0, tzinfo=timezone.utc)
+    now = start.replace(minute=0, second=0, microsecond=0)
     starts = [now + timedelta(minutes=30 * i) for i in range(n_slots)]
     return SolverInputs(
         solar_forecast_w=[solar] * n_slots,
@@ -221,18 +228,15 @@ class TestSolverBasic:
         )
         plan = solve(config, inputs)
 
-        # Economic check: DEGENERATE OPTIMUM (pre-existing flakiness, not a regression).
-        # With abundant solar (5000W >> load 500W), the solver reaches degenerate optima where
-        # "charge from solar in one mode" and "import-then-use" have identical cost (excess solar is free).
-        # CBC's tie-break heuristic is deterministic but picks arbitrary mode labels.
-        # Rather than asserting a mode label (flaky), we assert the TOTAL COST is reasonable:
-        # Worst case: grid charges battery at 30c for ~7 kWh = 210 cents.
-        # Better case: solar only, with penalties = ~360 cents (observed behavior, CBC's chosen optimum).
-        # Either way, cost should be << 1000 cents (golden value threshold detects catastrophic regression).
-        assert plan.objective_score < 500, (
-            f"With abundant solar (5000W >> load 500W) and expensive grid (30c), "
-            f"the plan cost should not exceed 500 cents (observed {plan.objective_score:.2f} cents). "
-            f"This detects catastrophic solver failures, not mode label flakiness."
+        # Economic invariant: with abundant free solar, battery charging cost should be minimal.
+        # At the fixed anchor time (noon Brisbane), no spurious SOC-target penalties fire.
+        # The solver's objective reflects pure energy economics: grid import is expensive (30c),
+        # solar is free → charging should cost far below grid-only baseline (210 cents for 7 kWh).
+        # With the time-fixed _make_inputs, this assertion is deterministic and stable.
+        assert plan.objective_score < 50, (
+            f"With abundant free solar (5000W >> load 500W) at expensive grid (30c), "
+            f"the plan cost should be minimal (< 50 cents). Got {plan.objective_score:.2f} cents, "
+            f"suggesting the solver is not preferring solar-driven charging at this time of day."
         )
 
     def test_force_charge_targets_full_power_by_default(self) -> None:
@@ -498,7 +502,10 @@ class TestSolverStorm:
 class TestPlanModel:
     def test_get_current_slot(self) -> None:
         config = AppConfig()
-        inputs = _make_inputs(n_slots=4)
+        # This test intentionally uses the real current time to verify that get_current_slot
+        # correctly identifies the slot covering "now". Pass start=now so slot times match.
+        now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        inputs = _make_inputs(n_slots=4, start=now)
         plan = solve(config, inputs)
 
         current = plan.get_current_slot()
@@ -933,7 +940,8 @@ class TestVolumeTieredExport:
         This ensures backward compatibility: when export_tier_structures is None or
         has no in-window tiers, the solver uses the flat export rate as before.
 
-        GOLDEN VALUE: expected objective_score = 146.20 cents (deterministic, verified on multiple runs).
+        GOLDEN VALUE: expected objective_score = -1.6 cents (net revenue from export).
+        Computed at the fixed anchor time (noon Brisbane) with deterministic _make_inputs.
         This detects regressions: if the flat-FiT code path is broken by tier machinery,
         the objective will change. This test catches uniform regressions (e.g., export revenue term dropped).
         """
@@ -954,10 +962,10 @@ class TestVolumeTieredExport:
         assert plan.solver_status == "Optimal"
 
         # With flat rates and no tier vars, the plan should solve normally
-        # Golden value: objective should be ~146.20 cents (computed from flat export revenue + penalties)
-        # Tolerance of ±2.0 cents accounts for minor solver variations (pricing rounding, etc.)
-        assert abs(plan.objective_score - 146.20) < 2.0, (
-            f"Flat-FiT plan objective changed: expected ~146.20 cents, got {plan.objective_score:.2f} cents. "
+        # Golden value: objective should be ~-1.6 cents (export revenue > import cost at this time)
+        # Tolerance of ±1.0 cent accounts for minor solver variations (CBC tie-breaks, pricing rounding)
+        assert abs(plan.objective_score - (-1.6)) < 1.0, (
+            f"Flat-FiT plan objective changed: expected ~-1.6 cents, got {plan.objective_score:.2f} cents. "
             f"This suggests tier machinery broke the flat export path (e.g., export revenue term missing)."
         )
 
