@@ -168,6 +168,28 @@ class ExportTierStructure:
 
 
 @dataclass
+class CreditWindowInfo:
+    """Per-slot low-import credit window info (Phase 2).
+
+    Attributes:
+        in_window: bool — True if this slot is in a credit window.
+        credit_name: str — credit name (e.g., 'zerohero-evening').
+        max_import_kwh_per_hour: float — hourly import threshold.
+        reward_dollars_per_day: float — daily reward if earned.
+        enforcement: str — 'soft' or 'hard'.
+        credit_priority_weight: float — [0, 1] weight tuning credit vs export.
+        local_date: date — local calendar date (for daily credit state).
+    """
+    in_window: bool = False
+    credit_name: str = ""
+    max_import_kwh_per_hour: float = 0.0
+    reward_dollars_per_day: float = 0.0
+    enforcement: str = "soft"
+    credit_priority_weight: float = 0.5
+    local_date: "date | None" = None
+
+
+@dataclass
 class SolverInputs:
     """All inputs needed by the solver for a single optimisation run."""
 
@@ -193,6 +215,10 @@ class SolverInputs:
     # Per-slot tier structure for tiered feed-in windows (empty/None = flat FiT).
     export_tier_structures: list[ExportTierStructure] | None = None
 
+    # Low-import credit windows (Phase 2)
+    # Per-slot credit window info for low-import evening credits (e.g., ZEROHERO).
+    credit_windows: list[CreditWindowInfo] | None = None
+
     @property
     def n_slots(self) -> int:
         return len(self.solar_forecast_w)
@@ -203,6 +229,13 @@ class SolverInputs:
         if not self.export_tier_structures:
             return False
         return any(s.in_tiered_window for s in self.export_tier_structures)
+
+    @property
+    def has_credit_windows(self) -> bool:
+        """True if any slot is in a low-import credit window."""
+        if not self.credit_windows:
+            return False
+        return any(c.in_window for c in self.credit_windows)
 
 
 def solve(
@@ -265,12 +298,37 @@ def solve(
                     tier_vars.append(var)
             export_tier_vars.append(tier_vars)
 
+    # ── Low-import credit window variables (Phase 2) ──
+    # Per-day binary missed_credit[d] (1 = credit missed for day d; 0 = earned)
+    # and per-slot sum of in-window grid_import for each day and credit
+    credit_missed_vars: dict[tuple[str, "date"], pulp.LpVariable] = {}
+    credit_daily_import: dict[tuple[str, "date"], list[int]] = {}  # (credit_name, date) -> list of slot indices
+    if inputs.has_credit_windows:
+        # First pass: identify (credit_name, local_date) pairs and collect slot indices
+        from datetime import date as dt_date
+        credit_slots: dict[tuple[str, dt_date], list[int]] = {}
+        for t in range(n):
+            cw = inputs.credit_windows[t] if inputs.credit_windows else None
+            if cw and cw.in_window:
+                key = (cw.credit_name, cw.local_date)
+                if key not in credit_slots:
+                    credit_slots[key] = []
+                credit_slots[key].append(t)
+
+        # Create per-day missed credit binary vars (only for days with credit windows)
+        for (credit_name, local_date), slot_list in credit_slots.items():
+            var = pulp.LpVariable(f"credit_missed_{credit_name}_{local_date}", cat="Binary")
+            key = (credit_name, local_date)
+            credit_missed_vars[key] = var
+            credit_daily_import[key] = slot_list
+
     # Slack variables
     safety_slack = [pulp.LpVariable(f"safety_slack_{t}", 0) for t in range(n)]
     storm_slack = []
     evening_slack = []
     morning_slack = []
     daytime_slack = []
+    credit_slack = []  # Hard-enforcement credit slack vars
 
     # Taper zone binary variables (1 = SOC is above taper threshold)
     taper_start = config.battery.taper_start_soc
@@ -358,12 +416,37 @@ def solve(
                 daytime_slack.append(ds)
                 add_daytime_soc_minimum(prob, t, soc[t], reserve_target, ds)
 
+        # Low-import credit window constraints (Phase 2)
+        if inputs.has_credit_windows:
+            cw = inputs.credit_windows[t] if inputs.credit_windows else None
+            if cw and cw.in_window and cw.enforcement == "hard":
+                # Hard enforcement: grid_import[t] == 0 with penalised slack
+                cs = pulp.LpVariable(f"credit_slack_{t}", 0)
+                credit_slack.append(cs)
+                prob += grid_import[t] <= cs, f"credit_hard_constraint_{cw.credit_name}_{t}"
+
     # ── Per-day cumulative tier cap constraints (Phase 2) ──
     if inputs.has_tiered_export and export_tier_vars:
         _add_export_tier_caps(
             prob, n, slot_hours, export_tier_vars,
             inputs.export_tier_structures,
         )
+
+    # ── Low-import credit window per-day constraints (Phase 2) ──
+    # For soft enforcement: binary missed_credit[d] with threshold-based big-M constraint
+    # For hard enforcement: slack was added per-slot above
+    if inputs.has_credit_windows and credit_daily_import:
+        BIG_M = 1e6  # Large penalty for missed credit
+        for (credit_name, local_date), slot_list in credit_daily_import.items():
+            cw = inputs.credit_windows[slot_list[0]] if inputs.credit_windows and slot_list else None
+            if cw and cw.enforcement == "soft" and (credit_name, local_date) in credit_missed_vars:
+                missed_var = credit_missed_vars[(credit_name, local_date)]
+                threshold_kwh = cw.max_import_kwh_per_hour * len(slot_list) * slot_hours
+                # Sum of in-window import in kWh
+                import_sum = pulp.lpSum([grid_import[t] * slot_hours / 1000.0 for t in slot_list])
+                # If import_sum > threshold: missed[d] must be 1; else can be 0
+                prob += import_sum <= threshold_kwh + BIG_M * missed_var, \
+                    f"credit_soft_threshold_{credit_name}_{local_date}"
 
     # ── Objective ── (uses dampened import prices to avoid overreaction to spikes)
     build_objective(
@@ -373,6 +456,9 @@ def solve(
         grid_import, grid_export, self_consumed,
         safety_slack, storm_slack, evening_slack, morning_slack, daytime_slack,
         export_tier_vars, inputs.export_tier_structures,
+        credit_missed_vars=credit_missed_vars,
+        credit_windows=inputs.credit_windows,
+        credit_slack=credit_slack,
     )
 
     # ── Solve ──

@@ -52,6 +52,9 @@ def build_objective(
     export_tier_vars: list[list[pulp.LpVariable]] | None = None,
     tier_structs: list[any] | None = None,
     weights: ObjectiveWeights | None = None,
+    credit_missed_vars: dict | None = None,
+    credit_windows: list[any] | None = None,
+    credit_slack: list[pulp.LpVariable] | None = None,
 ) -> None:
     """Add the minimisation objective to the problem.
 
@@ -60,6 +63,7 @@ def build_objective(
       - export_revenue_t * slot_hours               (export revenue, tiered or flat)
       + hedging_rate * grid_import_t * slot_hours    (hedging cost)
       + penalties - rewards
+      + credit penalties (soft) + credit slack penalties (hard)
 
     For tiered export: revenue = SUM_k (tier_k_rate * export_tier_k[t]).
     For flat export: revenue = export_rate[t] * grid_export[t] (backward compat).
@@ -118,5 +122,30 @@ def build_objective(
 
     for t in range(len(daytime_soc_slack)):
         cost_terms.append(w.daytime_soc_shortfall * daytime_soc_slack[t])
+
+    # Low-import credit penalty/reward terms (Phase 2)
+    # Soft enforcement: penalise missed credit; reward earned credit (scaled by priority weight)
+    if credit_missed_vars:
+        for (credit_name, local_date), missed_var in credit_missed_vars.items():
+            # Find one representative window to get reward and priority weight
+            cw = None
+            if credit_windows:
+                for c in credit_windows:
+                    if c and c.credit_name == credit_name and c.local_date == local_date:
+                        cw = c
+                        break
+            if cw:
+                # Convert reward dollars to cents for objective consistency
+                reward_cents = cw.reward_dollars_per_day * 100.0
+                # Missed var = 1: lose the reward (cost += reward); missed var = 0: earn reward (cost -= reward)
+                # With credit_priority_weight scaling: lower weight = less aggressively pursue the credit
+                weighted_reward = reward_cents * cw.credit_priority_weight
+                cost_terms.append(weighted_reward * missed_var)
+
+    # Hard enforcement: penalise slack (grid import during hard-constraint windows)
+    if credit_slack:
+        # Large penalty for violating hard constraints (similar to safety_slack)
+        for cs in credit_slack:
+            cost_terms.append(w.safety_violation * cs)
 
     prob += pulp.lpSum(cost_terms), "MinimiseNetCost"

@@ -440,3 +440,35 @@ class StaticTariffProvider(TariffProvider):
 
         # No band matched; return no tiers (flat FiT, likely 0c default)
         return (False, None)
+
+    def get_credit_windows(self, local_date: date) -> list[dict]:
+        """Get all low-import credit windows for a given local date (Phase 2).
+
+        Returns a list of credit window dicts with:
+        - name: Credit name (e.g., 'zerohero-evening')
+        - windows: List of HH:MM-HH:MM windows (e.g., ['18:00-20:59'])
+        - max_import_kwh_per_hour: Max hourly import to earn credit
+        - reward_dollars_per_day: Daily reward if earned
+        - enforcement: 'soft' (penalty) or 'hard' (constraint+slack)
+        - credit_priority_weight: [0, 1] scaling vs export revenue
+
+        Returns:
+            List of credit configs (empty if no credits or plan not active)
+        """
+        active_version = self._get_active_version(local_date)
+        if not active_version or not active_version.credits:
+            return []
+
+        result = []
+        for credit in active_version.credits:
+            result.append({
+                "name": credit.name,
+                "type": credit.type,
+                "windows": credit.windows,
+                "max_import_kwh_per_hour": credit.max_import_kwh_per_hour,
+                "reward_dollars_per_day": credit.reward_dollars_per_day,
+                "enforcement": credit.enforcement,
+                "credit_priority_weight": credit.credit_priority_weight,
+            })
+
+        return result

@@ -1814,6 +1814,36 @@ class Application:
                     is_spike[i] = is_spike[nearest]
                     export_tier_structures[i] = export_tier_structures[nearest]
 
+            # Phase 2: Low-import credit window structures
+            from power_master.optimisation.solver import CreditWindowInfo
+            credit_windows = [CreditWindowInfo() for _ in range(n_slots)]
+
+            if tariff_provider and hasattr(tariff_provider, "get_credit_windows"):
+                # Build per-slot credit window info
+                for i, t in enumerate(slot_start_times):
+                    local_time = t.astimezone(tariff_provider._tz) if hasattr(tariff_provider, "_tz") else t
+                    local_date = local_time.date()
+                    credits = tariff_provider.get_credit_windows(local_date)
+
+                    # If multiple credits, take the first one for now (typically only ZEROHERO)
+                    # Future: could handle multiple simultaneous credits with more complex logic
+                    if credits:
+                        hm = (local_time.hour, local_time.minute)
+                        for credit in credits:
+                            # Check if slot time falls in any of this credit's windows
+                            in_window = tariff_provider._time_in_windows(hm, credit["windows"])
+                            if in_window:
+                                credit_windows[i] = CreditWindowInfo(
+                                    in_window=True,
+                                    credit_name=credit["name"],
+                                    max_import_kwh_per_hour=credit["max_import_kwh_per_hour"],
+                                    reward_dollars_per_day=credit["reward_dollars_per_day"],
+                                    enforcement=credit["enforcement"],
+                                    credit_priority_weight=credit["credit_priority_weight"],
+                                    local_date=local_date,
+                                )
+                                break  # Use first matching credit
+
             tariff_slots = state.tariff.slots
             gap_filled = len(unmatched)
             logger.info(
@@ -1854,6 +1884,7 @@ class Application:
             storm_reserve_soc=storm_monitor.reserve_soc,
             slot_start_times=slot_start_times,
             export_tier_structures=export_tier_structures,
+            credit_windows=credit_windows,
         )
 
         # Run solver in thread pool to avoid blocking
@@ -1870,6 +1901,64 @@ class Application:
                 plan.solver_status,
             )
             return control_loop.state.current_plan
+
+        # R4: Emit missed-credit events based on the plan's projected window import
+        # This logs whether each day's credit window stayed on-track, at-risk, or forfeited
+        if inputs.has_credit_windows and aggregator.tariff_event_emitter:
+            from collections import defaultdict
+            from datetime import date as dt_date
+
+            # Group plan slots by (credit_name, local_date) for summary
+            credit_import_by_day: dict[tuple[str, dt_date], float] = defaultdict(float)
+            credit_info_by_day: dict[tuple[str, dt_date], dict] = {}
+
+            for i, slot in enumerate(plan.slots):
+                cw = inputs.credit_windows[i] if inputs.credit_windows else None
+                if cw and cw.in_window:
+                    key = (cw.credit_name, cw.local_date)
+                    # Accumulate in-window grid_import in kWh
+                    import_kw = slot.grid_import_w / 1000.0 if hasattr(slot, 'grid_import_w') else 0.0
+                    slot_hours_qty = inputs.slot_start_times[i + 1].timestamp() - inputs.slot_start_times[i].timestamp() if i + 1 < len(inputs.slot_start_times) else 0.5 * 3600
+                    import_kwh = import_kw * (slot_hours_qty / 3600.0)
+                    credit_import_by_day[key] += import_kwh
+                    if key not in credit_info_by_day:
+                        credit_info_by_day[key] = {
+                            "reward_dollars": cw.reward_dollars_per_day,
+                            "threshold": cw.max_import_kwh_per_hour * len([s for s in range(len(plan.slots))
+                                if inputs.credit_windows and inputs.credit_windows[s].in_window
+                                and inputs.credit_windows[s].credit_name == cw.credit_name
+                                and inputs.credit_windows[s].local_date == cw.local_date]),
+                        }
+
+            # Emit events for each day's credit status
+            emitter = aggregator.tariff_event_emitter
+            for (credit_name, local_date), total_import_kwh in credit_import_by_day.items():
+                info = credit_info_by_day.get((credit_name, local_date), {})
+                threshold = info.get("threshold", 0.0)
+                reward = info.get("reward_dollars", 0.0)
+
+                if total_import_kwh <= threshold * 0.95:  # Well within threshold
+                    emitter.emit_credit_window_on_track(
+                        credit_name=credit_name,
+                        window_name=f"local_date={local_date}",
+                        current_import_kwh=total_import_kwh,
+                        threshold_kwh=threshold,
+                    )
+                elif total_import_kwh <= threshold:  # At or near threshold
+                    emitter.emit_credit_window_at_risk(
+                        credit_name=credit_name,
+                        window_name=f"local_date={local_date}",
+                        current_import_kwh=total_import_kwh,
+                        threshold_kwh=threshold,
+                    )
+                else:  # Exceeded threshold
+                    emitter.emit_credit_window_forfeited(
+                        credit_name=credit_name,
+                        window_name=f"local_date={local_date}",
+                        final_import_kwh=total_import_kwh,
+                        threshold_kwh=threshold,
+                        reward_dollars=reward,
+                    )
 
         # Second pass: schedule controllable loads into plan slots.
         if load_manager is not None:
