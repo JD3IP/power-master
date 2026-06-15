@@ -694,6 +694,93 @@ class FreeWindowOrchestratorConfig(BaseModel):
     )
 
 
+class EVModeConfig(BaseModel):
+    """EV charging mode configuration (both modes optional; not mutually exclusive)."""
+    min_nightly_kwh: float | None = Field(
+        default=None,
+        description="OPTIONAL guaranteed minimum nightly charge in kWh. None = disabled (opportunistic only)."
+    )
+    opportunistic: bool = Field(
+        default=False,
+        description="Enable headroom-gated opportunistic charging (Phase 4 when controllable)"
+    )
+
+    @field_validator("min_nightly_kwh")
+    @classmethod
+    def validate_min_nightly_kwh(cls, v: float | None) -> float | None:
+        """Ensure min_nightly_kwh > 0 if set."""
+        if v is not None and v <= 0:
+            raise ValueError(f"min_nightly_kwh must be > 0 if set, got {v}")
+        return v
+
+
+class EVConfig(BaseModel):
+    """EV charger configuration (dumb timer today; control in Phase 4).
+
+    The EV is fully opt-in: enabled=False (default) and all other fields are inert.
+    When enabled=True, the solver provisions the battery for the EV's expected draw
+    (Phase 3), but cannot yet switch the charger (Phase 4).
+
+    Design notes:
+    - enabled=False by default so existing configs without an EV block load unchanged.
+    - charger_kw fed to the optimiser for provisioning + per-tick margin sizing.
+    - controllable=False today; flips True at Phase 4 when hardware binding active.
+    - adapter placeholder (shelly/mqtt/contactor enum) unused this milestone.
+    - shed_priority places the EV in the load-pruning ladder (see loads/manager.py).
+      Default 5 (opportunistic, first-to-shed) aligns with the priority_class system:
+      1 = critical, 5 = opportunistic. EV is large + low-priority, so 5 is correct.
+    - NO EV-specific SOC floor. The floor REUSES the global min-SOC reserve
+      (battery_targets.morning_soc_minimum) evaluated at free-charge time.
+    """
+    enabled: bool = Field(
+        default=False,
+        description="Enable EV charger awareness in the solver. False = model is opt-in, entirely inert."
+    )
+    charger_kw: float = Field(
+        default=2.5,
+        description="Rated charger draw in kW. Used for provisioning + margin sizing. Ignored if enabled=False."
+    )
+    controllable: bool = Field(
+        default=False,
+        description="Controllable charger (Phase 4). False = dumb timer (Phase 3 awareness only)."
+    )
+    adapter: str | None = Field(
+        default=None,
+        description="Adapter binding placeholder for Phase 4 (e.g., 'shelly', 'mqtt', 'contactor'). Unused this milestone."
+    )
+    mode: EVModeConfig = Field(
+        default_factory=EVModeConfig,
+        description="Configurable charging modes (min_nightly, opportunistic)"
+    )
+    shed_priority: int = Field(
+        default=5,
+        ge=1,
+        le=5,
+        description="Load shedding priority (1=critical, 5=opportunistic/first-to-shed). EV defaults to 5 (large, low-priority load)."
+    )
+
+    @field_validator("charger_kw")
+    @classmethod
+    def validate_charger_kw(cls, v: float, info) -> float:
+        """Ensure charger_kw > 0 when enabled."""
+        data = info.data
+        if data.get("enabled") and v <= 0:
+            raise ValueError(
+                f"charger_kw must be > 0 when enabled=True, got {v}"
+            )
+        return v
+
+    @field_validator("adapter")
+    @classmethod
+    def validate_adapter(cls, v: str | None) -> str | None:
+        """Validate adapter is one of allowed values if set."""
+        if v is not None and v not in ("shelly", "mqtt", "contactor"):
+            raise ValueError(
+                f"adapter must be 'shelly', 'mqtt', 'contactor', or None, got '{v}'"
+            )
+        return v
+
+
 class LoadsConfig(BaseModel):
     shelly_devices: list[ShellyDeviceConfig] = Field(default_factory=list)
     mqtt_load_endpoints: list[MQTTLoadEndpointConfig] = Field(default_factory=list)
@@ -903,6 +990,10 @@ class AppConfig(BaseModel):
     providers: ProvidersConfig = ProvidersConfig()
     hardware: HardwareConfig = HardwareConfig()
     loads: LoadsConfig = LoadsConfig()
+    ev: EVConfig = Field(
+        default_factory=EVConfig,
+        description="EV charger configuration (Phase 3 awareness, Phase 4 control). Opt-in: enabled=False by default."
+    )
     mqtt: MQTTConfig = MQTTConfig()
     dashboard: DashboardConfig = DashboardConfig()
     resilience: ResilienceConfig = ResilienceConfig()
