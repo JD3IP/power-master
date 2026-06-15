@@ -203,15 +203,23 @@ class TestFOUR4FREEFixture:
     @pytest.mark.asyncio
     async def test_peak_window_price(self, four4free_provider: StaticTariffProvider) -> None:
         """18:00 local time is in peak window (16:00-22:59); priced at 55.55c."""
-        # Pick a specific UTC time that maps to 18:00 Brisbane time
-        # Brisbane is UTC+10, so 18:00 Brisbane = 08:00 UTC
-        utc_time = datetime(2026, 6, 15, 8, 0, tzinfo=timezone.utc)
-        schedule = await four4free_provider.fetch_prices()
+        # Use fetch_historical to avoid flakiness from hardcoded date
+        # 18:00 Brisbane = 08:00 UTC
+        tz = ZoneInfo("Australia/Brisbane")
+        start = datetime(2026, 6, 15, 7, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 6, 15, 9, 0, tzinfo=timezone.utc)
+        schedule = await four4free_provider.fetch_historical(start, end)
 
-        slot = schedule.get_slot_at(utc_time)
-        assert slot is not None
-        assert slot.import_price_cents == 55.55
-        assert slot.descriptor == "peak"
+        # Find the 18:00 local slot
+        found = False
+        for slot in schedule.slots:
+            slot_local = slot.start.astimezone(tz)
+            if slot_local.hour == 18 and slot_local.minute == 0:
+                assert slot.import_price_cents == 55.55
+                assert slot.descriptor == "peak"
+                found = True
+                break
+        assert found, "No 18:00 local slot found in schedule"
 
     @pytest.mark.asyncio
     async def test_free_window_price(
@@ -261,54 +269,90 @@ class TestFOUR4FREEFixture:
         self, four4free_provider: StaticTariffProvider
     ) -> None:
         """14:30 local is in shoulder segment (14:00-15:59); priced at 34.1c."""
+        # Use fetch_historical to avoid flakiness from hardcoded date
         # 14:30 Brisbane = 04:30 UTC
-        utc_time = datetime(2026, 6, 15, 4, 30, tzinfo=timezone.utc)
-        schedule = await four4free_provider.fetch_prices()
+        tz = ZoneInfo("Australia/Brisbane")
+        start = datetime(2026, 6, 15, 4, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 6, 15, 5, 0, tzinfo=timezone.utc)
+        schedule = await four4free_provider.fetch_historical(start, end)
 
-        slot = schedule.get_slot_at(utc_time)
-        assert slot is not None
-        assert slot.import_price_cents == 34.1
-        assert slot.descriptor == "shoulder"
+        # Find the 14:30 local slot
+        found = False
+        for slot in schedule.slots:
+            slot_local = slot.start.astimezone(tz)
+            if slot_local.hour == 14 and slot_local.minute == 30:
+                assert slot.import_price_cents == 34.1
+                assert slot.descriptor == "shoulder"
+                found = True
+                break
+        assert found, "No 14:30 local slot found in schedule"
 
     @pytest.mark.asyncio
     async def test_shoulder_evening_segment(
         self, four4free_provider: StaticTariffProvider
     ) -> None:
         """23:30 local is in shoulder segment (23:00-23:59); priced at 34.1c."""
+        # Use fetch_historical to avoid flakiness from hardcoded date
         # 23:30 Brisbane = 13:30 UTC
-        utc_time = datetime(2026, 6, 15, 13, 30, tzinfo=timezone.utc)
-        schedule = await four4free_provider.fetch_prices()
+        tz = ZoneInfo("Australia/Brisbane")
+        start = datetime(2026, 6, 15, 13, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 6, 15, 14, 0, tzinfo=timezone.utc)
+        schedule = await four4free_provider.fetch_historical(start, end)
 
-        slot = schedule.get_slot_at(utc_time)
-        assert slot is not None
-        assert slot.import_price_cents == 34.1
-        assert slot.descriptor == "shoulder"
+        # Find the 23:30 local slot
+        found = False
+        for slot in schedule.slots:
+            slot_local = slot.start.astimezone(tz)
+            if slot_local.hour == 23 and slot_local.minute == 30:
+                assert slot.import_price_cents == 34.1
+                assert slot.descriptor == "shoulder"
+                found = True
+                break
+        assert found, "No 23:30 local slot found in schedule"
 
     @pytest.mark.asyncio
     async def test_fit_in_peak_window(
         self, four4free_provider: StaticTariffProvider
     ) -> None:
         """20:00 local is in peak window; FiT is 8c."""
+        # Use fetch_historical to avoid flakiness from hardcoded date
         # 20:00 Brisbane = 10:00 UTC
-        utc_time = datetime(2026, 6, 15, 10, 0, tzinfo=timezone.utc)
-        schedule = await four4free_provider.fetch_prices()
+        tz = ZoneInfo("Australia/Brisbane")
+        start = datetime(2026, 6, 15, 9, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 6, 15, 11, 0, tzinfo=timezone.utc)
+        schedule = await four4free_provider.fetch_historical(start, end)
 
-        slot = schedule.get_slot_at(utc_time)
-        assert slot is not None
-        assert slot.export_price_cents == 8.0
+        # Find the 20:00 local slot
+        found = False
+        for slot in schedule.slots:
+            slot_local = slot.start.astimezone(tz)
+            if slot_local.hour == 20 and slot_local.minute == 0:
+                assert slot.export_price_cents == 8.0
+                found = True
+                break
+        assert found, "No 20:00 local slot found in schedule"
 
     @pytest.mark.asyncio
     async def test_fit_outside_peak_window(
         self, four4free_provider: StaticTariffProvider
     ) -> None:
         """12:00 local is outside peak window; FiT is 0c."""
+        # Use fetch_historical to avoid flakiness from hardcoded date
         # 12:00 Brisbane = 02:00 UTC
-        utc_time = datetime(2026, 6, 15, 2, 0, tzinfo=timezone.utc)
-        schedule = await four4free_provider.fetch_prices()
+        tz = ZoneInfo("Australia/Brisbane")
+        start = datetime(2026, 6, 15, 1, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 6, 15, 3, 0, tzinfo=timezone.utc)
+        schedule = await four4free_provider.fetch_historical(start, end)
 
-        slot = schedule.get_slot_at(utc_time)
-        assert slot is not None
-        assert slot.export_price_cents == 0.0
+        # Find the 12:00 local slot
+        found = False
+        for slot in schedule.slots:
+            slot_local = slot.start.astimezone(tz)
+            if slot_local.hour == 12 and slot_local.minute == 0:
+                assert slot.export_price_cents == 0.0
+                found = True
+                break
+        assert found, "No 12:00 local slot found in schedule"
 
 
 class TestDSTBoundaryHandling:
@@ -524,14 +568,23 @@ class TestMidnightCrossingBands:
         self, midnight_crossing_provider: StaticTariffProvider
     ) -> None:
         """23:00 local is in off-peak (22:00-07:00); priced at 15c."""
+        # Use fetch_historical to avoid flakiness from hardcoded date
         # 23:00 Brisbane = 13:00 UTC
-        utc_time = datetime(2026, 6, 15, 13, 0, tzinfo=timezone.utc)
-        schedule = await midnight_crossing_provider.fetch_prices()
+        tz = ZoneInfo("Australia/Brisbane")
+        start = datetime(2026, 6, 15, 12, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 6, 15, 14, 0, tzinfo=timezone.utc)
+        schedule = await midnight_crossing_provider.fetch_historical(start, end)
 
-        slot = schedule.get_slot_at(utc_time)
-        assert slot is not None
-        assert slot.import_price_cents == 15.0
-        assert slot.descriptor == "off-peak"
+        # Find the 23:00 local slot
+        found = False
+        for slot in schedule.slots:
+            slot_local = slot.start.astimezone(tz)
+            if slot_local.hour == 23 and slot_local.minute == 0:
+                assert slot.import_price_cents == 15.0
+                assert slot.descriptor == "off-peak"
+                found = True
+                break
+        assert found, "No 23:00 local slot found in schedule"
 
     @pytest.mark.asyncio
     async def test_midnight_crossing_after_midnight(
@@ -559,14 +612,23 @@ class TestMidnightCrossingBands:
         self, midnight_crossing_provider: StaticTariffProvider
     ) -> None:
         """12:00 local is outside off-peak (22:00-07:00); falls back to peak 45c."""
+        # Use fetch_historical to avoid flakiness from hardcoded date
         # 12:00 Brisbane = 02:00 UTC
-        utc_time = datetime(2026, 6, 15, 2, 0, tzinfo=timezone.utc)
-        schedule = await midnight_crossing_provider.fetch_prices()
+        tz = ZoneInfo("Australia/Brisbane")
+        start = datetime(2026, 6, 15, 1, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 6, 15, 3, 0, tzinfo=timezone.utc)
+        schedule = await midnight_crossing_provider.fetch_historical(start, end)
 
-        slot = schedule.get_slot_at(utc_time)
-        assert slot is not None
-        assert slot.import_price_cents == 45.0
-        assert slot.descriptor == "peak"
+        # Find the 12:00 local slot
+        found = False
+        for slot in schedule.slots:
+            slot_local = slot.start.astimezone(tz)
+            if slot_local.hour == 12 and slot_local.minute == 0:
+                assert slot.import_price_cents == 45.0
+                assert slot.descriptor == "peak"
+                found = True
+                break
+        assert found, "No 12:00 local slot found in schedule"
 
 
 class TestFetchHistoricalDeterminism:
