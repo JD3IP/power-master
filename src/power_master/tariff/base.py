@@ -22,6 +22,11 @@ class TariffSlot:
     def is_spike(self) -> bool:
         return self.descriptor == "spike"
 
+    @property
+    def is_free_window(self) -> bool:
+        """True if this slot is a free-window (0c import)."""
+        return self.import_price_cents == 0.0
+
 
 @dataclass
 class TariffSchedule:
@@ -55,6 +60,11 @@ class TariffSchedule:
         """Get the current export price in cents/kWh."""
         slot = self.get_slot_at(datetime.now(timezone.utc))
         return slot.export_price_cents if slot else None
+
+    def is_in_free_window(self) -> bool:
+        """Check if the current time is in a free window (0c import)."""
+        slot = self.get_slot_at(datetime.now(timezone.utc))
+        return slot.is_free_window if slot else False
 
 
 class TariffProvider(ABC):

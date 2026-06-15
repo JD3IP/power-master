@@ -340,6 +340,14 @@ class Application:
         self._repo = repo
         await load_manager.restore_daily_runtime(repo)
 
+        # ── 9b. Free-window orchestrator ─────────────────────
+        from power_master.loads.free_window_orchestrator import FreeWindowOrchestrator
+
+        free_window_orchestrator = FreeWindowOrchestrator(
+            self.config,
+            load_manager.controllers,
+        )
+
         # ── 10. MQTT ─────────────────────────────────────────
         mqtt_client = None
         mqtt_publisher = None
@@ -685,6 +693,49 @@ class Application:
                     telemetry.grid_power_w, max_grid_w,
                 )
 
+            # ── Free-window cap-aware orchestration (§7.5) ─────────
+            # During free windows, coordinate battery grid-charge + controlled loads
+            # so their total never exceeds max_grid_import_w.
+            if (
+                self.config.loads.free_window_orchestrator.enabled
+                and max_grid_w > 0
+                and aggregator.state.tariff
+            ):
+                tariff_schedule = aggregator.state.tariff
+                is_in_free = tariff_schedule.is_in_free_window()
+                # Check if free-window cap is exhausted
+                cap_exhausted = (
+                    free_window_cap_tracker
+                    and free_window_cap_tracker.get_remaining_cap() <= 0.0
+                )
+
+                # Uncontrollable base load = total load - any loads we can turn off
+                # Simplification: estimate uncontrollable as (load - sum of controllable loads)
+                controllable_power_w = sum(ctrl.power_w for ctrl in load_manager.controllers.values())
+                uncontrollable_load_w = max(0, telemetry.load_power_w - controllable_power_w)
+
+                result = await free_window_orchestrator.allocate_for_free_window(
+                    current_grid_import_w=telemetry.grid_power_w,
+                    measured_uncontrollable_load_w=uncontrollable_load_w,
+                    battery_max_charge_w=self.config.battery.max_charge_rate_w,
+                    is_in_free_window=is_in_free,
+                    cap_exhausted=cap_exhausted,
+                )
+
+                # Shed loads that don't fit in headroom
+                if result.loads_to_shed:
+                    shed_cmds = await free_window_orchestrator.shed_loads(result.loads_to_shed)
+                    if shed_cmds:
+                        logger.info(
+                            "Free-window: shed %d loads for cap compliance; allocated=%dW, "
+                            "battery_setpoint=%dW, headroom=%dW",
+                            len(shed_cmds), result.allocated_w, result.battery_grid_charge_setpoint_w,
+                            result.headroom_available_w,
+                        )
+
+                # Store the throttled battery setpoint for use in command dispatch
+                control_loop.state.free_window_battery_setpoint_w = result.battery_grid_charge_setpoint_w
+
         control_loop._on_telemetry.append(on_telemetry)
 
         # SOC deviation fast-check: flag the forecast loop when SOC drifts
@@ -701,6 +752,27 @@ class Application:
                 self._soc_rebuild_needed.set()
 
         control_loop._on_telemetry.append(on_telemetry_soc_check)
+
+        # ── 12b. Free-window battery throttle callback ────────
+        # This callback runs after the command is determined but before dispatch,
+        # throttling the battery grid-charge setpoint to stay under the free-window cap.
+        async def on_command_free_window_throttle(command, result):
+            """Throttle battery grid-charge setpoint if free-window cap requires it."""
+            if not self.config.loads.free_window_orchestrator.enabled:
+                return
+            # Check if a throttled setpoint was stored by the telemetry callback
+            throttled_setpoint_w = control_loop.state.free_window_battery_setpoint_w
+            if throttled_setpoint_w is not None:
+                from power_master.hardware.base import OperatingMode
+                if command.mode == OperatingMode.FORCE_CHARGE:
+                    if command.power_w > throttled_setpoint_w:
+                        logger.debug(
+                            "Free-window: throttled battery command from %dW to %dW",
+                            command.power_w, throttled_setpoint_w,
+                        )
+                        command.power_w = throttled_setpoint_w
+
+        control_loop._on_command.append(on_command_free_window_throttle)
 
         # ── 13. Load cached forecasts + initial fetch ─────────
         logger.info("Loading cached forecasts from DB...")

@@ -672,9 +672,35 @@ class MQTTLoadEndpointConfig(BaseModel):
     completion_deadline: str = ""  # HH:MM format, empty = no deadline
 
 
+class FreeWindowOrchestratorConfig(BaseModel):
+    """Config for free-window import-cap-aware load orchestration (§7.5).
+
+    During free windows, coordinates battery grid-charge + controlled loads
+    so their total never exceeds max_grid_import_w. Uses a configurable
+    priority ladder to shed/throttle in order.
+    """
+
+    enabled: bool = True
+    # Load priority order for free-window allocation (by priority_class).
+    # Battery is always highest priority (virtual priority 0).
+    # Loads are shed in reverse order (highest priority_class first).
+    # Example: battery (virtual 0) > hws (1) > pool (3) > ev (4)
+    # Load IDs can be listed to override the natural priority_class order,
+    # or left empty to use priority_class as-is.
+    load_priority_order: list[str] = Field(
+        default_factory=list,
+        description="Optional load ID order for free-window shedding priority. "
+        "Empty = use natural priority_class order.",
+    )
+
+
 class LoadsConfig(BaseModel):
     shelly_devices: list[ShellyDeviceConfig] = Field(default_factory=list)
     mqtt_load_endpoints: list[MQTTLoadEndpointConfig] = Field(default_factory=list)
+    free_window_orchestrator: FreeWindowOrchestratorConfig = Field(
+        default_factory=FreeWindowOrchestratorConfig,
+        description="Free-window import-cap-aware orchestration config.",
+    )
 
 
 class MQTTConfig(BaseModel):

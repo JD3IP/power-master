@@ -38,6 +38,7 @@ class LoopState:
     current_mode: OperatingMode = OperatingMode.SELF_USE
     last_command_result: str = ""
     is_running: bool = False
+    free_window_battery_setpoint_w: int | None = None  # Throttled battery setpoint from free-window orchestrator
 
 
 class ControlLoop:
