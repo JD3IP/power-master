@@ -371,11 +371,12 @@ def solve(
                 slot_hours,
             )
 
-        # Arbitrage gate (blocks grid export, not self-use discharge)
+        # Arbitrage gate (provider-aware, §R2)
         add_arbitrage_gate(
             prob, t, grid_export[t],
             inputs.export_rate_cents[t], inputs.wacb_cents,
             config.arbitrage.break_even_delta_cents,
+            gate_policy=config.arbitrage.gate_policy,
         )
 
         # Grid-charge policy: free-window + solar only (or allow arbitrage)

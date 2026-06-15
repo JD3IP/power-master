@@ -93,6 +93,25 @@ class ArbitrageConfig(BaseModel):
     price_color_buy_high_cents: float = 0
     price_color_sell_low_cents: float = 0
     price_color_sell_high_cents: float = 0
+    # Gate policy (§R2): how to apply the arbitrage gate.
+    # - "spot" (default): for Amber/spot providers — block exports when export_rate < wacb + delta.
+    # - "tou_aware": for TOU providers — disable the WACB-vs-export gate so economically-correct TOU
+    #   exports (tiered peaks, fixed-rate FiT windows, credit-contribution exports) are not suppressed
+    #   when WACB drifts high (e.g. after grid charge history). The fixed-rate price is deterministic
+    #   and known to be good; the gate's protective "don't export when batteries are expensive" intent
+    #   is not needed for planned, guaranteed-value exports.
+    gate_policy: str = Field(default="spot", pattern="^(spot|tou_aware)$")
+
+    @field_validator("gate_policy")
+    @classmethod
+    def validate_gate_policy(cls, v: str) -> str:
+        """Ensure gate_policy is one of the allowed values."""
+        if v not in ("spot", "tou_aware"):
+            raise ValueError(
+                f"gate_policy must be 'spot' (Amber/spot default) or 'tou_aware' (TOU default), "
+                f"got '{v}'"
+            )
+        return v
 
 
 class FixedCostsConfig(BaseModel):
@@ -865,3 +884,20 @@ class AppConfig(BaseModel):
     notifications: NotificationsConfig = NotificationsConfig()
     logging: LoggingConfig = LoggingConfig()
     db: DBConfig = DBConfig()
+
+    @model_validator(mode="after")
+    def resolve_arbitrage_gate_policy(self) -> AppConfig:
+        """Resolve arbitrage.gate_policy default based on provider type.
+
+        - type='tou' -> gate_policy='tou_aware' (disable WACB gate for fixed TOU)
+        - type='amber' (or other) -> gate_policy='spot' (keep legacy behaviour)
+
+        User can always set arbitrage.gate_policy explicitly to override.
+        """
+        # If gate_policy is still at default "spot" AND provider is TOU, switch to tou_aware.
+        # If user explicitly set gate_policy, respect it.
+        if (self.arbitrage.gate_policy == "spot" and
+            self.providers.tariff.type == "tou"):
+            self.arbitrage.gate_policy = "tou_aware"
+
+        return self

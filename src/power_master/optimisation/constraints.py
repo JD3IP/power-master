@@ -104,12 +104,36 @@ def add_arbitrage_gate(
     export_rate: float,
     wacb: float,
     break_even_delta: float,
+    gate_policy: str = "spot",
 ) -> None:
-    """Only allow grid export when profitable above break-even.
+    """Provider-aware arbitrage gate (§R2 — Phase 2).
 
-    If export_rate < wacb + break_even_delta, block grid export.
-    Battery discharge for self-use (avoiding grid import) is always allowed.
+    SPOT POLICY (Amber/spot providers, default):
+      Block grid export when export_rate < wacb + break_even_delta.
+      Protective: prevents exporting when battery was expensive (high WACB) and
+      export rate is low (spot volatility). Safe for unpredictable spot pricing.
+
+    TOU_AWARE POLICY (TOU providers like Globird):
+      Do NOT apply the WACB gate. Disable it entirely.
+      Rationale: TOU export rates are deterministic and contractually guaranteed
+      (e.g., 10c Super Export tier, 8c off-peak FiT, 2c base FiT). There is no
+      economic case to block a known-good export just because WACB is high (which
+      may reflect past grid-charging history, not the current export's value).
+      The solver's own objective cost model will optimize export profitably.
+
+    In both cases, battery discharge for self-use (avoiding grid import) is
+    always allowed (not gated by this function).
+
+    Args:
+        gate_policy: "spot" (legacy, Amber default) or "tou_aware" (TOU default).
     """
+    # Only apply the WACB-vs-export gate for spot pricing.
+    # For TOU, the gate is disabled (do nothing).
+    if gate_policy == "tou_aware":
+        # TOU: no gate — let the solver decide based on the fixed export rate.
+        return
+
+    # Spot policy: apply the protective gate (existing behaviour).
     if export_rate < wacb + break_even_delta:
         prob += grid_export == 0, f"arbitrage_gate_{t}"
 
