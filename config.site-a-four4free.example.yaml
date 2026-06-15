@@ -1,0 +1,319 @@
+# PowerMaster Example Configuration — Site A (EV Site)
+# Plan: Globird FOUR4FREE (GLO1059697MRE1)
+# Effective: 2026-06-01
+# Rates confirmed 2026-06-14, inc GST, before discount
+# Energex/QLD, Australia/Brisbane, all week, monthly billing
+
+# ============================================================================
+# Site Configuration
+# ============================================================================
+
+battery:
+  capacity_wh: 42000
+  max_charge_rate_w: 8000
+  max_discharge_rate_w: 8000
+  max_grid_import_w: 15000      # Site max grid import threshold (A5 × 240V ~ 15kW)
+  soc_min_hard: 0.05            # 5% absolute floor
+  soc_max_hard: 0.99
+  soc_min_soft: 0.10            # Preferred operating minimum
+  soc_max_soft: 0.90
+  round_trip_efficiency: 0.95
+  taper_start_soc: 0.90
+  taper_factor: 0.5
+
+load_profile:
+  block_00_04_w: 500
+  block_04_08_w: 800
+  block_08_12_w: 1200
+  block_12_16_w: 1500
+  block_16_20_w: 1500            # Evening peak (pre-EV; EV draws TBD Phase 3)
+  block_20_24_w: 1200
+  min_history_records: 48
+  timezone: "Australia/Brisbane"
+
+planning:
+  optimiser_enabled: true
+  horizon_hours: 48
+  slot_duration_minutes: 30
+  evaluation_interval_seconds: 300
+  periodic_rebuild_interval_seconds: 3600
+  forecast_delta_threshold_pct: 15.0
+  soc_deviation_tolerance: 0.05
+  soc_deviation_cooldown_seconds: 300
+  solver_timeout_seconds: 25
+
+battery_targets:
+  evening_soc_target: 0.90       # Charge to 90% by 4pm (free window ends at 2pm + solar buffer)
+  evening_target_hour: 16
+  morning_soc_minimum: 0.20      # Allow discharge overnight (shoulder/peak rates discourage grid import anyway)
+  morning_minimum_hour: 6
+  daytime_reserve_soc_target: 0.50
+  daytime_reserve_start_hour: 8
+  daytime_reserve_end_hour: 18
+  overnight_charge_threshold_cents: 0.0  # Disable panic import (grid_charge_policy enforces free-only)
+  force_charge_below_price_cents: 0.0    # Disabled (use grid_charge_policy)
+
+arbitrage:
+  break_even_delta_cents: 5
+  spike_threshold_cents: 100
+  spike_response_mode: "aggressive"
+  price_dampen_threshold_cents: 100
+  price_dampen_factor: 0.5
+
+fixed_costs:
+  monthly_supply_charge_cents: 0      # Unused; TOU plan carries supply charge
+  daily_access_fee_cents: 0
+  hedging_per_kwh_cents: 0
+
+anti_oscillation:
+  min_command_duration_seconds: 300
+  hysteresis_band: 0.05
+  rate_limit_window_seconds: 900
+  max_commands_per_window: 3
+
+storm:
+  enabled: true
+  reserve_soc_target: 0.80
+  probability_threshold: 0.70
+  horizon_hours: 24
+
+# ============================================================================
+# Providers
+# ============================================================================
+
+providers:
+  forecast_persistence_enabled: true
+  forecast_retention_days: 365
+  forecast_horizons_hours: [1.0, 4.0, 10.0, 18.0, 24.0]
+
+  weather:
+    type: "openmeteo"
+    update_interval_seconds: 3600
+    validity_seconds: 3600
+    latitude: -27.4727            # Site A location (Jody's real coordinates)
+    longitude: 152.9893
+
+  solar:
+    latitude: -27.4727
+    longitude: 152.9893
+    declination: 30.0              # Panel tilt
+    azimuth: -170.0                # NW-facing
+    kwp: 7.0                        # 7 kW PV system
+    timezone: "Australia/Brisbane"
+    update_interval_seconds: 21600  # 6 hours
+    calibration_enabled: false
+    calibration_window_days: 21
+    calibration_refit_interval_seconds: 3600
+
+  storm:
+    type: "bom"
+    state_code: "IDQ11295"
+    location_aac: "QLD_PT001"
+    update_interval_seconds: 21600
+    validity_seconds: 21600
+    warning_product_ids:
+      - IDQ21033
+      - IDQ21035
+      - IDQ21037
+      - IDQ21038
+
+  # ========================================================================
+  # TOU Tariff Provider — FOUR4FREE (fixed, no spot pricing)
+  # ========================================================================
+  tariff:
+    type: "tou"                    # Use TOU tariff (not Amber)
+    timezone: "Australia/Brisbane"
+    grid_charge_policy: "free_window_and_solar_only"  # Never panic-import at shoulder/peak
+
+    plan:
+      supply_charge_c_per_day: 148.5 # 148.5c/day = $1.485/day
+
+      # Reusable band components (YAML anchors for DRY principle)
+      _bands:
+        peak: &peak
+          descriptor: "peak"
+          windows: ["16:00-22:59"]
+          rate_c_per_kwh: 55.55
+
+        off_peak_balance: &off_peak_balance
+          descriptor: "off-peak-balance"
+          windows: ["10:00-13:59"]
+          rate_c_per_kwh: 28.6
+
+        shoulder: &shoulder
+          descriptor: "shoulder"
+          windows: []  # No windows = default/fallback band for uncovered time
+          rate_c_per_kwh: 34.1
+
+      versions:
+        - valid_from: "2026-06-01"
+          valid_until: null          # Open-ended until next version
+
+          # Import bands — evaluated in order; one with empty windows = default
+          import_bands:
+            - *peak
+            - *off_peak_balance
+            - *shoulder
+
+          # Free import window — 50 kWh/day @ 0c during 10:00-13:59
+          # After 50 kWh/day: falls back to off-peak-balance (28.6c)
+          free_windows:
+            - name: "four4free"
+              windows: ["10:00-13:59"]
+              rate_c_per_kwh: 0.0
+              cap_kwh_per_day: 50.0
+              applies_to_channel: "general"
+              over_cap_falls_back_to: "off-peak-balance"
+
+          # Feed-in (export) bands
+          feed_in_bands:
+            - name: "evening-fit"
+              windows: ["16:00-22:59"]
+              rate_c_per_kwh: 8.0     # 8c/kWh during peak export window
+
+            - name: "default-fit"
+              windows: []              # No windows = applies all other times
+              rate_c_per_kwh: 0.0      # 0c/kWh daytime (solar has no value)
+
+          # No conditional credits (FOUR4FREE is simple TOU)
+          credits: []
+
+      billing_cycle:
+        length_days: 28              # Monthly (use 28 for consistency; real billing is calendar month)
+        anchor_date: "2026-06-01"    # Effective date
+
+      vpp:
+        enabled: false               # Not enrolled in Globird VPP (EV site keeps control)
+
+# ============================================================================
+# Hardware & Loads
+# ============================================================================
+
+hardware:
+  adapter: "foxess"
+  foxess:
+    connection_type: "tcp"
+    host: "192.168.1.100"            # Inverter LAN IP
+    port: 502
+    unit_id: 247
+    poll_interval_seconds: 15
+    watchdog_timeout_seconds: 3600
+    remote_refresh_interval_seconds: 20
+
+loads:
+  shelly_devices:
+    - name: "Pool Pump"
+      host: "10.0.1.191"
+      relay_id: 0
+      power_w: 1000
+      priority_class: 5
+      enabled: true
+      earliest_start: "08:00"
+      latest_end: "16:00"
+      duration_minutes: 60
+      prefer_solar: true
+      days_of_week: [0, 1, 2, 3, 4, 5, 6]
+      min_runtime_minutes: 180
+      ideal_runtime_minutes: 240
+      max_runtime_minutes: 300
+      allow_split_shifts: true
+      completion_deadline: "16:00"
+
+    - name: "Hot Water System"
+      host: "10.0.1.191"
+      relay_id: 1
+      power_w: 3600
+      priority_class: 2
+      enabled: true
+      earliest_start: "00:00"
+      latest_end: "17:00"
+      duration_minutes: 60
+      prefer_solar: true
+      days_of_week: [0, 1, 2, 3, 4, 5, 6]
+      min_runtime_minutes: 120
+      ideal_runtime_minutes: 180
+      max_runtime_minutes: 240
+      allow_split_shifts: true
+      completion_deadline: "17:00"
+
+  mqtt_load_endpoints: []
+
+# ============================================================================
+# Network & Control
+# ============================================================================
+
+mqtt:
+  enabled: true
+  broker_host: "localhost"
+  broker_port: 1883
+  username: ""
+  password: ""
+  topic_prefix: "power_master"
+  publish_interval_seconds: 5
+  ha_discovery_enabled: true
+  ha_discovery_prefix: "homeassistant"
+
+dashboard:
+  host: "0.0.0.0"
+  port: 8080
+  sse_interval_seconds: 5
+  rolling_chart_power_max_kw: 20.0
+  rolling_chart_window_hours: 12
+  auth:
+    users: []                         # Empty = auth disabled
+    session_secret: ""
+    session_max_age_seconds: 2592000  # 30 days
+
+# ============================================================================
+# Monitoring & Resilience
+# ============================================================================
+
+resilience:
+  health_check_interval_seconds: 60
+  max_consecutive_failures: 3
+  stale_forecast_max_age_seconds: 7200
+  degraded_safety_margin: 0.05
+  stale_telemetry_max_age_seconds: 120
+
+accounting:
+  billing_cycle_day: 1
+  currency_code: "AUD"
+
+notifications:
+  enabled: false
+  battery_low_threshold: 0.10
+  battery_full_threshold: 0.95
+  log_min_level: "CRITICAL"
+  daily_briefing_enabled: false
+  daily_briefing_hour_local: 7
+  notification_retention_days: 90
+  channels:
+    telegram:
+      enabled: false
+    email:
+      enabled: false
+    pushover:
+      enabled: false
+    ntfy:
+      enabled: false
+    webhook:
+      enabled: false
+
+logging:
+  level: "INFO"
+  format: "json"
+  file: ""
+
+db:
+  path: "power_master.db"
+
+# ============================================================================
+# Phase 3+ Notes (Future EV Integration)
+# ============================================================================
+# EV charger today: dumb timer (not controllable)
+# Phase 3: Add EVConfig schema when charger becomes aware (forecast only)
+# Phase 4: Add control when charger is switchable (headroom-opportunistic, free-window, import-cap-aware)
+# Strategy: Charge from 10am-2pm free window (up to 50kWh/day cap), supplemented by
+#          overnight headroom-gated draws when projected SOC > floor+margin by free-window start.
+# Grid rate context: overnight (23:00-09:59) is shoulder 34.1c, evening (16:00-22:59) is peak 55.55c
+#                    → discourage grid import, use battery; free window covers refill.
