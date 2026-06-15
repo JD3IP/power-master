@@ -734,6 +734,10 @@ class EVConfig(BaseModel):
       1 = critical, 5 = opportunistic. EV is large + low-priority, so 5 is correct.
     - NO EV-specific SOC floor. The floor REUSES the global min-SOC reserve
       (battery_targets.morning_soc_minimum) evaluated at free-charge time.
+    - learn_from_telemetry: seed (Phase 3.6, O2) for learn-the-charger (Phase 4+).
+      When True, the system may observe the charger's real draw from telemetry and
+      provision off learned behaviour (robust to drifting dumb timer). Default False;
+      learning algorithm not implemented this milestone.
 
     Charging window and expected energy:
     - charge_window: Local time range in HH:MM-HH:MM format. May cross midnight
@@ -778,6 +782,10 @@ class EVConfig(BaseModel):
         ge=1,
         le=5,
         description="Load shedding priority (1=critical, 5=opportunistic/first-to-shed). EV defaults to 5 (large, low-priority load)."
+    )
+    learn_from_telemetry: bool = Field(
+        default=False,
+        description="SEED (Phase 3.6, O2): opt-in learn-the-charger. When True, the system observes charger draw from telemetry (7-14 days) and provisions off learned behaviour. Inert this milestone; algorithm not built until Phase 4+."
     )
 
     @field_validator("charger_kw")

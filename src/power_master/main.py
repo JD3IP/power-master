@@ -2605,6 +2605,14 @@ class Application:
         - Distribute expected_nightly_kwh as watts (avg W = kWh * 1000 / window_hours)
           across in-window slots.
         - Floor at min_nightly_kwh if set (to ensure minimum provisioning).
+
+        SEAM (Phase 4+, O2): learn-the-charger
+        When ev.learn_from_telemetry=True, Phase 4+ will invoke the ChargerLearner
+        to observe real charger draw from 7-14 days of telemetry and derive a
+        LearnedChargeProfile. The learned values (charge_window + expected_kwh +
+        confidence) will override/augment the config values below. This milestone
+        (Phase 3) does not implement the learning algorithm; the config values are
+        always used (see ev/charger_learner.py for the stub interface).
         """
         if not self.config.ev.enabled:
             return [0.0] * n_slots
@@ -2615,6 +2623,15 @@ class Application:
 
         ev_cfg = self.config.ev
         load_tz = resolve_timezone(self.config.load_profile.timezone)
+
+        # ─ FUTURE (O2, Phase 4+): Invoke ChargerLearner if learn_from_telemetry=True
+        # learned_profile = None
+        # if ev_cfg.learn_from_telemetry:
+        #     learner = ChargerLearner()
+        #     # Fetch last 7-14 days of telemetry from repo
+        #     telemetry_window = await self.repo.get_telemetry_since(...)
+        #     learned_profile = learner.observe(telemetry_window)
+        # Use config values this milestone (learned_profile is always None).
 
         # Parse charge_window HH:MM-HH:MM
         window_str = ev_cfg.charge_window
