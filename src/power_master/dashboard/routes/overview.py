@@ -469,6 +469,108 @@ async def overview(request: Request) -> HTMLResponse:
     # at slot boundaries.
     prev_plan_event, next_plan_event = _prev_next_significant_plan_events(plan_slots, now_utc, local_tz)
 
+    # TOU-aware view: when using TOU tariff, build a minimal status panel
+    # showing active band/descriptor, free-window cap status, and credit status.
+    tou_context = None
+    if config.providers.tariff.type == "tou":
+        tou_context = {}
+
+        # Get the active slot's descriptor and import rate from plan or aggregator
+        active_slot = None
+        active_descriptor = None
+        active_import_rate = None
+
+        # Prefer plan slots (more authoritative)
+        if plan_slots:
+            for slot in plan_slots:
+                dt = _parse_dt(slot.get("slot_start"))
+                end_dt = _parse_dt(slot.get("slot_end"))
+                if dt is None or end_dt is None:
+                    continue
+                if dt <= now_utc < end_dt:
+                    active_slot = slot
+                    active_import_rate = float(slot.get("import_rate_cents") or 0.0)
+                    active_descriptor = slot.get("descriptor", "unknown")
+                    break
+
+        # Fallback: tariff schedule from aggregator
+        if not active_slot and aggregator:
+            tariff = getattr(aggregator.state, "tariff", None)
+            if tariff and getattr(tariff, "slots", None):
+                for slot in tariff.slots:
+                    dt = slot.start
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    else:
+                        dt = dt.astimezone(timezone.utc)
+                    end_dt = getattr(slot, "end", None)
+                    if end_dt is None:
+                        continue
+                    if end_dt.tzinfo is None:
+                        end_dt = end_dt.replace(tzinfo=timezone.utc)
+                    else:
+                        end_dt = end_dt.astimezone(timezone.utc)
+                    if dt <= now_utc < end_dt:
+                        active_slot = slot
+                        active_import_rate = float(getattr(slot, "import_price_cents", 0.0) or 0.0)
+                        active_descriptor = getattr(slot, "descriptor", "unknown")
+                        break
+
+        tou_context["active_descriptor"] = active_descriptor
+        tou_context["active_import_rate_cents"] = round(active_import_rate, 1) if active_import_rate else None
+
+        # Free-window cap status
+        cap_tracker = getattr(request.app.state, "free_window_cap_tracker", None)
+        if cap_tracker:
+            tou_context["cap_remaining_kwh"] = round(cap_tracker.get_remaining_cap(), 2)
+            tou_context["cap_consumed_kwh"] = round(cap_tracker.get_consumed_today(), 2)
+            tou_context["cap_is_approaching"] = cap_tracker.is_cap_approaching(0.80)
+            tou_context["cap_is_exhausted"] = cap_tracker.is_cap_exhausted()
+
+        # ZEROHERO credit status (if configured)
+        # Extract from config plan if present
+        credit_status = None
+        if config.providers.tariff.plan and config.providers.tariff.plan.versions:
+            active_version = None
+            today = now_utc.astimezone(local_tz).date()
+            for version in config.providers.tariff.plan.versions:
+                if version.valid_from <= today:
+                    if version.valid_until is None or version.valid_until >= today:
+                        if active_version is None or version.valid_from > active_version.valid_from:
+                            active_version = version
+
+            if active_version and active_version.credits:
+                # Look for a low_import_window credit (ZEROHERO style)
+                for credit in active_version.credits:
+                    if credit.type == "low_import_window":
+                        credit_status = {
+                            "name": credit.name,
+                            "window": credit.windows[0] if credit.windows else "unknown",
+                            "max_import_kwh_per_hour": credit.max_import_kwh_per_hour,
+                            "reward_dollars": credit.reward_dollars_per_day,
+                        }
+                        # Query event emitter for recent status
+                        emitter = getattr(request.app.state, "tariff_event_emitter", None)
+                        if emitter:
+                            recent = emitter.get_events_by_type("credit_window_on_track")
+                            if recent:
+                                credit_status["status"] = "on_track"
+                            else:
+                                recent_risk = emitter.get_events_by_type("credit_window_at_risk")
+                                if recent_risk:
+                                    credit_status["status"] = "at_risk"
+                                else:
+                                    recent_forfeit = emitter.get_events_by_type("credit_window_forfeited")
+                                    if recent_forfeit:
+                                        credit_status["status"] = "forfeited"
+                                    else:
+                                        credit_status["status"] = "monitoring"
+                        else:
+                            credit_status["status"] = "monitoring"
+                        break
+
+        tou_context["credit_status"] = credit_status
+
     return templates.TemplateResponse(
         request,
         "overview.html",
@@ -491,6 +593,7 @@ async def overview(request: Request) -> HTMLResponse:
             "devices": devices,
             "prev_plan_event": prev_plan_event,
             "next_plan_event": next_plan_event,
+            "tou_context": tou_context,
         },
     )
 

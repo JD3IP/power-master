@@ -2350,3 +2350,42 @@ h2:first-child {
     font-weight: 600;
     cursor: pointer;
 }
+
+/* ── TOU Tariff Status Styling ──── */
+.dash-value.cap-available {
+    color: var(--accent-green);
+}
+
+.dash-value.cap-approaching {
+    color: var(--accent-yellow);
+}
+
+.dash-value.cap-exhausted {
+    color: var(--accent-red);
+}
+
+.credit-status-label {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 6px;
+    background: var(--bg-secondary);
+    border-radius: 3px;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.dash-value.credit-status-on_track {
+    color: var(--accent-green);
+}
+
+.dash-value.credit-status-at_risk {
+    color: var(--accent-yellow);
+}
+
+.dash-value.credit-status-forfeited {
+    color: var(--accent-red);
+}
+
+.dash-value.credit-status-monitoring {
+    color: var(--text-secondary);
+}

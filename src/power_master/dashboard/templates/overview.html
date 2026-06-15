@@ -165,6 +165,61 @@
         </div>
     </div>
 -->
+    <!-- ── TOU Tariff Status (visible only for TOU providers) ──── -->
+    {% if tou_context %}
+    <div class="dash-panel dash-panel--compact">
+        <div class="dash-panel-title">TOU Status</div>
+        <div class="dash-panel-body">
+            <!-- Active Band / Rate -->
+            {% if tou_context.active_descriptor %}
+            <div class="dash-row">
+                <span class="dash-label">Active Band</span>
+                <span class="dash-value">
+                    {{ tou_context.active_descriptor|capitalize }}
+                    {% if tou_context.active_import_rate_cents is not none %}
+                        @ {{ "%.1f"|format(tou_context.active_import_rate_cents) }}c/kWh
+                    {% endif %}
+                </span>
+            </div>
+            {% endif %}
+
+            <!-- Free-Window Cap Status -->
+            {% if "cap_remaining_kwh" in tou_context and tou_context.cap_remaining_kwh is not none %}
+            <div class="dash-row">
+                <span class="dash-label">Free Window Remaining</span>
+                <span class="dash-value
+                    {% if tou_context.cap_is_exhausted %} cap-exhausted{% elif tou_context.cap_is_approaching %} cap-approaching{% else %} cap-available{% endif %}">
+                    {{ "%.1f"|format(tou_context.cap_remaining_kwh) }} kWh
+                    {% if "cap_consumed_kwh" in tou_context and tou_context.cap_consumed_kwh is not none %}
+                        ({{ "%.1f"|format(tou_context.cap_consumed_kwh) }} used)
+                    {% endif %}
+                </span>
+            </div>
+            {% endif %}
+
+            <!-- ZEROHERO Evening Credit Status -->
+            {% if "credit_status" in tou_context and tou_context.credit_status %}
+            <div class="dash-row">
+                <span class="dash-label">Evening Credit</span>
+                <span class="dash-value credit-status-{{ tou_context.credit_status.status }}">
+                    {{ tou_context.credit_status.name|capitalize }}
+                    <span class="credit-status-label">{{ tou_context.credit_status.status|replace("_", " ")|capitalize }}</span>
+                    {% if tou_context.credit_status.reward_dollars %}
+                        (${{ "%.2f"|format(tou_context.credit_status.reward_dollars) }}/day)
+                    {% endif %}
+                </span>
+            </div>
+            {% if tou_context.credit_status.window %}
+            <div class="dash-row" style="font-size: 0.9em; color: var(--text-muted);">
+                <span class="dash-label">Window</span>
+                <span class="dash-value">{{ tou_context.credit_status.window }} (import &le; {{ tou_context.credit_status.max_import_kwh_per_hour|round(2) }} kWh/h)</span>
+            </div>
+            {% endif %}
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
     <!-- ── ENERGY COST Panel ───────────────────────── -->
     <div class="dash-panel">
         <div class="dash-panel-title">Energy Cost</div>

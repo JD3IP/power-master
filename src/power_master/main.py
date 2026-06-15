@@ -682,6 +682,9 @@ class Application:
         app.state.event_bus = event_bus
         app.state.notification_manager = notification_manager
         app.state.adapter = adapter
+        # TOU tariff support (dashboard needs these for TOU-aware view)
+        app.state.free_window_cap_tracker = free_window_cap_tracker
+        app.state.tariff_event_emitter = tariff_event_emitter
 
         import uvicorn
 
