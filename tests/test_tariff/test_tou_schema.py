@@ -423,9 +423,9 @@ class TestTariffProviderConfig:
         assert config.type == "amber"
 
     def test_grid_charge_policy_default(self) -> None:
-        """Grid charge policy defaults to free_window_and_solar_only."""
+        """Grid charge policy defaults to allow_arbitrage (legacy Amber behaviour)."""
         config = TariffProviderConfig()
-        assert config.grid_charge_policy == "free_window_and_solar_only"
+        assert config.grid_charge_policy == "allow_arbitrage"
 
     def test_grid_charge_policy_allow_arbitrage(self) -> None:
         """Grid charge policy can be set to allow_arbitrage."""
