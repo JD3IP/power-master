@@ -150,6 +150,59 @@ class Application:
             self._create_providers()
         )
 
+        # ── 3b. Free-window cap tracker (TOU tariffs only) ──────
+        # Wire cap tracker and event emitter to the TOU provider if active
+        from power_master.accounting.free_window_cap import FreeWindowCapTracker
+        from power_master.tariff.events import TariffEventEmitter
+
+        free_window_cap_tracker = None
+        tariff_event_emitter = TariffEventEmitter()
+        await tariff_event_emitter.init_persistence(repo)
+
+        if (
+            tariff_provider
+            and self.config.providers.tariff.type == "tou"
+            and self.config.providers.tariff.plan
+        ):
+            # Get the active version to find free windows
+            from datetime import date
+            today = date.today()
+            plan = self.config.providers.tariff.plan
+            active_version = None
+            for version in plan.versions:
+                if version.valid_from <= today:
+                    if version.valid_until is None or version.valid_until >= today:
+                        if active_version is None or version.valid_from > active_version.valid_from:
+                            active_version = version
+
+            # If there are free windows, create and wire the cap tracker
+            if active_version and active_version.free_windows:
+                # For now, use the first free window (or the one on "general" channel)
+                free_window = None
+                for fw in active_version.free_windows:
+                    if fw.applies_to_channel == "general":
+                        free_window = fw
+                        break
+                if not free_window:
+                    free_window = active_version.free_windows[0]
+
+                free_window_cap_tracker = FreeWindowCapTracker(
+                    timezone_name=self.config.providers.tariff.timezone,
+                    cap_kwh_per_day=free_window.cap_kwh_per_day,
+                    repo=None,  # Will be set in init_persistence
+                )
+                await free_window_cap_tracker.init_persistence(repo)
+
+                # Wire to provider
+                tariff_provider.wire_cap_tracker(free_window_cap_tracker)
+                tariff_provider.wire_event_emitter(tariff_event_emitter)
+
+                logger.info(
+                    "Wired free-window cap tracker: %.1f kWh/day, window '%s'",
+                    free_window.cap_kwh_per_day,
+                    free_window.name,
+                )
+
         # ── 4. Forecast aggregator ───────────────────────────
         from power_master.forecast.aggregator import ForecastAggregator
         from power_master.tariff.spike import SpikeDetector
@@ -347,6 +400,73 @@ class Application:
                 import_wh = round(grid_w * tick_hours)
                 if import_wh > 0:
                     await accounting.record_grid_import(import_wh, import_rate)
+
+                    # ── Increment free-window cap tracker from measured free-window import ──
+                    if free_window_cap_tracker:
+                        # Check if current time is within the active free window
+                        from datetime import datetime
+                        from zoneinfo import ZoneInfo
+
+                        now_local = datetime.now(ZoneInfo(self.config.providers.tariff.timezone))
+                        hm = (now_local.hour, now_local.minute)
+
+                        # Find the active version and free window
+                        from datetime import date as date_cls
+                        today = date_cls.today()
+                        plan = self.config.providers.tariff.plan
+                        active_version = None
+                        for version in plan.versions:
+                            if version.valid_from <= today:
+                                if version.valid_until is None or version.valid_until >= today:
+                                    if active_version is None or version.valid_from > active_version.valid_from:
+                                        active_version = version
+
+                        if active_version:
+                            # Check if time is in any free window on the "general" channel
+                            in_free_window = False
+                            free_window_name = None
+                            for fw in active_version.free_windows:
+                                if fw.applies_to_channel == "general":
+                                    # Check if time is in this window
+                                    if _time_in_windows(hm, fw.windows):
+                                        in_free_window = True
+                                        free_window_name = fw.name
+                                        break
+
+                            if in_free_window:
+                                import_kwh = import_wh / 1000.0
+                                was_approaching = free_window_cap_tracker.is_cap_approaching(0.80)
+                                was_exhausted = free_window_cap_tracker.is_cap_exhausted()
+
+                                await free_window_cap_tracker.increment(import_kwh)
+
+                                # Emit cap consumption event
+                                if tariff_event_emitter:
+                                    consumed = free_window_cap_tracker.get_consumed_today()
+                                    cap = free_window_cap_tracker._cap_kwh_per_day
+                                    tariff_event_emitter.emit_free_window_cap_consumed(
+                                        cap_name=free_window_name,
+                                        kwh_consumed=consumed,
+                                        cap_kwh_per_day=cap,
+                                    )
+
+                                    # Check threshold transitions
+                                    is_approaching = free_window_cap_tracker.is_cap_approaching(0.80)
+                                    is_exhausted = free_window_cap_tracker.is_cap_exhausted()
+
+                                    if not was_approaching and is_approaching:
+                                        tariff_event_emitter.emit_free_window_cap_approaching(
+                                            cap_name=free_window_name,
+                                            kwh_consumed=consumed,
+                                            cap_kwh_per_day=cap,
+                                        )
+
+                                    if not was_exhausted and is_exhausted:
+                                        tariff_event_emitter.emit_free_window_cap_exhausted(
+                                            cap_name=free_window_name,
+                                            cap_kwh_per_day=cap,
+                                        )
+
                 # If battery is also charging from grid
                 if battery_w > 0:
                     grid_charge_w = min(battery_w, grid_w)
@@ -2179,6 +2299,41 @@ def main() -> None:
             with contextlib.suppress(Exception):
                 loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
         loop.close()
+
+
+def _time_in_windows(local_hm: tuple[int, int], windows: list[str]) -> bool:
+    """Check if a (hour, minute) local time falls in any window.
+
+    Supports midnight-crossing windows (e.g., "22:00-07:00").
+
+    Args:
+        local_hm: (hour, minute) tuple in local time
+        windows: List of "HH:MM-HH:MM" window strings
+
+    Returns:
+        True if the time is in any window.
+    """
+    h, m = local_hm
+
+    for window_str in windows:
+        start_str, end_str = window_str.split("-")
+        sh, sm = map(int, start_str.split(":"))
+        eh, em = map(int, end_str.split(":"))
+
+        start_hm = (sh, sm)
+        end_hm = (eh, em)
+
+        # Check if start > end (midnight-crossing)
+        if start_hm > end_hm:
+            # Midnight-crossing: [start, 24:00) or [00:00, end)
+            if (h, m) >= start_hm or (h, m) < end_hm:
+                return True
+        else:
+            # Normal window: [start, end)
+            if start_hm <= (h, m) < end_hm:
+                return True
+
+    return False
 
 
 if __name__ == "__main__":
