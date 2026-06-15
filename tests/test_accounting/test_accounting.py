@@ -18,7 +18,16 @@ from power_master.accounting.fixed_costs import (
     calculate_fixed_costs,
     daily_arbitrage_target,
 )
-from power_master.config.schema import AppConfig, FixedCostsConfig
+from power_master.config.schema import (
+    AppConfig,
+    FixedCostsConfig,
+    TariffProviderConfig,
+    TariffPlanConfig,
+    TariffVersion,
+    BillingCycleConfig,
+    BandBase,
+)
+from datetime import date
 
 
 # ── WACB / Cost Basis Tests ──────────────────────────────────
@@ -236,3 +245,68 @@ class TestAccountingEngine:
 
         engine.sync_soc(0.8)
         assert engine.cost_basis.state.stored_wh == 8000
+
+    def test_engine_tou_supply_charge(self) -> None:
+        """Supply charge is retrieved from TOU plan when configured."""
+        # Create TOU config with supply charge
+        tou_config = AppConfig()
+        tou_config.providers.tariff.type = "tou"
+        tou_config.providers.tariff.timezone = "Australia/Brisbane"
+        tou_config.providers.tariff.plan = TariffPlanConfig(
+            versions=[
+                TariffVersion(
+                    valid_from=date(2026, 6, 1),
+                    import_bands=[
+                        BandBase(descriptor="default", rate_c_per_kwh=20.0)
+                    ],
+                    free_windows=[],
+                    feed_in_bands=[],
+                    credits=[],
+                )
+            ],
+            billing_cycle=BillingCycleConfig(
+                length_days=28,
+                anchor_date=date(2026, 6, 1),
+            ),
+            supply_charge_c_per_day=198.0,  # ZEROHERO supply charge
+        )
+
+        engine = AccountingEngine(tou_config)
+        assert engine.get_tou_supply_charge_cents() == 198.0
+
+    def test_engine_summary_includes_supply_charge(self) -> None:
+        """Supply charge appears in accounting summary."""
+        # Create TOU config with supply charge
+        tou_config = AppConfig()
+        tou_config.providers.tariff.type = "tou"
+        tou_config.providers.tariff.timezone = "Australia/Brisbane"
+        tou_config.providers.tariff.plan = TariffPlanConfig(
+            versions=[
+                TariffVersion(
+                    valid_from=date(2026, 6, 1),
+                    import_bands=[
+                        BandBase(descriptor="default", rate_c_per_kwh=20.0)
+                    ],
+                    free_windows=[],
+                    feed_in_bands=[],
+                    credits=[],
+                )
+            ],
+            billing_cycle=BillingCycleConfig(
+                length_days=28,
+                anchor_date=date(2026, 6, 1),
+            ),
+            supply_charge_c_per_day=198.0,
+        )
+
+        engine = AccountingEngine(tou_config)
+        summary = engine.get_summary()
+        assert summary.daily_supply_charge_cents == 198.0
+
+    def test_engine_no_supply_charge_for_amber(self) -> None:
+        """Amber plan has no TOU supply charge (uses fixed_costs instead)."""
+        amber_config = AppConfig()
+        amber_config.providers.tariff.type = "amber"
+
+        engine = AccountingEngine(amber_config)
+        assert engine.get_tou_supply_charge_cents() == 0.0

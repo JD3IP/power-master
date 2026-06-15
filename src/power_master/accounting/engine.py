@@ -31,10 +31,13 @@ class AccountingSummary:
     events_today: int = 0
     today_net_cost_cents: int = 0
     week_net_cost_cents: int = 0
+    daily_supply_charge_cents: float = 0.0  # TOU supply charge for today
+    daily_credit_earned_dollars: float = 0.0  # Daily credit tracker result
 
 
 KV_WACB_KEY = "wacb_state"
 KV_BILLING_KEY = "billing_cycle_state"
+KV_DAILY_SUPPLY_CHARGE_KEY = "daily_supply_charge_state"
 
 
 class AccountingEngine:
@@ -54,6 +57,8 @@ class AccountingEngine:
         self._repo = None
         # Provider/era tracking: set dynamically via set_provider_type() if provider changes
         self._provider_type = config.providers.tariff.type if hasattr(config.providers.tariff, 'type') else "amber"
+        # TOU supply charge state: tracks daily supply charge to avoid double-counting in cost reporting
+        self._daily_supply_charge_recorded: dict = {}  # {YYYY-MM-DD: cents}
 
     async def init_persistence(self, repo) -> None:
         """Load persisted accounting state and wire up auto-save."""
@@ -261,6 +266,23 @@ class AccountingEngine:
         """Sum net cost_cents for events after *since*."""
         return sum(e.cost_cents for e in self._events if e.timestamp >= since)
 
+    def get_tou_supply_charge_cents(self) -> float:
+        """Get TOU plan's daily supply charge if configured.
+
+        Returns the supply charge from the active TOU plan if available,
+        otherwise 0.0. This is separate from fixed_costs.monthly_supply_charge
+        to avoid double-counting.
+
+        Returns:
+            Daily supply charge in cents (0.0 if not a TOU plan or not configured)
+        """
+        if (
+            self._config.providers.tariff.type == "tou"
+            and self._config.providers.tariff.plan
+        ):
+            return self._config.providers.tariff.plan.supply_charge_c_per_day
+        return 0.0
+
     def get_summary(self) -> AccountingSummary:
         """Get current accounting summary."""
         cycle = self._billing.get_or_create_cycle()
@@ -274,6 +296,9 @@ class AccountingEngine:
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         week_start = today_start - timedelta(days=now.weekday())
 
+        # Get TOU supply charge for today (if applicable)
+        daily_supply_charge = self.get_tou_supply_charge_cents()
+
         return AccountingSummary(
             wacb_cents=self._cost_basis.wacb_cents,
             stored_value_cents=self._cost_basis.stored_value_cents,
@@ -282,6 +307,7 @@ class AccountingEngine:
             events_today=len([e for e in self._events if e.timestamp >= today_start]),
             today_net_cost_cents=self._net_cost_since(today_start),
             week_net_cost_cents=self._net_cost_since(week_start),
+            daily_supply_charge_cents=daily_supply_charge,
         )
 
     def get_recent_events(self, count: int = 50) -> list[AccountingEvent]:
