@@ -422,18 +422,91 @@ class TestTariffProviderConfig:
         config = TariffProviderConfig()
         assert config.type == "amber"
 
-    def test_grid_charge_policy_default(self) -> None:
-        """Grid charge policy defaults to allow_arbitrage (legacy Amber behaviour)."""
-        config = TariffProviderConfig()
+    def test_grid_charge_policy_default_amber(self) -> None:
+        """Grid charge policy defaults to allow_arbitrage for Amber (legacy behaviour)."""
+        config = TariffProviderConfig(type="amber")
         assert config.grid_charge_policy == "allow_arbitrage"
 
-    def test_grid_charge_policy_allow_arbitrage(self) -> None:
-        """Grid charge policy can be set to allow_arbitrage."""
+    def test_grid_charge_policy_default_tou(self) -> None:
+        """Grid charge policy defaults to free_window_and_solar_only for TOU (safe default)."""
+        config = TariffProviderConfig(
+            type="tou",
+            timezone="Australia/Brisbane",
+            plan=TariffPlanConfig(
+                versions=[
+                    TariffVersion(
+                        valid_from=date(2026, 6, 1),
+                        valid_until=None,
+                        import_bands=[
+                            BandBase(descriptor="shoulder", windows=[], rate_c_per_kwh=34.1),
+                        ],
+                    )
+                ],
+                billing_cycle=BillingCycleConfig(length_days=28, anchor_date=date(2026, 6, 1)),
+                supply_charge_c_per_day=148.5,
+            ),
+        )
+        assert config.grid_charge_policy == "free_window_and_solar_only"
+
+    def test_grid_charge_policy_explicit_allow_arbitrage_amber(self) -> None:
+        """Explicit allow_arbitrage on Amber is respected."""
         config = TariffProviderConfig(
             type="amber",
             grid_charge_policy="allow_arbitrage",
         )
         assert config.grid_charge_policy == "allow_arbitrage"
+
+    def test_grid_charge_policy_explicit_free_window_tou(self) -> None:
+        """Explicit free_window_and_solar_only on TOU is respected."""
+        config = TariffProviderConfig(
+            type="tou",
+            timezone="Australia/Brisbane",
+            plan=TariffPlanConfig(
+                versions=[
+                    TariffVersion(
+                        valid_from=date(2026, 6, 1),
+                        valid_until=None,
+                        import_bands=[
+                            BandBase(descriptor="shoulder", windows=[], rate_c_per_kwh=34.1),
+                        ],
+                    )
+                ],
+                billing_cycle=BillingCycleConfig(length_days=28, anchor_date=date(2026, 6, 1)),
+                supply_charge_c_per_day=148.5,
+            ),
+            grid_charge_policy="free_window_and_solar_only",
+        )
+        assert config.grid_charge_policy == "free_window_and_solar_only"
+
+    def test_grid_charge_policy_explicit_allow_arbitrage_tou(self) -> None:
+        """Explicit allow_arbitrage on TOU is respected (override safe default)."""
+        config = TariffProviderConfig(
+            type="tou",
+            timezone="Australia/Brisbane",
+            plan=TariffPlanConfig(
+                versions=[
+                    TariffVersion(
+                        valid_from=date(2026, 6, 1),
+                        valid_until=None,
+                        import_bands=[
+                            BandBase(descriptor="shoulder", windows=[], rate_c_per_kwh=34.1),
+                        ],
+                    )
+                ],
+                billing_cycle=BillingCycleConfig(length_days=28, anchor_date=date(2026, 6, 1)),
+                supply_charge_c_per_day=148.5,
+            ),
+            grid_charge_policy="allow_arbitrage",
+        )
+        assert config.grid_charge_policy == "allow_arbitrage"
+
+    def test_grid_charge_policy_explicit_free_window_amber(self) -> None:
+        """Explicit free_window_and_solar_only on Amber is respected."""
+        config = TariffProviderConfig(
+            type="amber",
+            grid_charge_policy="free_window_and_solar_only",
+        )
+        assert config.grid_charge_policy == "free_window_and_solar_only"
 
     def test_invalid_grid_charge_policy(self) -> None:
         """Invalid grid charge policy raises."""

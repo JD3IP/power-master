@@ -440,11 +440,13 @@ class TariffProviderConfig(BaseModel):
     )
 
     # Grid charge policy (universal knob per plan §5.6)
-    # Default "allow_arbitrage" preserves legacy Amber behaviour.
-    # Switch to "free_window_and_solar_only" when using TOU tariffs to prevent panic-import.
-    grid_charge_policy: str = Field(
-        default="allow_arbitrage",
-        description="'free_window_and_solar_only' (no panic-import, for TOU) | 'allow_arbitrage' (legacy Amber behaviour)"
+    # Default is None, resolved in model_validator based on type:
+    #   - type="tou" -> "free_window_and_solar_only" (no panic-import)
+    #   - type="amber" (or other) -> "allow_arbitrage" (legacy behaviour)
+    # User can always set explicitly to override.
+    grid_charge_policy: str | None = Field(
+        default=None,
+        description="'free_window_and_solar_only' (no panic-import, for TOU) | 'allow_arbitrage' (legacy Amber behaviour) | None (auto-resolved)"
     )
 
     @field_validator("timezone")
@@ -471,7 +473,7 @@ class TariffProviderConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_tou_requirements(self) -> TariffProviderConfig:
-        """Validate TOU-specific requirements."""
+        """Validate TOU-specific requirements and resolve grid_charge_policy default."""
         if self.type == "tou":
             if not self.plan:
                 raise ValueError(
@@ -482,12 +484,20 @@ class TariffProviderConfig(BaseModel):
                     "timezone is REQUIRED when type='tou'"
                 )
 
-        # Validate grid_charge_policy
-        if self.grid_charge_policy not in ("free_window_and_solar_only", "allow_arbitrage"):
-            raise ValueError(
-                f"grid_charge_policy must be 'free_window_and_solar_only' or 'allow_arbitrage', "
-                f"got '{self.grid_charge_policy}'"
+        # Resolve grid_charge_policy: None -> type-dependent default, else validate explicit value
+        if self.grid_charge_policy is None:
+            # Safe default for TOU: no panic-import (free window + solar only).
+            # Legacy default for Amber: allow arbitrage (for backward compatibility).
+            self.grid_charge_policy = (
+                "free_window_and_solar_only" if self.type == "tou" else "allow_arbitrage"
             )
+        else:
+            # Explicit value: validate it's in the allowed set (fail-loud)
+            if self.grid_charge_policy not in ("free_window_and_solar_only", "allow_arbitrage"):
+                raise ValueError(
+                    f"grid_charge_policy must be 'free_window_and_solar_only' or 'allow_arbitrage', "
+                    f"got '{self.grid_charge_policy}'"
+                )
 
         return self
 
