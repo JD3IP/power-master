@@ -239,3 +239,110 @@ db:
         )
         # Model loads but is inert (enabled=False overrides everything)
         assert config.ev.enabled is False
+
+    def test_ev_charge_window_valid_format(self) -> None:
+        """EVConfig charge_window accepts HH:MM-HH:MM format."""
+        config = AppConfig(
+            ev={"enabled": True, "charger_kw": 3.0, "charge_window": "22:00-07:00"}
+        )
+        assert config.ev.charge_window == "22:00-07:00"
+
+    def test_ev_charge_window_no_midnight_crossing(self) -> None:
+        """EVConfig charge_window without midnight crossing (e.g., 10:00-16:00)."""
+        config = AppConfig(
+            ev={"enabled": True, "charger_kw": 3.0, "charge_window": "10:00-16:00"}
+        )
+        assert config.ev.charge_window == "10:00-16:00"
+
+    def test_ev_charge_window_none_allowed(self) -> None:
+        """EVConfig charge_window=None is allowed (window not specified)."""
+        config = AppConfig(
+            ev={"enabled": True, "charger_kw": 3.0, "charge_window": None}
+        )
+        assert config.ev.charge_window is None
+
+    def test_ev_charge_window_invalid_format_raises(self) -> None:
+        """EVConfig with invalid charge_window format raises."""
+        with pytest.raises(ValueError, match="charge_window must match HH:MM-HH:MM format"):
+            AppConfig(ev={"enabled": True, "charger_kw": 3.0, "charge_window": "22-07"})
+
+    def test_ev_charge_window_invalid_hour_raises(self) -> None:
+        """EVConfig with invalid hour in charge_window raises."""
+        with pytest.raises(ValueError, match="Invalid start time in charge_window"):
+            AppConfig(ev={"enabled": True, "charger_kw": 3.0, "charge_window": "25:00-07:00"})
+
+    def test_ev_charge_window_invalid_minute_raises(self) -> None:
+        """EVConfig with invalid minute in charge_window raises."""
+        with pytest.raises(ValueError, match="Invalid end time in charge_window"):
+            AppConfig(ev={"enabled": True, "charger_kw": 3.0, "charge_window": "22:00-07:99"})
+
+    def test_ev_expected_nightly_kwh_valid(self) -> None:
+        """EVConfig expected_nightly_kwh accepts positive values."""
+        config = AppConfig(
+            ev={"enabled": True, "charger_kw": 3.0, "expected_nightly_kwh": 20.0}
+        )
+        assert config.ev.expected_nightly_kwh == 20.0
+
+    def test_ev_expected_nightly_kwh_none_allowed(self) -> None:
+        """EVConfig expected_nightly_kwh=None is allowed (energy not specified)."""
+        config = AppConfig(
+            ev={"enabled": True, "charger_kw": 3.0, "expected_nightly_kwh": None}
+        )
+        assert config.ev.expected_nightly_kwh is None
+
+    def test_ev_expected_nightly_kwh_zero_raises(self) -> None:
+        """EVConfig with expected_nightly_kwh=0 raises."""
+        with pytest.raises(ValueError, match="expected_nightly_kwh must be > 0 if set"):
+            AppConfig(ev={"enabled": True, "charger_kw": 3.0, "expected_nightly_kwh": 0})
+
+    def test_ev_expected_nightly_kwh_negative_raises(self) -> None:
+        """EVConfig with negative expected_nightly_kwh raises."""
+        with pytest.raises(ValueError, match="expected_nightly_kwh must be > 0 if set"):
+            AppConfig(ev={"enabled": True, "charger_kw": 3.0, "expected_nightly_kwh": -5.0})
+
+    def test_ev_floor_expected_at_min_nightly(self) -> None:
+        """EVConfig floors expected_nightly_kwh at min_nightly_kwh when both set."""
+        config = AppConfig(
+            ev={
+                "enabled": True,
+                "charger_kw": 3.0,
+                "expected_nightly_kwh": 12.0,
+                "mode": {"min_nightly_kwh": 15.0, "opportunistic": False},
+            }
+        )
+        # expected_nightly_kwh should be floored at min_nightly_kwh
+        assert config.ev.expected_nightly_kwh == 15.0
+
+    def test_ev_no_floor_when_expected_exceeds_min(self) -> None:
+        """EVConfig does not reduce expected when it exceeds min_nightly_kwh."""
+        config = AppConfig(
+            ev={
+                "enabled": True,
+                "charger_kw": 3.0,
+                "expected_nightly_kwh": 20.0,
+                "mode": {"min_nightly_kwh": 15.0, "opportunistic": False},
+            }
+        )
+        # expected_nightly_kwh > min_nightly_kwh, so no change
+        assert config.ev.expected_nightly_kwh == 20.0
+
+    def test_ev_full_dumb_timer_config(self) -> None:
+        """Full dumb timer EV config with window, expected energy, and min_nightly."""
+        config = AppConfig(
+            ev={
+                "enabled": True,
+                "charger_kw": 3.5,
+                "charge_window": "22:00-07:00",
+                "expected_nightly_kwh": 25.0,
+                "controllable": False,
+                "adapter": None,
+                "mode": {"min_nightly_kwh": 15.0, "opportunistic": False},
+                "shed_priority": 5,
+            }
+        )
+        assert config.ev.enabled is True
+        assert config.ev.charger_kw == 3.5
+        assert config.ev.charge_window == "22:00-07:00"
+        assert config.ev.expected_nightly_kwh == 25.0
+        assert config.ev.mode.min_nightly_kwh == 15.0
+        assert config.ev.controllable is False

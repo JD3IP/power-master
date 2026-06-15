@@ -724,6 +724,9 @@ class EVConfig(BaseModel):
     Design notes:
     - enabled=False by default so existing configs without an EV block load unchanged.
     - charger_kw fed to the optimiser for provisioning + per-tick margin sizing.
+    - charge_window and expected_nightly_kwh together specify the dumb timer's schedule
+      and expected energy draw. The solver uses these to provision the battery.
+      Either can be None/unset if not applicable.
     - controllable=False today; flips True at Phase 4 when hardware binding active.
     - adapter placeholder (shelly/mqtt/contactor enum) unused this milestone.
     - shed_priority places the EV in the load-pruning ladder (see loads/manager.py).
@@ -731,6 +734,16 @@ class EVConfig(BaseModel):
       1 = critical, 5 = opportunistic. EV is large + low-priority, so 5 is correct.
     - NO EV-specific SOC floor. The floor REUSES the global min-SOC reserve
       (battery_targets.morning_soc_minimum) evaluated at free-charge time.
+
+    Charging window and expected energy:
+    - charge_window: Local time range in HH:MM-HH:MM format. May cross midnight
+      (e.g., "22:00-07:00"). Specifies when the dumb timer operates.
+    - expected_nightly_kwh: Expected energy drawn during charge_window in kWh.
+      If set, the solver uses this to provision the battery.
+      Distinct from mode.min_nightly_kwh: this is the EXPECTED value for provisioning;
+      min_nightly_kwh is a guaranteed MINIMUM (Phase 4 control enforces it).
+    - min_nightly_kwh relationship: when both are set, expected_nightly_kwh is floored
+      at min_nightly_kwh. This ensures the solver provisions AT LEAST the minimum.
     """
     enabled: bool = Field(
         default=False,
@@ -739,6 +752,14 @@ class EVConfig(BaseModel):
     charger_kw: float = Field(
         default=2.5,
         description="Rated charger draw in kW. Used for provisioning + margin sizing. Ignored if enabled=False."
+    )
+    charge_window: str | None = Field(
+        default=None,
+        description="OPTIONAL dumb timer charging window in HH:MM-HH:MM format (local time). May cross midnight (e.g., '22:00-07:00'). None = window not specified."
+    )
+    expected_nightly_kwh: float | None = Field(
+        default=None,
+        description="OPTIONAL expected nightly energy draw in kWh (during charge_window). Solver uses this to provision battery. Floored at min_nightly_kwh if both set. None = not specified."
     )
     controllable: bool = Field(
         default=False,
@@ -770,6 +791,38 @@ class EVConfig(BaseModel):
             )
         return v
 
+    @field_validator("charge_window")
+    @classmethod
+    def validate_charge_window(cls, v: str | None) -> str | None:
+        """Validate charge_window format HH:MM-HH:MM with valid hour/minute ranges.
+
+        Midnight-crossing windows (e.g., 22:00-07:00) are allowed.
+        """
+        if v is None:
+            return v
+        if not isinstance(v, str):
+            raise ValueError(f"charge_window must be string or None, got {type(v)}")
+        if not re.match(r"^\d{2}:\d{2}-\d{2}:\d{2}$", v):
+            raise ValueError(f"charge_window must match HH:MM-HH:MM format, got '{v}'")
+        start_str, end_str = v.split("-")
+        start_h, start_m = map(int, start_str.split(":"))
+        end_h, end_m = map(int, end_str.split(":"))
+
+        if not (0 <= start_h <= 23) or not (0 <= start_m <= 59):
+            raise ValueError(f"Invalid start time in charge_window '{v}': {start_str}")
+        if not (0 <= end_h <= 23) or not (0 <= end_m <= 59):
+            raise ValueError(f"Invalid end time in charge_window '{v}': {end_str}")
+
+        return v
+
+    @field_validator("expected_nightly_kwh")
+    @classmethod
+    def validate_expected_nightly_kwh(cls, v: float | None) -> float | None:
+        """Ensure expected_nightly_kwh > 0 if set."""
+        if v is not None and v <= 0:
+            raise ValueError(f"expected_nightly_kwh must be > 0 if set, got {v}")
+        return v
+
     @field_validator("adapter")
     @classmethod
     def validate_adapter(cls, v: str | None) -> str | None:
@@ -779,6 +832,18 @@ class EVConfig(BaseModel):
                 f"adapter must be 'shelly', 'mqtt', 'contactor', or None, got '{v}'"
             )
         return v
+
+    @model_validator(mode="after")
+    def floor_expected_at_min_nightly(self) -> EVConfig:
+        """Floor expected_nightly_kwh at min_nightly_kwh if both are set.
+
+        This ensures the solver provisions AT LEAST the guaranteed minimum.
+        """
+        if self.expected_nightly_kwh is not None and self.mode.min_nightly_kwh is not None:
+            self.expected_nightly_kwh = max(
+                self.expected_nightly_kwh, self.mode.min_nightly_kwh
+            )
+        return self
 
 
 class LoadsConfig(BaseModel):

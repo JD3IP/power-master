@@ -238,6 +238,24 @@ loads:
 
   mqtt_load_endpoints: []
 
+  # OPTIONAL: Free-window EV charger config (Phase 3: awareness; Phase 4: control)
+  # Uncomment to enable dumb-timer EV forecasting.
+  # The solver will provision the battery for the expected nightly EV draw during charge_window,
+  # ensuring sufficient free-window charge to power both the home and the EV overnight.
+  #
+  # Example: Tesla on 3.5kW Wallbox, scheduled 22:00-07:00, expected 20 kWh/night
+  #   ev:
+  #     enabled: true
+  #     charger_kw: 3.5
+  #     charge_window: "22:00-07:00"      # Local time (HH:MM-HH:MM, may cross midnight)
+  #     expected_nightly_kwh: 20.0         # Expected energy draw (kWh) during charge_window
+  #     controllable: false                # Phase 3: dumb timer (no control yet)
+  #     adapter: null                      # Phase 4: adapter binding (shelly/mqtt/contactor)
+  #     mode:
+  #       min_nightly_kwh: 15.0           # Optional: guaranteed minimum for Phase 4 control
+  #       opportunistic: false             # Phase 4: headroom-gated opportunistic charging
+  #     shed_priority: 5                   # EV is large + low-priority, first-to-shed if needed
+
 # ============================================================================
 # Network & Control
 # ============================================================================

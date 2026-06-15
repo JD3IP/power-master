@@ -1982,6 +1982,15 @@ class Application:
             repo, slot_start_times, n_slots,
         )
 
+        # EV forecast — distribute expected draw across charge window
+        ev_forecast_w = await self._build_ev_forecast(
+            slot_start_times, n_slots,
+        )
+
+        # Combine house + EV load forecast (solver sees combined demand)
+        for i in range(n_slots):
+            load_forecast_w[i] += ev_forecast_w[i]
+
         # Tariff rates
         import_rate_cents = [15.0] * n_slots  # Default rates
         export_rate_cents = [5.0] * n_slots
@@ -2576,6 +2585,91 @@ class Application:
         ]
         logger.info(
             "Load forecast: using configured profile (no historic data)",
+        )
+        return forecast
+
+    async def _build_ev_forecast(
+        self,
+        slot_start_times: list[datetime],
+        n_slots: int,
+    ) -> list[float]:
+        """Build EV expected draw forecast for the planning horizon.
+
+        Distributes the expected nightly EV energy across slots whose LOCAL time
+        falls within the charge_window. The solver then provisions the battery
+        for the combined house + EV load.
+
+        Strategy:
+        - If EV not enabled or no charge_window/expected_nightly_kwh, return all-zeros.
+        - Parse charge_window (HH:MM-HH:MM format, may cross midnight).
+        - Distribute expected_nightly_kwh as watts (avg W = kWh * 1000 / window_hours)
+          across in-window slots.
+        - Floor at min_nightly_kwh if set (to ensure minimum provisioning).
+        """
+        if not self.config.ev.enabled:
+            return [0.0] * n_slots
+
+        if (self.config.ev.charge_window is None or
+            self.config.ev.expected_nightly_kwh is None):
+            return [0.0] * n_slots
+
+        ev_cfg = self.config.ev
+        load_tz = resolve_timezone(self.config.load_profile.timezone)
+
+        # Parse charge_window HH:MM-HH:MM
+        window_str = ev_cfg.charge_window
+        start_str, end_str = window_str.split("-")
+        start_h, start_m = map(int, start_str.split(":"))
+        end_h, end_m = map(int, end_str.split(":"))
+        start_minutes = start_h * 60 + start_m
+        end_minutes = end_h * 60 + end_m
+
+        # Calculate window duration and average watts
+        if end_minutes > start_minutes:
+            # No midnight crossing
+            window_hours = (end_minutes - start_minutes) / 60.0
+        else:
+            # Midnight crossing (e.g., 22:00-07:00 = 9 hours)
+            window_hours = (1440 - start_minutes + end_minutes) / 60.0
+
+        # Determine provisioning energy: floor at min_nightly if set
+        provision_kwh = ev_cfg.expected_nightly_kwh
+        if ev_cfg.mode.min_nightly_kwh is not None:
+            provision_kwh = max(provision_kwh, ev_cfg.mode.min_nightly_kwh)
+
+        if window_hours <= 0:
+            logger.warning(
+                "EV charge_window has zero/negative duration; using zero forecast"
+            )
+            return [0.0] * n_slots
+
+        avg_w = (provision_kwh * 1000) / window_hours
+
+        # Distribute across in-window slots
+        forecast = []
+        for t in slot_start_times:
+            local_time = t.astimezone(load_tz)
+            local_h = local_time.hour
+            local_m = local_time.minute
+            local_minutes = local_h * 60 + local_m
+
+            # Check if slot time falls in charge_window
+            in_window = False
+            if end_minutes > start_minutes:
+                # No midnight crossing
+                in_window = start_minutes <= local_minutes < end_minutes
+            else:
+                # Midnight crossing
+                in_window = (local_minutes >= start_minutes or
+                             local_minutes < end_minutes)
+
+            forecast.append(avg_w if in_window else 0.0)
+
+        logger.info(
+            "EV forecast: %s, window_hours=%.1f, provision_kwh=%.2f, avg_w=%.1f "
+            "(%d slots with EV draw)",
+            window_str, window_hours, provision_kwh, avg_w,
+            sum(1 for w in forecast if w > 0.0)
         )
         return forecast
 
