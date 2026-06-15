@@ -46,6 +46,10 @@ class StaticTariffProvider(TariffProvider):
         self._tz = ZoneInfo(config.timezone)
         self._plan = config.plan
 
+        # Optional cap tracker and event emitter (wired in externally)
+        self._cap_tracker = None
+        self._event_emitter = None
+
         logger.info(
             "Initialized StaticTariffProvider: %d versions, timezone=%s, grid_charge_policy=%s",
             len(self._plan.versions),
@@ -142,6 +146,24 @@ class StaticTariffProvider(TariffProvider):
             logger.warning("is_healthy: exception during check: %s", e)
             return False
 
+    def wire_cap_tracker(self, cap_tracker) -> None:
+        """Wire in a free-window cap tracker for cap-aware pricing.
+
+        Args:
+            cap_tracker: FreeWindowCapTracker instance
+        """
+        self._cap_tracker = cap_tracker
+        logger.info("StaticTariffProvider: wired cap tracker")
+
+    def wire_event_emitter(self, event_emitter) -> None:
+        """Wire in a tariff event emitter for logging.
+
+        Args:
+            event_emitter: TariffEventEmitter instance
+        """
+        self._event_emitter = event_emitter
+        logger.info("StaticTariffProvider: wired event emitter")
+
     def _generate_slots(self, start_utc: datetime, end_utc: datetime) -> list[TariffSlot]:
         """Generate TariffSlot list for a UTC time range.
 
@@ -218,7 +240,7 @@ class StaticTariffProvider(TariffProvider):
     ) -> tuple[float, str]:
         """Get import price and descriptor for a local time.
 
-        Checks free windows first (phase 1: always price at free rate; cap enforcement is later).
+        Checks free windows first, respecting the daily cap via the cap tracker.
         Then checks windowed import bands.
         Falls back to the default (no-windows) band.
 
@@ -233,24 +255,34 @@ class StaticTariffProvider(TariffProvider):
         hm = (local_time.hour, local_time.minute)
 
         # Check free windows first
-        # NOTE: Phase 1 prices free windows at their rate (0c) without cap enforcement.
-        # Cap enforcement is a Phase 2 feature. When it lands, this will check
-        # the cumulative free window usage for the day and fall back to
-        # `over_cap_falls_back_to` if the daily cap is exhausted.
         for fw in version.free_windows:
             if self._time_in_windows(hm, fw.windows):
-                # Phase 1: always use the free window rate (typically 0c).
-                # SEAM: When cap enforcement lands, add:
-                #   remaining_cap = self._get_remaining_free_cap(fw.name, local_date)
-                #   if remaining_cap > 0:
-                #       return (fw.rate_c_per_kwh, fw.name)
-                #   else:
-                #       # Fall back to the over_cap band
-                #       fallback_band = next((b for b in version.import_bands
-                #                             if b.descriptor == fw.over_cap_falls_back_to), None)
-                #       if fallback_band:
-                #           return (fallback_band.rate_c_per_kwh, fallback_band.descriptor)
-                return (fw.rate_c_per_kwh, fw.name)
+                # If cap tracker is wired, check remaining cap
+                if self._cap_tracker:
+                    remaining_cap = self._cap_tracker.get_remaining_cap()
+                    if remaining_cap > 0:
+                        # Still have cap; price at free rate
+                        return (fw.rate_c_per_kwh, fw.name)
+                    else:
+                        # Cap exhausted; fall back to over_cap band
+                        fallback_band = next(
+                            (b for b in version.import_bands
+                             if b.descriptor == fw.over_cap_falls_back_to),
+                            None,
+                        )
+                        if fallback_band:
+                            return (fallback_band.rate_c_per_kwh, fallback_band.descriptor)
+                        else:
+                            # Fallback band not found (config error); log and use free rate
+                            logger.warning(
+                                "Free window %s: fallback band '%s' not found; using free rate",
+                                fw.name,
+                                fw.over_cap_falls_back_to,
+                            )
+                            return (fw.rate_c_per_kwh, fw.name)
+                else:
+                    # No cap tracker wired; always price at free rate
+                    return (fw.rate_c_per_kwh, fw.name)
 
         # Check windowed import bands
         for band in version.import_bands:
