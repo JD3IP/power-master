@@ -46,6 +46,53 @@ class TestRepository:
         assert active["version"] == 1
         assert active["trigger_reason"] == "startup"
 
+    async def test_log_command_audit(self, repo: Repository) -> None:
+        """Test that command audit logging works with proper kwargs."""
+        row_id = await repo.log_command_audit(
+            mode="FORCE_DISCHARGE",
+            power_w=5000,
+            source="optimiser",
+            source_type="OPTIMIZER",
+            reason="plan_slot_1",
+            priority=5,
+            result="ok",
+            latency_ms=125,
+        )
+        assert row_id > 0
+
+        # Verify row was written
+        audit = await repo.get_audit_trail(hours=24)
+        assert len(audit) == 1
+        assert audit[0]["mode"] == "FORCE_DISCHARGE"
+        assert audit[0]["power_w"] == 5000
+        assert audit[0]["result"] == "ok"
+
+    async def test_log_command_audit_all_modes(self, repo: Repository) -> None:
+        """Test audit logging for all operating modes."""
+        modes = ["AUTO", "SELF_USE", "SELF_USE_ZERO_EXPORT", "FORCE_CHARGE", "FORCE_DISCHARGE", "FORCE_CHARGE_ZERO_IMPORT"]
+        source_types = ["MANUAL", "SAFETY", "STORM", "OPTIMIZER"]
+
+        for i, (mode, source_type) in enumerate(zip(modes, source_types * 2)):
+            row_id = await repo.log_command_audit(
+                mode=mode,
+                power_w=1000 + i,
+                source="test_source",
+                source_type=source_type,
+                reason=f"test_{mode}",
+                priority=i % 5 + 1,
+                result="ok" if i % 2 == 0 else "error",
+                latency_ms=100 + i,
+            )
+            assert row_id > 0
+
+        # Verify all rows were written
+        audit = await repo.get_audit_trail(hours=24)
+        assert len(audit) == 6
+        # Rows come back in reverse chronological order
+        audit_modes = [a["mode"] for a in audit]
+        assert set(audit_modes) == set(modes)
+        assert all(a["source"] == "test_source" for a in audit)
+
     async def test_plan_supersedes_previous(self, repo: Repository) -> None:
         await repo.store_plan(
             version=1, trigger_reason="startup",

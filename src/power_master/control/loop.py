@@ -260,8 +260,24 @@ class ControlLoop:
                     result="ok" if result.success else "error",
                     latency_ms=result.latency_ms,
                 )
-            except Exception:
-                logger.exception("Failed to log command audit")
+            except Exception as e:
+                # Root cause unconfirmed: in the debug bundle this failed on every
+                # committed tick and db_logs was also empty, yet telemetry writes
+                # succeeded — so it's specific to the audit/db-log writes on the
+                # deployed instance, not a global DB outage. Log the exception
+                # TYPE+MESSAGE inline (shows in the in-memory log bundle) AND the
+                # full traceback via exception() (file logs) to name it next time.
+                logger.exception(
+                    "Failed to log command audit: mode=%s power=%dW source=%s "
+                    "source_type=%s reason=%s [%s: %s]",
+                    final_command.mode.name,
+                    final_command.power_w,
+                    final_command.source,
+                    final_command.get_source_type().value,
+                    final_command.reason,
+                    type(e).__name__,
+                    e,
+                )
 
         elapsed_ms = int((time.monotonic() - tick_start) * 1000)
         log_fn = logger.info if result.success else logger.warning

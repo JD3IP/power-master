@@ -405,7 +405,9 @@ class FoxESSAdapter:
                         "active_power=-%dW (charge from grid)",
                         self._config.watchdog_timeout_seconds, charge_w,
                     )
-                    await self._verify_remote_state(expected_remote=1, expected_active=-charge_w)
+                    await self._verify_remote_state(
+                        expected_remote=1, expected_active=-charge_w, active_power_value=-charge_w
+                    )
 
                 elif command.mode == OperatingMode.FORCE_DISCHARGE:
                     discharge_w = abs(command.power_w)
@@ -422,7 +424,9 @@ class FoxESSAdapter:
                         "active_power=+%dW export_limit=%dW (discharge to loads/grid)",
                         self._config.watchdog_timeout_seconds, discharge_w, self._max_export_w,
                     )
-                    await self._verify_remote_state(expected_remote=1, expected_active=discharge_w)
+                    await self._verify_remote_state(
+                        expected_remote=1, expected_active=discharge_w, active_power_value=discharge_w
+                    )
 
                 elif command.mode == OperatingMode.FORCE_CHARGE_ZERO_IMPORT:
                     # Matches example mode_battery_off_best_effort():
@@ -734,13 +738,19 @@ class FoxESSAdapter:
         """
         await self._write_register(address, value & 0xFFFF)
 
-    async def _verify_remote_state(self, expected_remote: int, expected_active: int) -> None:
+    async def _verify_remote_state(
+        self, expected_remote: int, expected_active: int,
+        active_power_value: int | None = None,
+    ) -> None:
         """Read back remote-control registers to confirm writes were applied.
 
         Some gateways/inverter firmwares report REMOTE_ENABLE as 0 even while
         ACTIVE_POWER is honored. Treat REMOTE_ENABLE mismatch as warning-only.
         The inverter may clamp ACTIVE_POWER to its rated maximum — treat a
         same-sign, lower-magnitude readback as accepted (clamped).
+
+        If expected_remote readback fails on first try, re-issues the remote-enable
+        and active-power writes once, then re-reads. Persistent mismatches remain warnings.
         """
         remote = await self._read_uint16(Registers.REMOTE_ENABLE)
         active_raw = await self._read_uint16(Registers.ACTIVE_POWER)
@@ -774,12 +784,36 @@ class FoxESSAdapter:
                 f"active_signed={active}, timeout={timeout}, "
                 f"expected_remote={expected_remote}, expected_active={expected_active})"
             )
+
+        # If remote enable readback mismatch, try a single retry
         if remote != expected_remote:
-            logger.warning(
-                "Remote enable readback mismatch (remote=%d expected=%d) but "
-                "active power command is applied (active=%d timeout=%d)",
-                remote,
-                expected_remote,
-                active,
-                timeout,
+            logger.info(
+                "Remote enable readback mismatch on first try (remote=%d expected=%d). "
+                "Re-issuing write and re-reading...",
+                remote, expected_remote,
             )
+            # Re-issue remote-enable
+            await self._write_register(Registers.REMOTE_ENABLE, expected_remote)
+            # Re-issue active-power if value was provided
+            if active_power_value is not None:
+                if expected_active < 0:
+                    await self._write_s16(Registers.ACTIVE_POWER, active_power_value)
+                else:
+                    await self._write_register(Registers.ACTIVE_POWER, active_power_value)
+            # Re-read to verify
+            remote = await self._read_uint16(Registers.REMOTE_ENABLE)
+            active_raw = await self._read_uint16(Registers.ACTIVE_POWER)
+            active = active_raw - 0x10000 if active_raw >= 0x8000 else active_raw
+
+            if remote == expected_remote:
+                logger.info(
+                    "Remote enable recovered after retry (remote=%d now matches expected=%d)",
+                    remote, expected_remote,
+                )
+            else:
+                logger.warning(
+                    "Remote enable readback mismatch persists after retry "
+                    "(remote=%d expected=%d) but active power command is applied "
+                    "(active=%d timeout=%d)",
+                    remote, expected_remote, active, timeout,
+                )

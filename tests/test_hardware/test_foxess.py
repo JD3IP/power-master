@@ -228,3 +228,82 @@ class TestDisconnectOnError:
 
         with pytest.raises(ConnectionError, match="does not exist"):
             await adapter.connect()
+
+
+class TestRemoteEnableRetry:
+    """Test remote-enable readback retry logic."""
+
+    @pytest.mark.asyncio
+    async def test_remote_enable_recovers_on_retry(self) -> None:
+        """Simulate first readback failing, second succeeding after retry."""
+        adapter = _make_adapter()
+
+        # Set up: first read returns remote=0, second (after retry) returns remote=1
+        read_sequence = [
+            0,  # First read: REMOTE_ENABLE = 0 (mismatch)
+            5000,  # First read: ACTIVE_POWER = 5000
+            60,  # First read: REMOTE_TIMEOUT = 60
+            1,  # Second read (after write retry): REMOTE_ENABLE = 1 (now matches!)
+            5000,  # Second read: ACTIVE_POWER = 5000
+        ]
+        adapter._client.read_holding_registers.side_effect = [
+            MagicMock(isError=lambda: False, registers=[r])
+            for r in read_sequence
+        ]
+
+        # Setup write_register mock to always succeed
+        ok_write = MagicMock(isError=lambda: False)
+        adapter._client.write_register.return_value = ok_write
+
+        # Should not raise, should log recovery
+        await adapter._verify_remote_state(
+            expected_remote=1, expected_active=5000, active_power_value=5000
+        )
+        # Verify write was called (at least for the retry)
+        assert adapter._client.write_register.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_remote_enable_persistent_mismatch_warns(self) -> None:
+        """Persistent remote readback mismatch after retry logs warning, doesn't raise."""
+        adapter = _make_adapter()
+
+        # Set up: both reads return remote=0 (persistent mismatch)
+        read_sequence = [
+            0,  # First read: REMOTE_ENABLE = 0 (mismatch)
+            5000,  # First read: ACTIVE_POWER = 5000
+            60,  # First read: REMOTE_TIMEOUT = 60
+            0,  # Second read (after write retry): REMOTE_ENABLE still 0 (still mismatches)
+            5000,  # Second read: ACTIVE_POWER = 5000
+        ]
+        adapter._client.read_holding_registers.side_effect = [
+            MagicMock(isError=lambda: False, registers=[r])
+            for r in read_sequence
+        ]
+
+        # Setup write_register mock to always succeed
+        ok_write = MagicMock(isError=lambda: False)
+        adapter._client.write_register.return_value = ok_write
+
+        # Should not raise (just warn)
+        await adapter._verify_remote_state(
+            expected_remote=1, expected_active=5000, active_power_value=5000
+        )
+
+    @pytest.mark.asyncio
+    async def test_remote_enable_no_retry_on_first_match(self) -> None:
+        """If first readback matches, no retry happens."""
+        adapter = _make_adapter()
+
+        # First read matches: remote=1, active=5000
+        adapter._client.read_holding_registers.side_effect = [
+            MagicMock(isError=lambda: False, registers=[1]),   # REMOTE_ENABLE = 1
+            MagicMock(isError=lambda: False, registers=[5000]),  # ACTIVE_POWER = 5000
+            MagicMock(isError=lambda: False, registers=[60]),   # REMOTE_TIMEOUT = 60
+        ]
+
+        # Should succeed without retry
+        await adapter._verify_remote_state(
+            expected_remote=1, expected_active=5000, active_power_value=5000
+        )
+        # Write should NOT have been called (no retry)
+        adapter._client.write_register.assert_not_called()
