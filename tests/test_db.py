@@ -197,3 +197,54 @@ class TestRepository:
             outcome="no_rebuild",
         )
         assert log_id > 0
+
+
+@pytest.mark.asyncio
+class TestMigrationSelfHeal:
+    async def test_up_to_date_db_recreates_missing_base_tables(self, tmp_path) -> None:
+        """A head-stamped DB missing a base table must get it back on next init.
+
+        Reproduces the deployed-instance bug: command_audit_log + application_logs
+        were absent while schema_version was already at head, so the migration
+        runner's 'up to date' branch must self-heal them.
+        """
+        import aiosqlite
+
+        from power_master.db.migrations import run_migrations
+
+        db = await aiosqlite.connect(str(tmp_path / "heal.db"))
+        try:
+            db.row_factory = aiosqlite.Row
+            # Fresh init: creates all base tables and stamps schema_version at head.
+            await run_migrations(db)
+
+            # Simulate the drift: drop two base tables while leaving the version at head.
+            await db.execute("DROP TABLE command_audit_log")
+            await db.execute("DROP TABLE application_logs")
+            await db.commit()
+            for table in ("command_audit_log", "application_logs"):
+                async with db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                    (table,),
+                ) as cur:
+                    assert await cur.fetchone() is None  # confirm gone
+
+            # Re-run: schema_version is still at head -> 'up to date' branch -> self-heal.
+            await run_migrations(db)
+            for table in ("command_audit_log", "application_logs"):
+                async with db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                    (table,),
+                ) as cur:
+                    assert await cur.fetchone() is not None, f"{table} not recreated"
+
+            # And the recreated audit table is writable (the original failure mode).
+            await db.execute(
+                "INSERT INTO command_audit_log "
+                "(issued_at, mode, power_w, source, source_type, reason, priority, result) "
+                "VALUES ('2026-06-16T00:00:00Z','SELF_USE',0,'optimiser','OPTIMIZER',"
+                "'plan_slot_0',1,'ok')"
+            )
+            await db.commit()
+        finally:
+            await db.close()

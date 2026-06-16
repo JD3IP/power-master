@@ -43,7 +43,22 @@ async def run_migrations(db: aiosqlite.Connection) -> None:
             raise
         logger.info("Migration complete")
     else:
-        logger.debug("Database schema is up to date (version %d)", current)
+        # Self-heal: ensure all base tables exist even when the DB is stamped at
+        # head. A DB created fresh during a window where a table lived only in a
+        # migration step (not yet in TABLES) gets stamped up-to-date and would
+        # otherwise NEVER receive that table — this is how command_audit_log and
+        # application_logs went missing on a deployed instance (audit writes and
+        # DB-log writes failed every tick while telemetry succeeded). Every
+        # statement in TABLES is CREATE ... IF NOT EXISTS, so this only creates
+        # MISSING tables and never alters existing ones. This branch never runs
+        # incremental ALTERs, so there is no duplicate-column risk.
+        for statement in TABLES:
+            await db.execute(statement)
+        await db.commit()
+        logger.debug(
+            "Database schema up to date (version %d); ensured base tables present",
+            current,
+        )
 
 
 async def _get_current_version(db: aiosqlite.Connection) -> int:
