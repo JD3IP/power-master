@@ -1190,10 +1190,16 @@ async def provider_status(request: Request) -> dict:
     now_mono = _time.monotonic()
 
     providers = {}
+
+    # Determine tariff label based on type
+    tariff_label = "Amber Tariff"  # default
+    if request.app.state.config.providers.tariff.type == "tou":
+        tariff_label = "TOU Tariff"
+
     provider_map = {
         "solar_forecast": {"label": "Solcast Solar", "update_attr": "last_solar_update"},
         "weather_forecast": {"label": "Open-Meteo Weather", "update_attr": "last_weather_update"},
-        "tariff": {"label": "Amber Tariff", "update_attr": "last_tariff_update"},
+        "tariff": {"label": tariff_label, "update_attr": "last_tariff_update"},
         "storm": {"label": "BOM Storm", "update_attr": "last_storm_update"},
     }
 

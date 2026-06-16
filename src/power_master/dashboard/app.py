@@ -102,6 +102,7 @@ def create_app(
     from power_master.dashboard.routes.settings import router as settings_router
     from power_master.dashboard.routes.setup import router as setup_router
     from power_master.dashboard.routes.sse import router as sse_router
+    from power_master.dashboard.routes.tariff import router as tariff_router
 
     app.include_router(overview_router)
     app.include_router(plans_router)
@@ -110,6 +111,7 @@ def create_app(
     app.include_router(logs_router)
     app.include_router(settings_router)
     app.include_router(setup_router)
+    app.include_router(tariff_router)
     app.include_router(api_router, prefix="/api")
     app.include_router(sse_router, prefix="/api")
 
