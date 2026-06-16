@@ -757,6 +757,291 @@ class TestZEROHEROIntegration:
         assert version.credits[0].enforcement == "soft"
 
 
+class TestTariffVersionDefaultBandExactlyOne:
+    """Tests for exactly-one default band validation."""
+
+    def test_version_with_exactly_one_default_band_passes(self) -> None:
+        """Version with exactly one default band (empty windows) passes."""
+        version = TariffVersion(
+            valid_from=date(2026, 6, 1),
+            valid_until=None,
+            import_bands=[
+                BandBase(descriptor="peak", windows=["18:00-22:00"], rate_c_per_kwh=55.55),
+                BandBase(descriptor="shoulder", windows=[], rate_c_per_kwh=34.1),
+            ],
+        )
+        assert len(version.import_bands) == 2
+        default_bands = [b for b in version.import_bands if not b.windows]
+        assert len(default_bands) == 1
+
+    def test_version_with_zero_default_bands_raises(self) -> None:
+        """Version with zero default bands (no empty windows) raises."""
+        with pytest.raises(ValidationError) as exc_info:
+            TariffVersion(
+                valid_from=date(2026, 6, 1),
+                valid_until=None,
+                import_bands=[
+                    BandBase(descriptor="peak", windows=["18:00-22:00"], rate_c_per_kwh=55.55),
+                    BandBase(descriptor="off_peak", windows=["10:00-14:00"], rate_c_per_kwh=28.6),
+                ],
+            )
+        error_msg = str(exc_info.value)
+        assert "exactly one import_band must have empty windows" in error_msg
+        assert "found 0" in error_msg
+
+    def test_version_with_two_default_bands_raises(self) -> None:
+        """Version with two default bands (two empty windows) raises."""
+        with pytest.raises(ValidationError) as exc_info:
+            TariffVersion(
+                valid_from=date(2026, 6, 1),
+                valid_until=None,
+                import_bands=[
+                    BandBase(descriptor="shoulder1", windows=[], rate_c_per_kwh=34.1),
+                    BandBase(descriptor="shoulder2", windows=[], rate_c_per_kwh=40.0),
+                ],
+            )
+        error_msg = str(exc_info.value)
+        assert "exactly one import_band must have empty windows" in error_msg
+        assert "found 2" in error_msg
+
+    def test_version_with_three_bands_one_default_passes(self) -> None:
+        """Version with three bands, exactly one default, passes."""
+        version = TariffVersion(
+            valid_from=date(2026, 6, 1),
+            valid_until=None,
+            import_bands=[
+                BandBase(descriptor="peak", windows=["16:00-22:59"], rate_c_per_kwh=55.55),
+                BandBase(descriptor="offpeak_balance", windows=["10:00-13:59"], rate_c_per_kwh=28.6),
+                BandBase(descriptor="default", windows=[], rate_c_per_kwh=34.1),
+            ],
+        )
+        assert len(version.import_bands) == 3
+        default_bands = [b for b in version.import_bands if not b.windows]
+        assert len(default_bands) == 1
+
+
+class TestTariffVersionFreeWindowsOverlap:
+    """Tests for free_windows overlap detection with midnight-crossing support."""
+
+    def test_no_free_windows_passes(self) -> None:
+        """Version with no free windows passes."""
+        version = TariffVersion(
+            valid_from=date(2026, 6, 1),
+            valid_until=None,
+            import_bands=[
+                BandBase(descriptor="peak", windows=["18:00-22:00"], rate_c_per_kwh=55.55),
+                BandBase(descriptor="shoulder", windows=[], rate_c_per_kwh=34.1),
+            ],
+            free_windows=[],
+        )
+        assert len(version.free_windows) == 0
+
+    def test_single_free_window_passes(self) -> None:
+        """Version with single free window passes."""
+        version = TariffVersion(
+            valid_from=date(2026, 6, 1),
+            valid_until=None,
+            import_bands=[
+                BandBase(descriptor="off_peak_balance", windows=["10:00-14:00"], rate_c_per_kwh=28.6),
+                BandBase(descriptor="shoulder", windows=[], rate_c_per_kwh=34.1),
+            ],
+            free_windows=[
+                FreeWindowConfig(
+                    name="four4free",
+                    windows=["10:00-14:00"],
+                    rate_c_per_kwh=0.0,
+                    cap_kwh_per_day=50.0,
+                    over_cap_falls_back_to="off_peak_balance",
+                )
+            ],
+        )
+        assert len(version.free_windows) == 1
+
+    def test_two_non_overlapping_free_windows_passes(self) -> None:
+        """Two free windows with non-overlapping time ranges pass."""
+        version = TariffVersion(
+            valid_from=date(2026, 6, 1),
+            valid_until=None,
+            import_bands=[
+                BandBase(descriptor="band_a", windows=["10:00-14:00"], rate_c_per_kwh=28.6),
+                BandBase(descriptor="band_b", windows=["14:01-18:00"], rate_c_per_kwh=30.0),
+                BandBase(descriptor="shoulder", windows=[], rate_c_per_kwh=34.1),
+            ],
+            free_windows=[
+                FreeWindowConfig(
+                    name="morning_free",
+                    windows=["10:00-14:00"],
+                    rate_c_per_kwh=0.0,
+                    cap_kwh_per_day=25.0,
+                    over_cap_falls_back_to="band_a",
+                ),
+                FreeWindowConfig(
+                    name="afternoon_free",
+                    windows=["14:01-18:00"],
+                    rate_c_per_kwh=0.0,
+                    cap_kwh_per_day=25.0,
+                    over_cap_falls_back_to="band_b",
+                ),
+            ],
+        )
+        assert len(version.free_windows) == 2
+
+    def test_two_free_windows_touching_at_boundary_passes(self) -> None:
+        """Two free windows that merely touch at a boundary do NOT overlap.
+
+        Band windows are half-open [start, end), so 10:00-14:00 and 14:00-18:00
+        are adjacent, not overlapping. (Regression: closed-interval overlap math
+        wrongly flagged this.)
+        """
+        version = TariffVersion(
+            valid_from=date(2026, 6, 1),
+            valid_until=None,
+            import_bands=[
+                BandBase(descriptor="band_a", windows=["10:00-14:00"], rate_c_per_kwh=28.6),
+                BandBase(descriptor="band_b", windows=["14:00-18:00"], rate_c_per_kwh=30.0),
+                BandBase(descriptor="shoulder", windows=[], rate_c_per_kwh=34.1),
+            ],
+            free_windows=[
+                FreeWindowConfig(
+                    name="morning_free",
+                    windows=["10:00-14:00"],
+                    rate_c_per_kwh=0.0,
+                    cap_kwh_per_day=25.0,
+                    over_cap_falls_back_to="band_a",
+                ),
+                FreeWindowConfig(
+                    name="afternoon_free",
+                    windows=["14:00-18:00"],
+                    rate_c_per_kwh=0.0,
+                    cap_kwh_per_day=25.0,
+                    over_cap_falls_back_to="band_b",
+                ),
+            ],
+        )
+        assert len(version.free_windows) == 2
+
+    def test_two_overlapping_free_windows_raises(self) -> None:
+        """Two free windows with overlapping time ranges raise."""
+        with pytest.raises(ValidationError) as exc_info:
+            TariffVersion(
+                valid_from=date(2026, 6, 1),
+                valid_until=None,
+                import_bands=[
+                    BandBase(descriptor="band_a", windows=["10:00-16:00"], rate_c_per_kwh=28.6),
+                    BandBase(descriptor="shoulder", windows=[], rate_c_per_kwh=34.1),
+                ],
+                free_windows=[
+                    FreeWindowConfig(
+                        name="window_a",
+                        windows=["10:00-14:00"],
+                        rate_c_per_kwh=0.0,
+                        cap_kwh_per_day=25.0,
+                        over_cap_falls_back_to="band_a",
+                    ),
+                    FreeWindowConfig(
+                        name="window_b",
+                        windows=["13:00-16:00"],  # Overlaps with window_a (13:00-14:00)
+                        rate_c_per_kwh=0.0,
+                        cap_kwh_per_day=25.0,
+                        over_cap_falls_back_to="band_a",
+                    ),
+                ],
+            )
+        error_msg = str(exc_info.value)
+        assert "overlapping" in error_msg.lower()
+        assert "window_a" in error_msg
+        assert "window_b" in error_msg
+
+    def test_midnight_crossing_non_overlapping_passes(self) -> None:
+        """Two midnight-crossing free windows that don't overlap pass."""
+        version = TariffVersion(
+            valid_from=date(2026, 6, 1),
+            valid_until=None,
+            import_bands=[
+                BandBase(descriptor="band_a", windows=["22:00-07:00"], rate_c_per_kwh=28.6),
+                BandBase(descriptor="band_b", windows=["10:00-14:00"], rate_c_per_kwh=30.0),
+                BandBase(descriptor="shoulder", windows=[], rate_c_per_kwh=34.1),
+            ],
+            free_windows=[
+                FreeWindowConfig(
+                    name="overnight_free",
+                    windows=["22:00-07:00"],  # Midnight-crossing
+                    rate_c_per_kwh=0.0,
+                    cap_kwh_per_day=30.0,
+                    over_cap_falls_back_to="band_a",
+                ),
+                FreeWindowConfig(
+                    name="daytime_free",
+                    windows=["10:00-14:00"],  # No midnight crossing
+                    rate_c_per_kwh=0.0,
+                    cap_kwh_per_day=50.0,
+                    over_cap_falls_back_to="band_b",
+                ),
+            ],
+        )
+        assert len(version.free_windows) == 2
+
+    def test_midnight_crossing_overlapping_raises(self) -> None:
+        """Two midnight-crossing free windows that overlap raise."""
+        with pytest.raises(ValidationError) as exc_info:
+            TariffVersion(
+                valid_from=date(2026, 6, 1),
+                valid_until=None,
+                import_bands=[
+                    BandBase(descriptor="band_a", windows=["22:00-07:00"], rate_c_per_kwh=28.6),
+                    BandBase(descriptor="shoulder", windows=[], rate_c_per_kwh=34.1),
+                ],
+                free_windows=[
+                    FreeWindowConfig(
+                        name="window_a",
+                        windows=["22:00-07:00"],  # Midnight-crossing: 22:00-23:59, 00:00-07:00
+                        rate_c_per_kwh=0.0,
+                        cap_kwh_per_day=25.0,
+                        over_cap_falls_back_to="band_a",
+                    ),
+                    FreeWindowConfig(
+                        name="window_b",
+                        windows=["23:30-06:00"],  # Overlaps in [23:30-23:59] and [00:00-06:00]
+                        rate_c_per_kwh=0.0,
+                        cap_kwh_per_day=25.0,
+                        over_cap_falls_back_to="band_a",
+                    ),
+                ],
+            )
+        error_msg = str(exc_info.value)
+        assert "overlapping" in error_msg.lower()
+
+    def test_multiple_windows_per_free_window_with_overlap_raises(self) -> None:
+        """FreeWindow with multiple time windows where one overlaps with another FreeWindow raises."""
+        with pytest.raises(ValidationError) as exc_info:
+            TariffVersion(
+                valid_from=date(2026, 6, 1),
+                valid_until=None,
+                import_bands=[
+                    BandBase(descriptor="band_a", windows=["10:00-14:00"], rate_c_per_kwh=28.6),
+                    BandBase(descriptor="shoulder", windows=[], rate_c_per_kwh=34.1),
+                ],
+                free_windows=[
+                    FreeWindowConfig(
+                        name="window_a",
+                        windows=["10:00-12:00", "14:00-16:00"],  # Two separate windows
+                        rate_c_per_kwh=0.0,
+                        cap_kwh_per_day=50.0,
+                        over_cap_falls_back_to="band_a",
+                    ),
+                    FreeWindowConfig(
+                        name="window_b",
+                        windows=["11:00-13:00"],  # Overlaps with first window of window_a
+                        rate_c_per_kwh=0.0,
+                        cap_kwh_per_day=25.0,
+                        over_cap_falls_back_to="band_a",
+                    ),
+                ],
+            )
+        error_msg = str(exc_info.value)
+        assert "overlapping" in error_msg.lower()
+
+
 class TestTariffVersionBoundarySemantics:
     """Tests for per-version boundary validation (valid_until >= valid_from)."""
 

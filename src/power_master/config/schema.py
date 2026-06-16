@@ -207,6 +207,58 @@ class BandBase(BaseModel):
         return v
 
 
+def _windows_overlap(window1: str, window2: str) -> bool:
+    """Check if two time windows overlap, handling midnight-crossing windows.
+
+    Window format: "HH:MM-HH:MM"
+
+    Midnight-crossing windows (e.g., "22:00-07:00") are handled correctly by checking
+    if the ranges overlap in a circular 24-hour timeline.
+
+    Args:
+        window1: First window in HH:MM-HH:MM format
+        window2: Second window in HH:MM-HH:MM format
+
+    Returns:
+        True if the windows overlap, False otherwise.
+    """
+    def parse_window(w: str) -> tuple[int, int, int, int]:
+        """Parse window string to (start_h, start_m, end_h, end_m)."""
+        start_str, end_str = w.split("-")
+        start_h, start_m = map(int, start_str.split(":"))
+        end_h, end_m = map(int, end_str.split(":"))
+        return start_h, start_m, end_h, end_m
+
+    def time_to_minutes(h: int, m: int) -> int:
+        """Convert time to minutes since midnight."""
+        return h * 60 + m
+
+    s1_h, s1_m, e1_h, e1_m = parse_window(window1)
+    s2_h, s2_m, e2_h, e2_m = parse_window(window2)
+
+    s1 = time_to_minutes(s1_h, s1_m)
+    e1 = time_to_minutes(e1_h, e1_m)
+    s2 = time_to_minutes(s2_h, s2_m)
+    e2 = time_to_minutes(e2_h, e2_m)
+
+    # Expand each window into one or two half-open [start, end) minute intervals,
+    # splitting midnight-crossing windows (start >= end, e.g. "22:00-07:00") into
+    # [start, 1440) and [0, end). This matches the band engine's half-open semantics
+    # (start <= t < end), so windows that merely touch at a boundary (e.g. 10:00-14:00
+    # and 14:00-18:00) are NOT treated as overlapping.
+    def intervals(start: int, end: int) -> list[tuple[int, int]]:
+        if start < end:
+            return [(start, end)]
+        # start >= end: crosses midnight (start == end degenerates to a full day)
+        return [(start, 1440), (0, end)]
+
+    for a_start, a_end in intervals(s1, e1):
+        for b_start, b_end in intervals(s2, e2):
+            if a_start < b_end and b_start < a_end:
+                return True
+    return False
+
+
 class FreeWindowConfig(BaseModel):
     """Free/subsidised import window (capped per day)."""
     name: str = Field(description="Window name (e.g., 'four4free')")
@@ -392,7 +444,7 @@ class TariffVersion(BaseModel):
 
     @model_validator(mode="after")
     def validate_version(self) -> TariffVersion:
-        """Validate version: must have at least one import band (incl. default),
+        """Validate version: must have exactly one import band with empty windows (default),
         and valid_until >= valid_from if specified.
         """
         if not self.import_bands:
@@ -400,12 +452,12 @@ class TariffVersion(BaseModel):
                 f"TariffVersion valid_from={self.valid_from}: must have at least one import_band"
             )
 
-        # Check that there is at least one default band (with no windows)
+        # Check that there is EXACTLY ONE default band (with no windows)
         default_bands = [b for b in self.import_bands if not b.windows]
-        if not default_bands:
+        if len(default_bands) != 1:
             raise ValueError(
-                f"TariffVersion valid_from={self.valid_from}: must have at least one "
-                "import_band with no windows (default/shoulder band)"
+                f"TariffVersion valid_from={self.valid_from}: exactly one import_band must have "
+                f"empty windows (the default/shoulder band); found {len(default_bands)}"
             )
 
         # Validate band name references in free_windows
@@ -424,6 +476,22 @@ class TariffVersion(BaseModel):
                 f"TariffVersion: valid_until ({self.valid_until}) cannot be before "
                 f"valid_from ({self.valid_from})"
             )
+
+        # Validate free_windows: no two free_windows may have overlapping time ranges
+        if len(self.free_windows) > 1:
+            for i in range(len(self.free_windows)):
+                for j in range(i + 1, len(self.free_windows)):
+                    fw_a = self.free_windows[i]
+                    fw_b = self.free_windows[j]
+                    # Check if any window in fw_a overlaps with any window in fw_b
+                    for w_a in fw_a.windows:
+                        for w_b in fw_b.windows:
+                            if _windows_overlap(w_a, w_b):
+                                raise ValueError(
+                                    f"TariffVersion valid_from={self.valid_from}: "
+                                    f"free_windows '{fw_a.name}' and '{fw_b.name}' have "
+                                    f"overlapping time ranges ('{w_a}' overlaps with '{w_b}')"
+                                )
 
         return self
 
