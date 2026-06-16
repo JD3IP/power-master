@@ -93,6 +93,9 @@ PERCENTAGE_FIELDS = {
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request) -> HTMLResponse:
     """Render settings page. Viewers can view read-only; admins can edit."""
+    import json
+    from datetime import date, datetime
+
     templates = request.app.state.templates
     config = request.app.state.config
 
@@ -113,6 +116,11 @@ async def settings_page(request: Request) -> HTMLResponse:
     adapter = getattr(request.app.state, "adapter", None)
     firmware = getattr(adapter, "firmware", {}) if adapter else {}
 
+    # Serialize tariff config for TOU editor (convert dates to ISO strings)
+    tariff_config = config.providers.tariff
+    tariff_dict = tariff_config.model_dump(mode="json")
+    tariff_config_json = json.dumps(tariff_dict)
+
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -122,6 +130,7 @@ async def settings_page(request: Request) -> HTMLResponse:
             "error": error or "",
             "is_read_only": is_read_only,
             "firmware": firmware,
+            "tariff_config_json": tariff_config_json,
         },
     )
 

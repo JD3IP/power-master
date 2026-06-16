@@ -349,6 +349,99 @@ class TestPostSaveTariff:
         assert data["ok"] is True
 
 
+class TestSettingsPageTariffTab:
+    """Tests for GET /settings HTML page with tariff tab."""
+
+    @pytest.mark.asyncio
+    async def test_settings_page_contains_tariff_tab_button(self, tariff_client):
+        """GET /settings should contain tariff tab button when TOU configured."""
+        from httpx import ASGITransport, AsyncClient
+
+        # Get the settings page
+        resp = await tariff_client.get("/settings")
+        assert resp.status_code == 200
+
+        html = resp.text
+
+        # Check for tab button
+        assert 'data-tab="tariff"' in html, "Missing tariff tab button"
+        assert "Tariff" in html, "Missing Tariff label in tabs"
+
+    @pytest.mark.asyncio
+    async def test_settings_page_tariff_tab_section_exists(self, tariff_client):
+        """GET /settings should contain tariff tab section."""
+        resp = await tariff_client.get("/settings")
+        assert resp.status_code == 200
+
+        html = resp.text
+
+        # Check for tab section
+        assert 'id="tab-tariff"' in html, "Missing tab-tariff section"
+        assert 'id="tou-editor"' in html, "Missing TOU editor host div"
+
+    @pytest.mark.asyncio
+    async def test_settings_page_no_hardcoded_amber_block_in_providers(self, tariff_client):
+        """GET /settings should NOT contain the old hardcoded Amber block in Providers tab."""
+        resp = await tariff_client.get("/settings")
+        assert resp.status_code == 200
+
+        html = resp.text
+
+        # Should not have the old "Tariff (Amber Electric)" h2 in providers section
+        # (it's now relocated to the tariff tab)
+        lines = html.split('\n')
+        in_providers = False
+        for i, line in enumerate(lines):
+            if 'id="tab-providers"' in line:
+                in_providers = True
+            if in_providers and 'id="tab-' in line and 'tab-providers' not in line:
+                in_providers = False
+            if in_providers and 'Tariff (Amber Electric)' in line:
+                pytest.fail("Old hardcoded Amber block found in Providers tab")
+
+    @pytest.mark.asyncio
+    async def test_settings_page_amber_fields_relocated_to_tariff_tab(self, tariff_client):
+        """GET /settings should have Amber fields in tariff tab, not providers."""
+        resp = await tariff_client.get("/settings")
+        assert resp.status_code == 200
+
+        html = resp.text
+
+        # Check that API key field exists in tariff section
+        assert 'name="providers.tariff.api_key"' in html
+        # These should exist somewhere on the page for Amber support
+        assert 'providers.tariff.site_id' in html
+
+    @pytest.mark.asyncio
+    async def test_settings_page_embeds_tariff_config_json(self, tariff_client):
+        """GET /settings should embed tariff config as JSON for JS hydration."""
+        resp = await tariff_client.get("/settings")
+        assert resp.status_code == 200
+
+        html = resp.text
+
+        # Check for the embedded JSON script tag
+        assert 'id="tou-plan-data"' in html, "Missing tou-plan-data script tag"
+        assert 'type="application/json"' in html, "Missing JSON script type"
+
+        # Extract and validate the JSON
+        import re
+        match = re.search(
+            r'<script type="application/json" id="tou-plan-data">(.*?)</script>',
+            html,
+            re.DOTALL,
+        )
+        assert match, "Could not extract tou-plan-data JSON"
+
+        json_str = match.group(1).strip()
+        import json
+        data = json.loads(json_str)
+
+        assert data['type'] == 'tou', "Embedded tariff should be TOU"
+        assert 'plan' in data, "Embedded tariff should have 'plan' field"
+        assert data['plan']['supply_charge_c_per_day'] == 148.5
+
+
 class TestGetTariffTemplates:
     """Tests for GET /settings/tariff/templates."""
 

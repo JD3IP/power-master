@@ -27,6 +27,7 @@
     <button type="button" class="tab" data-tab="arbitrage" onclick="switchTab('arbitrage', this)">Arbitrage</button>
     <button type="button" class="tab" data-tab="load_profile" onclick="switchTab('load_profile', this)">Load Profile</button>
     <button type="button" class="tab" data-tab="providers" onclick="switchTab('providers', this)">Providers</button>
+    <button type="button" class="tab" data-tab="tariff" onclick="switchTab('tariff', this)">Tariff</button>
     <button type="button" class="tab" data-tab="loads" onclick="switchTab('loads', this)">Loads</button>
     <button type="button" class="tab" data-tab="mqtt" onclick="switchTab('mqtt', this)">MQTT</button>
     <button type="button" class="tab" data-tab="oscillation" onclick="switchTab('oscillation', this)">Anti-Oscillation</button>
@@ -49,6 +50,7 @@
         <option value="arbitrage">Arbitrage</option>
         <option value="load_profile">Load Profile</option>
         <option value="providers">Providers</option>
+        <option value="tariff">Tariff</option>
         <option value="loads">Loads</option>
         <option value="mqtt">MQTT</option>
         <option value="oscillation">Anti-Oscillation</option>
@@ -580,30 +582,63 @@
         <input type="number" id="providers.storm.validity_seconds" name="providers.storm.validity_seconds" value="{{ config.providers.storm.validity_seconds }}">
     </div>
 
-    <h2>Tariff (Amber Electric)</h2>
-    <div class="provider-status" id="provider-status-tariff">
-        <span class="provider-status-dot"></span>
-        <span class="provider-status-text">Loading...</span>
+</section>
+
+<!-- ═══ TARIFF TAB ═══ -->
+<section id="tab-tariff" class="tab-content">
+    <h2>Tariff Settings</h2>
+
+    <!-- Provider Type Selector -->
+    <div style="margin-bottom: 24px;">
+        <label style="display: block; font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Provider Type</label>
+        <div style="display: flex; gap: 8px;">
+            <button type="button" id="tariff-type-amber" class="btn {% if config.providers.tariff.type == 'amber' %}btn-primary{% else %}btn-secondary{% endif %}" style="flex: 1;" onclick="switchTariffType('amber')">Amber — dynamic spot pricing</button>
+            <button type="button" id="tariff-type-tou" class="btn {% if config.providers.tariff.type == 'tou' %}btn-primary{% else %}btn-secondary{% endif %}" style="flex: 1;" onclick="switchTariffType('tou')">TOU — time-of-use plan</button>
+        </div>
     </div>
-    <div class="form-group">
-        <label for="providers.tariff.api_key">API Key</label>
-        <input type="password" id="providers.tariff.api_key" name="providers.tariff.api_key" value="{{ config.providers.tariff.api_key }}" placeholder="Enter Amber API key">
+
+    <!-- Amber Branch (relocated from Providers) -->
+    <div id="tariff-amber-branch" style="display: {% if config.providers.tariff.type == 'amber' %}block{% else %}none{% endif %};">
+        <h3>Amber Electric Configuration</h3>
+        <div class="provider-status" id="provider-status-tariff">
+            <span class="provider-status-dot"></span>
+            <span class="provider-status-text">Loading...</span>
+        </div>
+        <div class="form-group">
+            <label for="providers.tariff.api_key">API Key</label>
+            <input type="password" id="providers.tariff.api_key" name="providers.tariff.api_key" value="{{ config.providers.tariff.api_key }}" placeholder="Enter Amber API key">
+        </div>
+        <div class="form-group">
+            <label for="providers.tariff.site_id">Site ID</label>
+            <input type="text" id="providers.tariff.site_id" name="providers.tariff.site_id" value="{{ config.providers.tariff.site_id }}" placeholder="Amber site ID">
+        </div>
+        <div class="form-group">
+            <label for="providers.tariff.update_interval_seconds">Update Interval (s)</label>
+            <input type="number" id="providers.tariff.update_interval_seconds" name="providers.tariff.update_interval_seconds" value="{{ config.providers.tariff.update_interval_seconds }}">
+        </div>
+        <div class="form-group">
+            <label for="providers.tariff.validity_seconds">Price Validity (s)</label>
+            <input type="number" id="providers.tariff.validity_seconds" name="providers.tariff.validity_seconds" value="{{ config.providers.tariff.validity_seconds }}">
+        </div>
+        <div class="form-group">
+            <label for="providers.tariff.max_requests_per_5min">Max Requests/5min</label>
+            <input type="number" id="providers.tariff.max_requests_per_5min" name="providers.tariff.max_requests_per_5min" value="{{ config.providers.tariff.max_requests_per_5min }}">
+        </div>
     </div>
-    <div class="form-group">
-        <label for="providers.tariff.site_id">Site ID</label>
-        <input type="text" id="providers.tariff.site_id" name="providers.tariff.site_id" value="{{ config.providers.tariff.site_id }}" placeholder="Amber site ID">
-    </div>
-    <div class="form-group">
-        <label for="providers.tariff.update_interval_seconds">Update Interval (s)</label>
-        <input type="number" id="providers.tariff.update_interval_seconds" name="providers.tariff.update_interval_seconds" value="{{ config.providers.tariff.update_interval_seconds }}">
-    </div>
-    <div class="form-group">
-        <label for="providers.tariff.validity_seconds">Price Validity (s)</label>
-        <input type="number" id="providers.tariff.validity_seconds" name="providers.tariff.validity_seconds" value="{{ config.providers.tariff.validity_seconds }}">
-    </div>
-    <div class="form-group">
-        <label for="providers.tariff.max_requests_per_5min">Max Requests/5min</label>
-        <input type="number" id="providers.tariff.max_requests_per_5min" name="providers.tariff.max_requests_per_5min" value="{{ config.providers.tariff.max_requests_per_5min }}">
+
+    <!-- TOU Branch -->
+    <div id="tariff-tou-branch" style="display: {% if config.providers.tariff.type == 'tou' %}block{% else %}none{% endif %};">
+        <script type="application/json" id="tou-plan-data">{{ tariff_config_json|safe }}</script>
+        <div id="tou-editor" class="tou-editor-host"></div>
+
+        <noscript>
+            <div style="padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; color: var(--text-muted);">
+                <p style="margin: 0;"><strong>JavaScript is disabled.</strong> The TOU tariff editor requires JavaScript to function. Please enable JavaScript in your browser or use a modern browser to edit your tariff settings.</p>
+                {% if config.providers.tariff.type == 'tou' and config.providers.tariff.plan %}
+                <p style="margin-top: 12px; font-size: 13px;">Current plan: <strong>{{ config.providers.tariff.plan.supply_charge_c_per_day }}¢/day supply charge</strong></p>
+                {% endif %}
+            </div>
+        </noscript>
     </div>
 </section>
 
