@@ -2596,20 +2596,21 @@ class Application:
         """Build EV expected draw forecast for the planning horizon.
 
         Distributes the expected nightly EV energy across slots whose LOCAL time
-        falls within the charge_window. The solver then provisions the battery
+        falls within any of the charge_windows. The solver then provisions the battery
         for the combined house + EV load.
 
         Strategy:
-        - If EV not enabled or no charge_window/expected_nightly_kwh, return all-zeros.
-        - Parse charge_window (HH:MM-HH:MM format, may cross midnight).
-        - Distribute expected_nightly_kwh as watts (avg W = kWh * 1000 / window_hours)
-          across in-window slots.
+        - If EV not enabled or no charge_windows/expected_nightly_kwh, return all-zeros.
+        - Parse each window in charge_windows (HH:MM-HH:MM format, may cross midnight).
+        - Calculate total window hours = sum of all window durations.
+        - Distribute expected_nightly_kwh as watts (avg W = kWh * 1000 / total_window_hours)
+          across all in-window slots.
         - Floor at min_nightly_kwh if set (to ensure minimum provisioning).
 
         SEAM (Phase 4+, O2): learn-the-charger
         When ev.learn_from_telemetry=True, Phase 4+ will invoke the ChargerLearner
         to observe real charger draw from 7-14 days of telemetry and derive a
-        LearnedChargeProfile. The learned values (charge_window + expected_kwh +
+        LearnedChargeProfile. The learned values (charge_windows + expected_kwh +
         confidence) will override/augment the config values below. This milestone
         (Phase 3) does not implement the learning algorithm; the config values are
         always used (see ev/charger_learner.py for the stub interface).
@@ -2617,7 +2618,7 @@ class Application:
         if not self.config.ev.enabled:
             return [0.0] * n_slots
 
-        if (self.config.ev.charge_window is None or
+        if (not self.config.ev.charge_windows or
             self.config.ev.expected_nightly_kwh is None):
             return [0.0] * n_slots
 
@@ -2633,34 +2634,40 @@ class Application:
         #     learned_profile = learner.observe(telemetry_window)
         # Use config values this milestone (learned_profile is always None).
 
-        # Parse charge_window HH:MM-HH:MM
-        window_str = ev_cfg.charge_window
-        start_str, end_str = window_str.split("-")
-        start_h, start_m = map(int, start_str.split(":"))
-        end_h, end_m = map(int, end_str.split(":"))
-        start_minutes = start_h * 60 + start_m
-        end_minutes = end_h * 60 + end_m
+        # Parse all charge_windows and compute total duration
+        parsed_windows = []
+        total_window_hours = 0.0
 
-        # Calculate window duration and average watts
-        if end_minutes > start_minutes:
-            # No midnight crossing
-            window_hours = (end_minutes - start_minutes) / 60.0
-        else:
-            # Midnight crossing (e.g., 22:00-07:00 = 9 hours)
-            window_hours = (1440 - start_minutes + end_minutes) / 60.0
+        for window_str in ev_cfg.charge_windows:
+            start_str, end_str = window_str.split("-")
+            start_h, start_m = map(int, start_str.split(":"))
+            end_h, end_m = map(int, end_str.split(":"))
+            start_minutes = start_h * 60 + start_m
+            end_minutes = end_h * 60 + end_m
+
+            # Calculate window duration
+            if end_minutes > start_minutes:
+                # No midnight crossing
+                window_hours = (end_minutes - start_minutes) / 60.0
+            else:
+                # Midnight crossing (e.g., 22:00-07:00 = 9 hours)
+                window_hours = (1440 - start_minutes + end_minutes) / 60.0
+
+            parsed_windows.append((start_minutes, end_minutes))
+            total_window_hours += window_hours
+
+        if total_window_hours <= 0:
+            logger.warning(
+                "EV charge_windows have zero/negative total duration; using zero forecast"
+            )
+            return [0.0] * n_slots
 
         # Determine provisioning energy: floor at min_nightly if set
         provision_kwh = ev_cfg.expected_nightly_kwh
         if ev_cfg.mode.min_nightly_kwh is not None:
             provision_kwh = max(provision_kwh, ev_cfg.mode.min_nightly_kwh)
 
-        if window_hours <= 0:
-            logger.warning(
-                "EV charge_window has zero/negative duration; using zero forecast"
-            )
-            return [0.0] * n_slots
-
-        avg_w = (provision_kwh * 1000) / window_hours
+        avg_w = (provision_kwh * 1000) / total_window_hours
 
         # Distribute across in-window slots
         forecast = []
@@ -2670,22 +2677,26 @@ class Application:
             local_m = local_time.minute
             local_minutes = local_h * 60 + local_m
 
-            # Check if slot time falls in charge_window
+            # Check if slot time falls in ANY of the charge_windows
             in_window = False
-            if end_minutes > start_minutes:
-                # No midnight crossing
-                in_window = start_minutes <= local_minutes < end_minutes
-            else:
-                # Midnight crossing
-                in_window = (local_minutes >= start_minutes or
-                             local_minutes < end_minutes)
+            for start_minutes, end_minutes in parsed_windows:
+                if end_minutes > start_minutes:
+                    # No midnight crossing
+                    if start_minutes <= local_minutes < end_minutes:
+                        in_window = True
+                        break
+                else:
+                    # Midnight crossing
+                    if local_minutes >= start_minutes or local_minutes < end_minutes:
+                        in_window = True
+                        break
 
             forecast.append(avg_w if in_window else 0.0)
 
         logger.info(
-            "EV forecast: %s, window_hours=%.1f, provision_kwh=%.2f, avg_w=%.1f "
+            "EV forecast: windows=%s, total_hours=%.1f, provision_kwh=%.2f, avg_w=%.1f "
             "(%d slots with EV draw)",
-            window_str, window_hours, provision_kwh, avg_w,
+            ev_cfg.charge_windows, total_window_hours, provision_kwh, avg_w,
             sum(1 for w in forecast if w > 0.0)
         )
         return forecast

@@ -19,16 +19,18 @@ class TestEVForecastBuilder:
         self,
         ev_enabled: bool = True,
         charger_kw: float = 3.0,
-        charge_window: str | None = None,
+        charge_windows: list[str] | None = None,
         expected_nightly_kwh: float | None = None,
         min_nightly_kwh: float | None = None,
     ) -> Application:
         """Create an Application instance with custom EV config."""
+        if charge_windows is None:
+            charge_windows = []
         config = AppConfig(
             ev={
                 "enabled": ev_enabled,
                 "charger_kw": charger_kw,
-                "charge_window": charge_window,
+                "charge_windows": charge_windows,
                 "expected_nightly_kwh": expected_nightly_kwh,
                 "mode": {"min_nightly_kwh": min_nightly_kwh, "opportunistic": False},
             },
@@ -51,7 +53,7 @@ class TestEVForecastBuilder:
         """When EV disabled, forecast is all-zeros."""
         app = await self._make_app_with_ev_config(
             ev_enabled=False,
-            charge_window="22:00-07:00",
+            charge_windows=["22:00-07:00"],
             expected_nightly_kwh=20.0,
         )
 
@@ -66,11 +68,11 @@ class TestEVForecastBuilder:
         assert all(w == 0.0 for w in forecast), "EV forecast should be all-zeros when disabled"
 
     async def test_ev_no_window_returns_zeros(self) -> None:
-        """When charge_window not set, forecast is all-zeros."""
+        """When charge_windows not set (empty list), forecast is all-zeros."""
         app = await self._make_app_with_ev_config(
             ev_enabled=True,
-            charge_window=None,
-            expected_nightly_kwh=20.0,
+            charge_windows=[],
+            expected_nightly_kwh=None,  # Don't set expected when no windows (no validation error)
         )
 
         anchor = datetime(2026, 6, 16, 2, 0, tzinfo=timezone.utc)
@@ -86,7 +88,7 @@ class TestEVForecastBuilder:
         """When expected_nightly_kwh not set, forecast is all-zeros."""
         app = await self._make_app_with_ev_config(
             ev_enabled=True,
-            charge_window="22:00-07:00",
+            charge_windows=["22:00-07:00"],
             expected_nightly_kwh=None,
         )
 
@@ -110,7 +112,7 @@ class TestEVForecastBuilder:
         """
         app = await self._make_app_with_ev_config(
             ev_enabled=True,
-            charge_window="10:00-16:00",  # 6-hour window
+            charge_windows=["10:00-16:00"],  # 6-hour window
             expected_nightly_kwh=20.0,
         )
 
@@ -137,7 +139,7 @@ class TestEVForecastBuilder:
         """
         app = await self._make_app_with_ev_config(
             ev_enabled=True,
-            charge_window="22:00-07:00",  # 9-hour window crossing midnight
+            charge_windows=["22:00-07:00"],  # 9-hour window crossing midnight
             expected_nightly_kwh=18.0,
         )
 
@@ -166,7 +168,7 @@ class TestEVForecastBuilder:
         """
         app = await self._make_app_with_ev_config(
             ev_enabled=True,
-            charge_window="13:00-15:00",  # 2-hour window
+            charge_windows=["13:00-15:00"],  # 2-hour window
             expected_nightly_kwh=8.0,
         )
 
@@ -199,7 +201,7 @@ class TestEVForecastBuilder:
         """
         app = await self._make_app_with_ev_config(
             ev_enabled=True,
-            charge_window="22:00-07:00",  # 9 hours
+            charge_windows=["22:00-07:00"],  # 9 hours
             expected_nightly_kwh=10.0,  # Low expected
             min_nightly_kwh=15.0,  # High minimum (floors expected)
         )
@@ -222,7 +224,7 @@ class TestEVForecastBuilder:
         """EV forecast is not reduced when expected_nightly_kwh > min_nightly_kwh."""
         app = await self._make_app_with_ev_config(
             ev_enabled=True,
-            charge_window="22:00-07:00",  # 9 hours
+            charge_windows=["22:00-07:00"],  # 9 hours
             expected_nightly_kwh=20.0,  # High expected
             min_nightly_kwh=15.0,  # Low minimum
         )
@@ -238,6 +240,42 @@ class TestEVForecastBuilder:
 
         for i, w in enumerate(forecast):
             assert abs(w - expected_w) < 1.0
+
+    async def test_ev_multiple_windows(self) -> None:
+        """EV forecast distributes across MULTIPLE charge windows.
+
+        Fixed anchor: 2026-06-16 02:00 UTC = Brisbane 12:00 (noon)
+        Slots: 12:00, 12:30, 13:00, 13:30, 14:00, 14:30, 15:00, 15:30
+        Windows: 04:00-06:00 (2h) + 10:00-14:00 (4h) = 6 hours total
+        Expected: 5 kWh = 5000 W ÷ 6 hours = 833.33 W avg
+        In-window slots: slots 0-3 fall in 10:00-14:00 (12:00-13:30), slots 4-7 outside
+        Window boundary check: start <= local < end (14:00 is NOT < 14:00, so outside)
+        Slots: 0-3 are 12:00-13:30 (all in 10:00-14:00)
+               4-5 are 14:00-14:30 (both outside 10:00-14:00 since start=14:00 is excluded)
+               6-7 are 15:00-15:30 (outside windows)
+        """
+        app = await self._make_app_with_ev_config(
+            ev_enabled=True,
+            charge_windows=["04:00-06:00", "10:00-14:00"],  # Two windows
+            expected_nightly_kwh=5.0,  # Distributed across both
+        )
+
+        anchor = datetime(2026, 6, 16, 2, 0, tzinfo=timezone.utc)  # noon Brisbane
+        slot_starts = [anchor + timedelta(minutes=30 * i) for i in range(8)]
+        n_slots = 8
+
+        forecast = await app._build_ev_forecast(slot_starts, n_slots)
+
+        expected_w = (5.0 * 1000) / 6.0  # 833.33 W
+        assert len(forecast) == 8
+
+        # Slots 0-3: 12:00-13:30, all in 10:00-14:00 window (start <= local < end)
+        for i in range(4):
+            assert abs(forecast[i] - expected_w) < 1.0, f"Slot {i} should be in window"
+
+        # Slots 4-7: 14:00 and later, outside 10:00-14:00 window (14:00 is NOT < 14:00)
+        for i in range(4, 8):
+            assert forecast[i] == 0.0, f"Slot {i} should be outside window"
 
 
 class TestEVForecastIntegration:

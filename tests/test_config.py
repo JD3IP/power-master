@@ -240,46 +240,79 @@ db:
         # Model loads but is inert (enabled=False overrides everything)
         assert config.ev.enabled is False
 
-    def test_ev_charge_window_valid_format(self) -> None:
-        """EVConfig charge_window accepts HH:MM-HH:MM format."""
+    def test_ev_charge_windows_valid_format(self) -> None:
+        """EVConfig charge_windows accepts list of HH:MM-HH:MM format strings."""
         config = AppConfig(
-            ev={"enabled": True, "charger_kw": 3.0, "charge_window": "22:00-07:00"}
+            ev={"enabled": True, "charger_kw": 3.0, "charge_windows": ["22:00-07:00"]}
         )
-        assert config.ev.charge_window == "22:00-07:00"
+        assert config.ev.charge_windows == ["22:00-07:00"]
 
-    def test_ev_charge_window_no_midnight_crossing(self) -> None:
-        """EVConfig charge_window without midnight crossing (e.g., 10:00-16:00)."""
+    def test_ev_charge_windows_no_midnight_crossing(self) -> None:
+        """EVConfig charge_windows without midnight crossing (e.g., 10:00-16:00)."""
         config = AppConfig(
-            ev={"enabled": True, "charger_kw": 3.0, "charge_window": "10:00-16:00"}
+            ev={"enabled": True, "charger_kw": 3.0, "charge_windows": ["10:00-16:00"]}
         )
-        assert config.ev.charge_window == "10:00-16:00"
+        assert config.ev.charge_windows == ["10:00-16:00"]
 
-    def test_ev_charge_window_none_allowed(self) -> None:
-        """EVConfig charge_window=None is allowed (window not specified)."""
+    def test_ev_charge_windows_multiple_windows(self) -> None:
+        """EVConfig charge_windows accepts multiple windows."""
         config = AppConfig(
-            ev={"enabled": True, "charger_kw": 3.0, "charge_window": None}
+            ev={"enabled": True, "charger_kw": 3.0, "charge_windows": ["04:00-06:00", "10:00-14:00"]}
         )
-        assert config.ev.charge_window is None
+        assert config.ev.charge_windows == ["04:00-06:00", "10:00-14:00"]
 
-    def test_ev_charge_window_invalid_format_raises(self) -> None:
-        """EVConfig with invalid charge_window format raises."""
-        with pytest.raises(ValueError, match="charge_window must match HH:MM-HH:MM format"):
-            AppConfig(ev={"enabled": True, "charger_kw": 3.0, "charge_window": "22-07"})
+    def test_ev_charge_windows_empty_list_allowed(self) -> None:
+        """EVConfig charge_windows=[] is allowed (no windows specified)."""
+        config = AppConfig(
+            ev={"enabled": True, "charger_kw": 3.0, "charge_windows": []}
+        )
+        assert config.ev.charge_windows == []
 
-    def test_ev_charge_window_invalid_hour_raises(self) -> None:
-        """EVConfig with invalid hour in charge_window raises."""
-        with pytest.raises(ValueError, match="Invalid start time in charge_window"):
-            AppConfig(ev={"enabled": True, "charger_kw": 3.0, "charge_window": "25:00-07:00"})
+    def test_ev_charge_windows_invalid_format_raises(self) -> None:
+        """EVConfig with invalid charge_windows format raises."""
+        with pytest.raises(ValueError, match="charge_windows must match HH:MM-HH:MM format"):
+            AppConfig(ev={"enabled": True, "charger_kw": 3.0, "charge_windows": ["22-07"]})
 
-    def test_ev_charge_window_invalid_minute_raises(self) -> None:
-        """EVConfig with invalid minute in charge_window raises."""
-        with pytest.raises(ValueError, match="Invalid end time in charge_window"):
-            AppConfig(ev={"enabled": True, "charger_kw": 3.0, "charge_window": "22:00-07:99"})
+    def test_ev_charge_windows_invalid_hour_raises(self) -> None:
+        """EVConfig with invalid hour in charge_windows raises."""
+        with pytest.raises(ValueError, match="Invalid start time in charge_windows"):
+            AppConfig(ev={"enabled": True, "charger_kw": 3.0, "charge_windows": ["25:00-07:00"]})
+
+    def test_ev_charge_windows_invalid_minute_raises(self) -> None:
+        """EVConfig with invalid minute in charge_windows raises."""
+        with pytest.raises(ValueError, match="Invalid end time in charge_windows"):
+            AppConfig(ev={"enabled": True, "charger_kw": 3.0, "charge_windows": ["22:00-07:99"]})
+
+    def test_ev_enabled_with_expected_kwh_requires_window(self) -> None:
+        """EVConfig with enabled=True and expected_nightly_kwh requires at least one window."""
+        with pytest.raises(ValueError, match="at least one charge window must be specified"):
+            AppConfig(
+                ev={
+                    "enabled": True,
+                    "charger_kw": 3.0,
+                    "charge_windows": [],
+                    "expected_nightly_kwh": 5.0,
+                }
+            )
+
+    def test_ev_enabled_with_expected_kwh_and_window_valid(self) -> None:
+        """EVConfig with enabled=True, expected_nightly_kwh, and windows is valid."""
+        config = AppConfig(
+            ev={
+                "enabled": True,
+                "charger_kw": 3.0,
+                "charge_windows": ["10:00-14:00"],
+                "expected_nightly_kwh": 5.0,
+            }
+        )
+        assert config.ev.enabled is True
+        assert config.ev.expected_nightly_kwh == 5.0
+        assert config.ev.charge_windows == ["10:00-14:00"]
 
     def test_ev_expected_nightly_kwh_valid(self) -> None:
         """EVConfig expected_nightly_kwh accepts positive values."""
         config = AppConfig(
-            ev={"enabled": True, "charger_kw": 3.0, "expected_nightly_kwh": 20.0}
+            ev={"enabled": True, "charger_kw": 3.0, "expected_nightly_kwh": 20.0, "charge_windows": ["10:00-14:00"]}
         )
         assert config.ev.expected_nightly_kwh == 20.0
 
@@ -306,6 +339,7 @@ db:
             ev={
                 "enabled": True,
                 "charger_kw": 3.0,
+                "charge_windows": ["10:00-14:00"],
                 "expected_nightly_kwh": 12.0,
                 "mode": {"min_nightly_kwh": 15.0, "opportunistic": False},
             }
@@ -319,6 +353,7 @@ db:
             ev={
                 "enabled": True,
                 "charger_kw": 3.0,
+                "charge_windows": ["10:00-14:00"],
                 "expected_nightly_kwh": 20.0,
                 "mode": {"min_nightly_kwh": 15.0, "opportunistic": False},
             }
@@ -327,12 +362,12 @@ db:
         assert config.ev.expected_nightly_kwh == 20.0
 
     def test_ev_full_dumb_timer_config(self) -> None:
-        """Full dumb timer EV config with window, expected energy, and min_nightly."""
+        """Full dumb timer EV config with windows, expected energy, and min_nightly."""
         config = AppConfig(
             ev={
                 "enabled": True,
                 "charger_kw": 3.5,
-                "charge_window": "22:00-07:00",
+                "charge_windows": ["22:00-07:00"],
                 "expected_nightly_kwh": 25.0,
                 "controllable": False,
                 "adapter": None,
@@ -342,7 +377,39 @@ db:
         )
         assert config.ev.enabled is True
         assert config.ev.charger_kw == 3.5
-        assert config.ev.charge_window == "22:00-07:00"
+        assert config.ev.charge_windows == ["22:00-07:00"]
         assert config.ev.expected_nightly_kwh == 25.0
         assert config.ev.mode.min_nightly_kwh == 15.0
         assert config.ev.controllable is False
+
+    def test_site_a_example_config_loads_with_ev(self) -> None:
+        """Site A example config loads with enabled EV block and validates."""
+        from pathlib import Path
+        import yaml
+
+        site_a_config_path = Path(__file__).parent.parent / "config.site-a-four4free.example.yaml"
+
+        if not site_a_config_path.exists():
+            pytest.skip(f"Site A example config not found at {site_a_config_path}")
+
+        # Load the YAML directly
+        with open(site_a_config_path) as f:
+            config_data = yaml.safe_load(f)
+
+        # Create AppConfig from the loaded data
+        config = AppConfig(**config_data)
+
+        # EV should be enabled with real values
+        assert config.ev.enabled is True
+        assert config.ev.charger_kw == 2.5
+        assert config.ev.expected_nightly_kwh == 5.0
+        # Check that both charge windows are present
+        assert len(config.ev.charge_windows) == 2
+        assert "04:00-06:00" in config.ev.charge_windows
+        assert "10:00-14:00" in config.ev.charge_windows
+        # Check other fields
+        assert config.ev.controllable is False
+        assert config.ev.adapter is None
+        assert config.ev.shed_priority == 5
+        assert config.ev.mode.min_nightly_kwh is None  # No minimum
+        assert config.ev.mode.opportunistic is False

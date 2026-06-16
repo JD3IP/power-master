@@ -74,7 +74,7 @@ def config_manager_ev_enabled(tmp_path: Path) -> ConfigManager:
             "enabled": True,
             "charger_kw": 2.5,
             "controllable": False,
-            "charge_window": "22:00-07:00",
+            "charge_windows": ["22:00-07:00"],
             "expected_nightly_kwh": 15.0,
             "mode": {
                 "min_nightly_kwh": None,
@@ -130,7 +130,7 @@ def config_manager_ev_enabled_with_modes(tmp_path: Path) -> ConfigManager:
             "enabled": True,
             "charger_kw": 3.5,
             "controllable": False,
-            "charge_window": "22:00-07:00",
+            "charge_windows": ["22:00-07:00"],
             "expected_nightly_kwh": 18.0,
             "mode": {
                 "min_nightly_kwh": 10.0,

@@ -78,7 +78,7 @@ class TestEVConfigLearnFromTelemetry:
         ev_config = EVConfig(
             enabled=True,
             learn_from_telemetry=True,
-            charge_window="22:00-07:00",
+            charge_windows=["22:00-07:00"],
             expected_nightly_kwh=18.0,
         )
         assert ev_config.learn_from_telemetry is True
@@ -89,7 +89,7 @@ class TestEVConfigLearnFromTelemetry:
             ev={
                 "enabled": True,
                 "learn_from_telemetry": True,
-                "charge_window": "22:00-07:00",
+                "charge_windows": ["22:00-07:00"],
                 "expected_nightly_kwh": 18.0,
             }
         )
@@ -137,7 +137,7 @@ class TestEVForecastInertWithLearnFlag:
                     "enabled": True,
                     "learn_from_telemetry": learn_flag,
                     "charger_kw": 3.0,
-                    "charge_window": "22:00-07:00",
+                    "charge_windows": ["22:00-07:00"],
                     "expected_nightly_kwh": 18.0,
                 },
                 load_profile={"timezone": "Australia/Brisbane"},

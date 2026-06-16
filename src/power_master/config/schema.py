@@ -739,11 +739,12 @@ class EVConfig(BaseModel):
       provision off learned behaviour (robust to drifting dumb timer). Default False;
       learning algorithm not implemented this milestone.
 
-    Charging window and expected energy:
-    - charge_window: Local time range in HH:MM-HH:MM format. May cross midnight
-      (e.g., "22:00-07:00"). Specifies when the dumb timer operates.
-    - expected_nightly_kwh: Expected energy drawn during charge_window in kWh.
-      If set, the solver uses this to provision the battery.
+    Charging windows and expected energy:
+    - charge_windows: List of time windows in HH:MM-HH:MM format (local time).
+      Each window may cross midnight (e.g., "22:00-07:00"). Specifies when the
+      dumb timer operates. Empty list = no charging window (forecast returns zeros).
+    - expected_nightly_kwh: Expected total energy drawn across all charge_windows
+      in kWh. If set, the solver uses this to provision the battery.
       Distinct from mode.min_nightly_kwh: this is the EXPECTED value for provisioning;
       min_nightly_kwh is a guaranteed MINIMUM (Phase 4 control enforces it).
     - min_nightly_kwh relationship: when both are set, expected_nightly_kwh is floored
@@ -757,13 +758,13 @@ class EVConfig(BaseModel):
         default=2.5,
         description="Rated charger draw in kW. Used for provisioning + margin sizing. Ignored if enabled=False."
     )
-    charge_window: str | None = Field(
-        default=None,
-        description="OPTIONAL dumb timer charging window in HH:MM-HH:MM format (local time). May cross midnight (e.g., '22:00-07:00'). None = window not specified."
+    charge_windows: list[str] = Field(
+        default_factory=list,
+        description="OPTIONAL list of dumb timer charging windows in HH:MM-HH:MM format (local time). May cross midnight (e.g., '22:00-07:00'). Empty list = no windows."
     )
     expected_nightly_kwh: float | None = Field(
         default=None,
-        description="OPTIONAL expected nightly energy draw in kWh (during charge_window). Solver uses this to provision battery. Floored at min_nightly_kwh if both set. None = not specified."
+        description="OPTIONAL expected nightly energy draw in kWh (across all charge_windows). Solver uses this to provision battery. Floored at min_nightly_kwh if both set. None = not specified."
     )
     controllable: bool = Field(
         default=False,
@@ -799,27 +800,26 @@ class EVConfig(BaseModel):
             )
         return v
 
-    @field_validator("charge_window")
+    @field_validator("charge_windows")
     @classmethod
-    def validate_charge_window(cls, v: str | None) -> str | None:
-        """Validate charge_window format HH:MM-HH:MM with valid hour/minute ranges.
+    def validate_charge_windows(cls, v: list[str]) -> list[str]:
+        """Validate each charge window format HH:MM-HH:MM with valid hour/minute ranges.
 
         Midnight-crossing windows (e.g., 22:00-07:00) are allowed.
         """
-        if v is None:
-            return v
-        if not isinstance(v, str):
-            raise ValueError(f"charge_window must be string or None, got {type(v)}")
-        if not re.match(r"^\d{2}:\d{2}-\d{2}:\d{2}$", v):
-            raise ValueError(f"charge_window must match HH:MM-HH:MM format, got '{v}'")
-        start_str, end_str = v.split("-")
-        start_h, start_m = map(int, start_str.split(":"))
-        end_h, end_m = map(int, end_str.split(":"))
+        for window in v:
+            if not isinstance(window, str):
+                raise ValueError(f"charge_windows must contain strings, got {type(window)}")
+            if not re.match(r"^\d{2}:\d{2}-\d{2}:\d{2}$", window):
+                raise ValueError(f"charge_windows must match HH:MM-HH:MM format, got '{window}'")
+            start_str, end_str = window.split("-")
+            start_h, start_m = map(int, start_str.split(":"))
+            end_h, end_m = map(int, end_str.split(":"))
 
-        if not (0 <= start_h <= 23) or not (0 <= start_m <= 59):
-            raise ValueError(f"Invalid start time in charge_window '{v}': {start_str}")
-        if not (0 <= end_h <= 23) or not (0 <= end_m <= 59):
-            raise ValueError(f"Invalid end time in charge_window '{v}': {end_str}")
+            if not (0 <= start_h <= 23) or not (0 <= start_m <= 59):
+                raise ValueError(f"Invalid start time in charge_windows '{window}': {start_str}")
+            if not (0 <= end_h <= 23) or not (0 <= end_m <= 59):
+                raise ValueError(f"Invalid end time in charge_windows '{window}': {end_str}")
 
         return v
 
@@ -842,11 +842,21 @@ class EVConfig(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def floor_expected_at_min_nightly(self) -> EVConfig:
-        """Floor expected_nightly_kwh at min_nightly_kwh if both are set.
+    def validate_ev_config(self) -> EVConfig:
+        """Validate EV configuration constraints.
 
-        This ensures the solver provisions AT LEAST the guaranteed minimum.
+        1. If enabled=True and expected_nightly_kwh is set, require at least one charge window.
+        2. Floor expected_nightly_kwh at min_nightly_kwh if both are set.
         """
+        # Constraint: enabled + expected_nightly_kwh requires at least one charge window
+        if (self.enabled and self.expected_nightly_kwh is not None and
+            not self.charge_windows):
+            raise ValueError(
+                "When ev.enabled=True and expected_nightly_kwh is set, "
+                "at least one charge window must be specified in charge_windows"
+            )
+
+        # Floor expected_nightly_kwh at min_nightly_kwh
         if self.expected_nightly_kwh is not None and self.mode.min_nightly_kwh is not None:
             self.expected_nightly_kwh = max(
                 self.expected_nightly_kwh, self.mode.min_nightly_kwh

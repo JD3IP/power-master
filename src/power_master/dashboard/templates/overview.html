@@ -242,12 +242,12 @@
                 </span>
             </div>
 
-            <!-- Charge window and expected nightly draw -->
-            {% if ev_context.charge_window is not none or ev_context.expected_nightly_kwh is not none %}
+            <!-- Charge windows and expected nightly draw -->
+            {% if ev_context.charge_windows|length > 0 or ev_context.expected_nightly_kwh is not none %}
             <div class="dash-row">
                 <span class="dash-label">Nightly Charge</span>
                 <span class="dash-value">
-                    {% if ev_context.charge_window %}{{ ev_context.charge_window }}{% else %}--{% endif %}
+                    {% if ev_context.charge_windows|length > 0 %}{{ ev_context.charge_windows|join(", ") }}{% else %}--{% endif %}
                     {% if ev_context.expected_nightly_kwh is not none %}
                         • {{ "%.1f"|format(ev_context.expected_nightly_kwh) }} kWh expected
                     {% endif %}

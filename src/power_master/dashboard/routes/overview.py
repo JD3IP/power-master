@@ -571,13 +571,13 @@ async def overview(request: Request) -> HTMLResponse:
 
         tou_context["credit_status"] = credit_status
 
-    # EV awareness view: when enabled, show charger state, window, and mode config
+    # EV awareness view: when enabled, show charger state, windows, and mode config
     ev_context = None
     if config.ev.enabled:
         ev_context = {
             "charger_kw": config.ev.charger_kw,
             "controllable": config.ev.controllable,
-            "charge_window": config.ev.charge_window,
+            "charge_windows": config.ev.charge_windows,
             "expected_nightly_kwh": config.ev.expected_nightly_kwh,
             "mode_min_nightly_kwh": config.ev.mode.min_nightly_kwh,
             "mode_opportunistic": config.ev.mode.opportunistic,
