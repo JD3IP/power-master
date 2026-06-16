@@ -597,6 +597,9 @@
         </div>
     </div>
 
+    <!-- Hidden field to persist tariff type on form save -->
+    <input type="hidden" name="providers.tariff.type" id="tariff-type-field" value="{{ config.providers.tariff.type }}">
+
     <!-- Amber Branch (relocated from Providers) -->
     <div id="tariff-amber-branch" style="display: {% if config.providers.tariff.type == 'amber' %}block{% else %}none{% endif %};">
         <h3>Amber Electric Configuration</h3>

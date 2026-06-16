@@ -96,6 +96,10 @@
       if (amberBtn) amberBtn.classList.add('btn-secondary');
       if (amberBtn) amberBtn.classList.remove('btn-primary');
     }
+
+    // Update hidden field to persist type on form save
+    var tf = document.getElementById('tariff-type-field');
+    if (tf) tf.value = type;
   }
 
   /**
@@ -675,6 +679,9 @@
    * Open band editor popover on ribbon click
    */
   function openBandEditor(hourIndex, descriptor, importRate) {
+    // Guard: if read-only, don't open
+    if (!window.touEditorCanEdit) return;
+
     const popover = document.getElementById('tou-band-popover');
     const title = document.getElementById('tou-popover-title');
     const content = document.getElementById('tou-popover-content');
@@ -688,7 +695,7 @@
       </div>
       <div class="form-group">
         <label style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Import Rate (¢/kWh)</label>
-        <input type="number" value="${importRate || 0}" step="0.01" style="width: 100%; padding: 6px; font-size: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);">
+        <input type="number" value="${importRate || 0}" step="0.01" style="width: 100%; padding: 6px; font-size: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);" onchange="window.touEditor.updateBandRateByDescriptor('${descriptor}', this.value)">
       </div>
     `;
 
@@ -706,6 +713,50 @@
   }
 
   /**
+   * Update a collection (import_bands, free_windows, feed_in_bands) field in the plan
+   * This is the generic handler for panel edits — reads from input.value and writes back to plan
+   */
+  window.touEditor.updateCollectionField = function(coll, idx, field, rawValue) {
+    const v = plan && plan.plan && plan.plan.versions && plan.plan.versions[0];
+    if (!v || !v[coll] || !v[coll][idx]) return;
+
+    if (field === 'windows') {
+      // Parse comma-separated string into array
+      v[coll][idx].windows = String(rawValue).split(',').map(function(s){return s.trim();}).filter(Boolean);
+    } else if (field === 'rate_c_per_kwh' || field === 'cap_kwh_per_day') {
+      // Numeric fields
+      // GUARD: for feed_in_bands with tiered rates (tiers array), don't overwrite rate
+      if (coll === 'feed_in_bands' && field === 'rate_c_per_kwh') {
+        const band = v[coll][idx];
+        if (band.tiers && band.tiers.length > 0) {
+          // Tiered feed-in: skip rate edit (v1 limitation)
+          return;
+        }
+      }
+      const n = parseFloat(rawValue);
+      v[coll][idx][field] = isNaN(n) ? 0 : n;
+    } else {
+      // String fields (descriptor, name, applies_to_channel, over_cap_falls_back_to, etc.)
+      v[coll][idx][field] = rawValue;
+    }
+
+    debounceResolve();
+  };
+
+  /**
+   * Update import band rate by descriptor (for popover editor)
+   */
+  window.touEditor.updateBandRateByDescriptor = function(descriptor, rawValue) {
+    const v = plan && plan.plan && plan.plan.versions && plan.plan.versions[0];
+    if (!v || !v.import_bands) return;
+    const band = v.import_bands.find(function(b){return b.descriptor === descriptor;});
+    if (!band) return;
+    const n = parseFloat(rawValue);
+    band.rate_c_per_kwh = isNaN(n) ? 0 : n;
+    debounceResolve();
+  };
+
+  /**
    * Render import bands rows
    */
   function renderImportBands() {
@@ -717,16 +768,16 @@
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
           <div>
             <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Descriptor</label>
-            <input type="text" class="form-input" style="font-size: 12px;" value="${band.descriptor || ''}" onchange="window.touEditor.updatePlanFromFormAndResolve()">
+            <input type="text" class="form-input" style="font-size: 12px;" value="${band.descriptor || ''}" onchange="window.touEditor.updateCollectionField('import_bands', ${i}, 'descriptor', this.value)">
           </div>
           <div>
             <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Rate (¢/kWh)</label>
-            <input type="number" class="form-input" style="font-size: 12px;" step="0.01" value="${band.rate_c_per_kwh || 0}" onchange="window.touEditor.updatePlanFromFormAndResolve()">
+            <input type="number" class="form-input" style="font-size: 12px;" step="0.01" value="${band.rate_c_per_kwh || 0}" onchange="window.touEditor.updateCollectionField('import_bands', ${i}, 'rate_c_per_kwh', this.value)">
           </div>
         </div>
         <div>
           <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Windows (HH:MM-HH:MM, comma-separated)</label>
-          <input type="text" class="form-input" style="font-size: 12px;" value="${(band.windows || []).join(', ')}" onchange="window.touEditor.updatePlanFromFormAndResolve()">
+          <input type="text" class="form-input" style="font-size: 12px;" value="${(band.windows || []).join(', ')}" onchange="window.touEditor.updateCollectionField('import_bands', ${i}, 'windows', this.value)">
         </div>
         <button type="button" class="btn btn-secondary btn-sm" style="margin-top: 8px; width: 100%;" onclick="window.touEditor.removeImportBand(${i})">Remove</button>
       </div>
@@ -753,28 +804,28 @@
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
           <div>
             <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Name</label>
-            <input type="text" class="form-input" style="font-size: 12px;" value="${fw.name || ''}" onchange="window.touEditor.updatePlanFromFormAndResolve()">
+            <input type="text" class="form-input" style="font-size: 12px;" value="${fw.name || ''}" onchange="window.touEditor.updateCollectionField('free_windows', ${i}, 'name', this.value)">
           </div>
           <div>
             <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Daily Cap (kWh)</label>
-            <input type="number" class="form-input" style="font-size: 12px;" step="0.1" value="${fw.cap_kwh_per_day || 50}" onchange="window.touEditor.updatePlanFromFormAndResolve()">
+            <input type="number" class="form-input" style="font-size: 12px;" step="0.1" value="${fw.cap_kwh_per_day || 50}" onchange="window.touEditor.updateCollectionField('free_windows', ${i}, 'cap_kwh_per_day', this.value)">
           </div>
         </div>
         <div style="margin-bottom: 8px;">
           <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Windows (HH:MM-HH:MM, comma-separated)</label>
-          <input type="text" class="form-input" style="font-size: 12px;" value="${(fw.windows || []).join(', ')}" onchange="window.touEditor.updatePlanFromFormAndResolve()">
+          <input type="text" class="form-input" style="font-size: 12px;" value="${(fw.windows || []).join(', ')}" onchange="window.touEditor.updateCollectionField('free_windows', ${i}, 'windows', this.value)">
         </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
           <div>
             <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Channel</label>
-            <select class="form-input" style="font-size: 12px;" onchange="window.touEditor.updatePlanFromFormAndResolve()">
-              <option ${fw.applies_to_channel === 'general' ? 'selected' : ''}>general</option>
-              <option ${fw.applies_to_channel === 'controlled_load' ? 'selected' : ''}>controlled_load</option>
+            <select class="form-input" style="font-size: 12px;" onchange="window.touEditor.updateCollectionField('free_windows', ${i}, 'applies_to_channel', this.value)">
+              <option value="general" ${fw.applies_to_channel === 'general' ? 'selected' : ''}>general</option>
+              <option value="controlled_load" ${fw.applies_to_channel === 'controlled_load' ? 'selected' : ''}>controlled_load</option>
             </select>
           </div>
           <div>
             <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Fall Back To</label>
-            <input type="text" class="form-input" style="font-size: 12px;" value="${fw.over_cap_falls_back_to || 'shoulder'}" onchange="window.touEditor.updatePlanFromFormAndResolve()">
+            <input type="text" class="form-input" style="font-size: 12px;" value="${fw.over_cap_falls_back_to || 'shoulder'}" onchange="window.touEditor.updateCollectionField('free_windows', ${i}, 'over_cap_falls_back_to', this.value)">
           </div>
         </div>
         <button type="button" class="btn btn-secondary btn-sm" style="margin-top: 8px; width: 100%;" onclick="window.touEditor.removeFreeWindow(${i})">Remove</button>
@@ -802,16 +853,16 @@
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
           <div>
             <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Name</label>
-            <input type="text" class="form-input" style="font-size: 12px;" value="${band.name || ''}" onchange="window.touEditor.updatePlanFromFormAndResolve()">
+            <input type="text" class="form-input" style="font-size: 12px;" value="${band.name || ''}" onchange="window.touEditor.updateCollectionField('feed_in_bands', ${i}, 'name', this.value)">
           </div>
           <div>
             <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Rate (¢/kWh)</label>
-            <input type="number" class="form-input" style="font-size: 12px;" step="0.01" value="${band.rate_c_per_kwh || 0}" onchange="window.touEditor.updatePlanFromFormAndResolve()">
+            <input type="number" class="form-input" style="font-size: 12px;" step="0.01" value="${band.rate_c_per_kwh || 0}" onchange="window.touEditor.updateCollectionField('feed_in_bands', ${i}, 'rate_c_per_kwh', this.value)">
           </div>
         </div>
         <div>
           <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Windows (HH:MM-HH:MM, comma-separated; leave blank for all other times)</label>
-          <input type="text" class="form-input" style="font-size: 12px;" value="${(band.windows || []).join(', ')}" onchange="window.touEditor.updatePlanFromFormAndResolve()">
+          <input type="text" class="form-input" style="font-size: 12px;" value="${(band.windows || []).join(', ')}" onchange="window.touEditor.updateCollectionField('feed_in_bands', ${i}, 'windows', this.value)">
         </div>
         <button type="button" class="btn btn-secondary btn-sm" style="margin-top: 8px; width: 100%;" onclick="window.touEditor.removeFeedInBand(${i})">Remove</button>
       </div>

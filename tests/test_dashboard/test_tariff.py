@@ -541,3 +541,17 @@ class TestDeepLink:
         assert 'id="tab-tariff"' in html
         # Check that the data attribute for can_edit is set
         assert 'data-can-edit=' in html
+
+    @pytest.mark.asyncio
+    async def test_settings_page_contains_hidden_tariff_type_field(self, tariff_client):
+        """GET /settings should contain hidden input for tariff type persistence."""
+        resp = await tariff_client.get("/settings")
+        assert resp.status_code == 200
+
+        html = resp.text
+        # Check for the hidden tariff type field
+        assert 'name="providers.tariff.type"' in html
+        assert 'id="tariff-type-field"' in html
+        assert 'type="hidden"' in html
+        # Verify it has the current type value
+        assert 'value="tou"' in html or 'value="amber"' in html
