@@ -137,7 +137,9 @@ class RebuildEvaluator:
 
         # 7. Actuals vs forecast deviation — trigger rebuild when real
         # solar or load diverges significantly from what the plan assumed.
-        if current_slot and (actual_solar_w is not None or actual_load_w is not None):
+        # Gate behind rebuild_on_actuals_deviation (True for amber, False for TOU).
+        if (self._config.planning.rebuild_on_actuals_deviation and
+            current_slot and (actual_solar_w is not None or actual_load_w is not None)):
             threshold_pct = self._config.planning.forecast_delta_threshold_pct / 100.0
             cooldown = self._config.planning.soc_deviation_cooldown_seconds
 
@@ -158,6 +160,10 @@ class RebuildEvaluator:
                         f"Load actuals deviation: {load_dev:.0%} "
                         f"(forecast {current_slot.load_forecast_w:.0f}W, actual {actual_load_w:.0f}W)",
                     )
+        elif (not self._config.planning.rebuild_on_actuals_deviation and
+              current_slot and (actual_solar_w is not None or actual_load_w is not None)):
+            # Debug log when trigger is suppressed
+            logger.debug("Rebuild trigger 'actuals_deviation' suppressed (rebuild_on_actuals_deviation=False)")
 
         # 8. Periodic rebuild
         elapsed = now - self._last_rebuild_time
@@ -165,8 +171,14 @@ class RebuildEvaluator:
             return RebuildResult(True, "periodic", f"Periodic ({elapsed:.0f}s since last)")
 
         # 9. Forecast staleness
-        if aggregator.is_stale(self._config.resilience.stale_forecast_max_age_seconds):
-            return RebuildResult(True, "forecast_delta", "Forecast data is stale")
+        # Gate behind rebuild_on_forecast_staleness (True for amber, False for TOU).
+        if self._config.planning.rebuild_on_forecast_staleness:
+            if aggregator.is_stale(self._config.resilience.stale_forecast_max_age_seconds):
+                return RebuildResult(True, "forecast_delta", "Forecast data is stale")
+        else:
+            # Debug log when trigger is suppressed
+            if aggregator.is_stale(self._config.resilience.stale_forecast_max_age_seconds):
+                logger.debug("Rebuild trigger 'forecast_delta' suppressed (rebuild_on_forecast_staleness=False)")
 
         return RebuildResult(False)
 

@@ -66,6 +66,25 @@ class PlanningConfig(BaseModel):
     soc_deviation_tolerance: float = Field(0.05, ge=0.0, le=1.0)
     soc_deviation_cooldown_seconds: int = 300
     solver_timeout_seconds: int = 25
+    rebuild_on_forecast_staleness: bool | None = Field(
+        default=None,
+        description="Rebuild the plan when forecast data is stale (age-based). "
+        "Default: True for dynamic-pricing (amber), False for TOU (solar 3-6h cadence is expected; "
+        "re-solving stale data churns)."
+    )
+    rebuild_on_actuals_deviation: bool | None = Field(
+        default=None,
+        description="Full-rebuild when solar/load actuals deviate from forecast. "
+        "Default: True for amber, False for TOU (routine load/consumption changes are absorbed by "
+        "following the cached plan; soc_deviation remains the safety net)."
+    )
+    mode_switch_hysteresis_cents: float | None = Field(
+        default=None,
+        ge=0,
+        description="Margin (cents/kWh) the alternative battery mode must beat the currently-committed "
+        "mode by before the plan is allowed to flip it. Status-quo tie-break against near-degenerate "
+        "solver optima. Default: 3.0 for TOU, 0.0 (off) for amber. 0 disables."
+    )
 
 
 class BatteryTargetsConfig(BaseModel):
@@ -1167,5 +1186,36 @@ class AppConfig(BaseModel):
         if (self.arbitrage.gate_policy == "spot" and
             self.providers.tariff.type == "tou"):
             self.arbitrage.gate_policy = "tou_aware"
+
+        return self
+
+    @model_validator(mode="after")
+    def resolve_rebuild_cadence_defaults(self) -> AppConfig:
+        """Resolve rebuild cadence defaults based on provider tariff type.
+
+        - type='tou' -> rebuild_on_forecast_staleness=False, rebuild_on_actuals_deviation=False,
+          mode_switch_hysteresis_cents=3.0 (stable TOU with 3-6h solar forecasts; no churn needed)
+        - type='amber' (or other) -> rebuild_on_forecast_staleness=True, rebuild_on_actuals_deviation=True,
+          mode_switch_hysteresis_cents=0.0 (dynamic pricing requires high-resolution reactivity)
+
+        User can always set these fields explicitly (non-None) to override the defaults.
+        """
+        tariff_type = self.providers.tariff.type
+
+        # Only resolve fields that are None (unset); explicit values are preserved
+        if self.planning.rebuild_on_forecast_staleness is None:
+            self.planning.rebuild_on_forecast_staleness = (
+                False if tariff_type == "tou" else True
+            )
+
+        if self.planning.rebuild_on_actuals_deviation is None:
+            self.planning.rebuild_on_actuals_deviation = (
+                False if tariff_type == "tou" else True
+            )
+
+        if self.planning.mode_switch_hysteresis_cents is None:
+            self.planning.mode_switch_hysteresis_cents = (
+                3.0 if tariff_type == "tou" else 0.0
+            )
 
         return self
