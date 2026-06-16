@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pulp
 
@@ -164,7 +164,7 @@ class ExportTierStructure:
     """
     in_tiered_window: bool = False
     tiers: list[ExportTier] | None = None
-    local_date: datetime | None = None
+    local_date: date | None = None
 
 
 @dataclass
