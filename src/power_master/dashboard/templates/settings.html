@@ -629,7 +629,7 @@
     <!-- TOU Branch -->
     <div id="tariff-tou-branch" style="display: {% if config.providers.tariff.type == 'tou' %}block{% else %}none{% endif %};">
         <script type="application/json" id="tou-plan-data">{{ tariff_config_json|safe }}</script>
-        <div id="tou-editor" class="tou-editor-host"></div>
+        <div id="tou-editor" class="tou-editor-host" data-can-edit="{{ 'true' if tariff_can_edit else 'false' }}"></div>
 
         <noscript>
             <div style="padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; color: var(--text-muted);">
@@ -1361,11 +1361,22 @@ function switchTab(tabId, btn) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    var active = document.querySelector('.tab-content.active');
-    var select = document.getElementById('settings-tab-select');
-    if (active && select) {
-        select.value = active.id.replace('tab-', '');
+    // Check for ?tab= parameter to deep-link to a specific tab
+    var urlParams = new URLSearchParams(window.location.search);
+    var tabParam = urlParams.get('tab');
+
+    if (tabParam) {
+        // Switch to the requested tab
+        switchTab(tabParam, null);
+    } else {
+        // Default: show the first active tab
+        var active = document.querySelector('.tab-content.active');
+        var select = document.getElementById('settings-tab-select');
+        if (active && select) {
+            select.value = active.id.replace('tab-', '');
+        }
     }
+
     toggleConnectionFields();
 });
 

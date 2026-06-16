@@ -102,11 +102,13 @@ async def settings_page(request: Request) -> HTMLResponse:
     # Determine if current user can edit (admin or auth disabled)
     auth_config = config.dashboard.auth
     is_read_only = False
+    tariff_can_edit = True
     if auth_config.users:
         from power_master.dashboard.auth import get_session
         session = get_session(request)
         if session and session.get("role") != "admin":
             is_read_only = True
+            tariff_can_edit = False
 
     # Check for flash messages via query params
     saved = request.query_params.get("saved")
@@ -129,6 +131,7 @@ async def settings_page(request: Request) -> HTMLResponse:
             "saved": saved == "1",
             "error": error or "",
             "is_read_only": is_read_only,
+            "tariff_can_edit": tariff_can_edit,
             "firmware": firmware,
             "tariff_config_json": tariff_config_json,
         },

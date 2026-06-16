@@ -34,6 +34,9 @@
       return;
     }
 
+    // Store canEdit state globally for later reference
+    window.touEditorCanEdit = editorHost.getAttribute('data-can-edit') !== 'false';
+
     // Render the editor UI
     renderEditor(editorHost);
 
@@ -99,11 +102,14 @@
    * Main editor HTML structure
    */
   function renderEditor(host) {
+    // Check if editor is read-only
+    const canEdit = host.getAttribute('data-can-edit') !== 'false';
+
     const html = `
       <div class="tou-editor-wrapper">
         <!-- Ribbon Hero + Cost Readout -->
         <div class="dash-panel">
-          <div class="dash-panel-title">24-Hour Tariff Preview (Click to edit)</div>
+          <div class="dash-panel-title">24-Hour Tariff Preview ${canEdit ? '(Click to edit)' : '(Read Only)'}</div>
           <div class="dash-panel-body">
             <div style="position: relative;">
               <div id="tou-ribbon-status" style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Loading...</div>
@@ -217,10 +223,14 @@
           </div>
         </div>
 
-        <!-- Save bar -->
-        <div style="padding: 12px; background: var(--bg-secondary); border-top: 1px solid var(--border); margin-top: 24px; display: flex; justify-content: space-between; align-items: center; border-radius: 0 0 6px 6px;">
+        <!-- Save/Export bar -->
+        <div style="padding: 12px; background: var(--bg-secondary); border-top: 1px solid var(--border); margin-top: 24px; display: flex; justify-content: space-between; align-items: center; border-radius: 0 0 6px 6px; gap: 8px;">
           <span id="tou-save-status" style="font-size: 12px; color: var(--text-muted);">Unsaved changes</span>
-          <button type="button" id="tou-save-btn" class="btn btn-primary" onclick="window.touEditor.openSaveDialog()">Save Plan</button>
+          <div style="display: flex; gap: 8px;">
+            ${canEdit ? `<button type="button" id="tou-wizard-btn" class="btn btn-secondary" onclick="window.touEditor.openWizardModal()" title="Build from Energy Fact Sheet">⚙ Build from EFS</button>` : ''}
+            <button type="button" id="tou-export-btn" class="btn btn-secondary" onclick="window.touEditor.exportPlan()" title="Download plan as JSON">↓ Export</button>
+            ${canEdit ? `<button type="button" id="tou-save-btn" class="btn btn-primary" onclick="window.touEditor.openSaveDialog()">Save Plan</button>` : ''}
+          </div>
         </div>
       </div>
 
@@ -252,6 +262,125 @@
           <button type="button" class="btn btn-sm" onclick="window.touEditor.closeBandPopover()">Close</button>
         </div>
       </div>
+
+      <!-- EFS Wizard Modal -->
+      <div id="tou-wizard-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center;">
+        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 24px; max-width: 700px; width: 90%; max-height: 90vh; overflow-y: auto;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3 style="margin: 0; font-size: 16px; font-weight: 600;">Build from Energy Fact Sheet</h3>
+            <button type="button" style="background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 20px;" onclick="window.touEditor.closeWizardModal()">×</button>
+          </div>
+
+          <!-- Template Selector -->
+          <div style="margin-bottom: 20px; padding: 12px; background: var(--bg-secondary); border-radius: 6px;">
+            <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 8px; text-transform: uppercase; font-weight: 500;">Start from known plan (optional)</label>
+            <select id="tou-wizard-template-select" style="width: 100%; padding: 8px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);" onchange="window.touEditor.wizardLoadTemplate()">
+              <option value="">-- Enter manually --</option>
+            </select>
+          </div>
+
+          <!-- Wizard Form -->
+          <form id="tou-wizard-form" style="display: flex; flex-direction: column; gap: 16px;">
+            <!-- Plan Basics -->
+            <fieldset style="border: 1px solid var(--border); border-radius: 6px; padding: 12px;">
+              <legend style="font-weight: 600; padding: 0 8px;">Plan Basics</legend>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div class="form-group" style="margin: 0;">
+                  <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Supply Charge (¢/day)</label>
+                  <input type="number" id="wizard-supply-charge" step="0.01" style="width: 100%; padding: 6px; font-size: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);" value="148.5">
+                </div>
+                <div class="form-group" style="margin: 0;">
+                  <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Timezone</label>
+                  <input type="text" id="wizard-timezone" style="width: 100%; padding: 6px; font-size: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);" value="Australia/Brisbane">
+                </div>
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+                <div class="form-group" style="margin: 0;">
+                  <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Billing Length (days)</label>
+                  <input type="number" id="wizard-billing-length" min="1" style="width: 100%; padding: 6px; font-size: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);" value="28">
+                </div>
+                <div class="form-group" style="margin: 0;">
+                  <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Anchor Date (YYYY-MM-DD)</label>
+                  <input type="text" id="wizard-anchor-date" style="width: 100%; padding: 6px; font-size: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);" value="2026-06-01">
+                </div>
+              </div>
+            </fieldset>
+
+            <!-- Peak Band -->
+            <fieldset style="border: 1px solid var(--border); border-radius: 6px; padding: 12px;">
+              <legend style="font-weight: 600; padding: 0 8px;">Peak (Import)</legend>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div class="form-group" style="margin: 0;">
+                  <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Rate (¢/kWh)</label>
+                  <input type="number" id="wizard-peak-rate" step="0.01" style="width: 100%; padding: 6px; font-size: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);" value="55.55">
+                </div>
+              </div>
+              <div style="margin-top: 8px;">
+                <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Windows (HH:MM-HH:MM, comma-separated)</label>
+                <input type="text" id="wizard-peak-windows" style="width: 100%; padding: 6px; font-size: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);" value="16:00-22:59" placeholder="e.g. 16:00-22:59, 06:00-07:00">
+              </div>
+            </fieldset>
+
+            <!-- Free/Off-Peak Window -->
+            <fieldset style="border: 1px solid var(--border); border-radius: 6px; padding: 12px;">
+              <legend style="font-weight: 600; padding: 0 8px;">Free / Off-Peak Window</legend>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div class="form-group" style="margin: 0;">
+                  <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Window Name</label>
+                  <input type="text" id="wizard-free-name" style="width: 100%; padding: 6px; font-size: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);" value="free">
+                </div>
+                <div class="form-group" style="margin: 0;">
+                  <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Daily Cap (kWh)</label>
+                  <input type="number" id="wizard-free-cap" step="0.1" style="width: 100%; padding: 6px; font-size: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);" value="50">
+                </div>
+              </div>
+              <div style="margin-top: 8px;">
+                <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Windows (HH:MM-HH:MM, comma-separated)</label>
+                <input type="text" id="wizard-free-windows" style="width: 100%; padding: 6px; font-size: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);" value="10:00-13:59" placeholder="e.g. 10:00-13:59">
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+                <div class="form-group" style="margin: 0;">
+                  <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Off-Peak Rate (¢/kWh)</label>
+                  <input type="number" id="wizard-offpeak-rate" step="0.01" style="width: 100%; padding: 6px; font-size: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);" value="28.6">
+                </div>
+              </div>
+            </fieldset>
+
+            <!-- Shoulder/Default -->
+            <fieldset style="border: 1px solid var(--border); border-radius: 6px; padding: 12px;">
+              <legend style="font-weight: 600; padding: 0 8px;">Shoulder / Default (Import)</legend>
+              <div style="display: grid; grid-template-columns: 1fr; gap: 8px;">
+                <div class="form-group" style="margin: 0;">
+                  <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Rate (¢/kWh)</label>
+                  <input type="number" id="wizard-shoulder-rate" step="0.01" style="width: 100%; padding: 6px; font-size: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);" value="34.1">
+                </div>
+              </div>
+            </fieldset>
+
+            <!-- Feed-In -->
+            <fieldset style="border: 1px solid var(--border); border-radius: 6px; padding: 12px;">
+              <legend style="font-weight: 600; padding: 0 8px;">Feed-In (Export)</legend>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div class="form-group" style="margin: 0;">
+                  <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">FiT Rate (¢/kWh)</label>
+                  <input type="number" id="wizard-fit-rate" step="0.01" style="width: 100%; padding: 6px; font-size: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);" value="8">
+                </div>
+              </div>
+              <div style="margin-top: 8px;">
+                <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Windows (HH:MM-HH:MM, comma-separated; blank = all other times)</label>
+                <input type="text" id="wizard-fit-windows" style="width: 100%; padding: 6px; font-size: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);" value="16:00-22:59" placeholder="e.g. 16:00-22:59">
+              </div>
+            </fieldset>
+
+            <!-- Buttons -->
+            <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 24px;">
+              <button type="button" class="btn btn-secondary" onclick="window.touEditor.closeWizardModal()">Cancel</button>
+              <button type="button" id="tou-wizard-finish-btn" class="btn btn-primary" onclick="window.touEditor.wizardFinish()">Finish & Load</button>
+            </div>
+            <div id="tou-wizard-feedback" style="margin-top: 12px; font-size: 12px; color: var(--text-muted); text-align: center;"></div>
+          </form>
+        </div>
+      </div>
     `;
 
     host.innerHTML = html;
@@ -271,13 +400,57 @@
       renderRibbon,
       updateFormFromPlan,
       updatePlanFromForm,
+      openWizardModal,
+      closeWizardModal,
+      wizardLoadTemplate,
+      wizardFinish,
+      exportPlan,
     };
 
     // Load form from plan
     updateFormFromPlan();
 
+    // Apply read-only if needed
+    if (!canEdit) {
+      applyReadOnly();
+    }
+
     // Wire form change handlers
     wireFormHandlers();
+  }
+
+  /**
+   * Apply read-only styling and disable all inputs
+   */
+  function applyReadOnly() {
+    const wrapper = document.querySelector('.tou-editor-wrapper');
+    if (wrapper) {
+      wrapper.style.opacity = '0.9';
+    }
+
+    // Disable all inputs in the editor
+    const inputs = document.querySelectorAll('.tou-editor-wrapper input, .tou-editor-wrapper select, .tou-editor-wrapper button');
+    inputs.forEach((el) => {
+      if (el.id && el.id.startsWith('tou-')) {
+        // Keep export and close buttons functional, disable everything else
+        if (!el.id.includes('export') && !el.id.includes('close')) {
+          el.disabled = true;
+          el.style.cursor = 'not-allowed';
+          if (el.tagName === 'INPUT' || el.tagName === 'SELECT') {
+            el.style.opacity = '0.6';
+          }
+        }
+      }
+    });
+
+    // Hide band edit popovers and buttons
+    const bandPopover = document.getElementById('tou-band-popover');
+    if (bandPopover) {
+      bandPopover.style.display = 'none !important';
+    }
+
+    const editableListBtns = document.querySelectorAll('.tou-editor-wrapper button[onclick*="Add"]');
+    editableListBtns.forEach(btn => btn.style.display = 'none');
   }
 
   /**
@@ -448,10 +621,12 @@
       hourSegment.style.flex = '1';
       hourSegment.style.background = color;
       hourSegment.style.position = 'relative';
-      hourSegment.style.cursor = 'pointer';
+      hourSegment.style.cursor = window.touEditorCanEdit ? 'pointer' : 'default';
       hourSegment.style.transition = 'all 0.15s ease';
       hourSegment.title = `${String(hour).padStart(2, '0')}:00 — ${descriptor}`;
-      hourSegment.addEventListener('click', () => openBandEditor(hour, descriptor, groupSlots[0]?.import_c));
+      if (window.touEditorCanEdit) {
+        hourSegment.addEventListener('click', () => openBandEditor(hour, descriptor, groupSlots[0]?.import_c));
+      }
       mainRibbon.appendChild(hourSegment);
 
       // Feed-in sub-ribbon
@@ -794,6 +969,238 @@
       confirmBtn.disabled = false;
       confirmBtn.textContent = 'Confirm & Save';
     }
+  }
+
+  /**
+   * Open EFS wizard modal
+   */
+  function openWizardModal() {
+    const modal = document.getElementById('tou-wizard-modal');
+    const feedback = document.getElementById('tou-wizard-feedback');
+    if (modal) {
+      modal.style.display = 'flex';
+      feedback.textContent = '';
+      loadWizardTemplates();
+    }
+  }
+
+  /**
+   * Close wizard modal
+   */
+  function closeWizardModal() {
+    const modal = document.getElementById('tou-wizard-modal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  /**
+   * Load preset templates from backend
+   */
+  async function loadWizardTemplates() {
+    const select = document.getElementById('tou-wizard-template-select');
+    if (!select) return;
+
+    try {
+      const res = await fetch('/settings/tariff/templates');
+      const data = await res.json();
+
+      if (data.ok && data.templates) {
+        // Keep the first "manual" option
+        const currentValue = select.value;
+        select.innerHTML = '<option value="">-- Enter manually --</option>';
+        data.templates.forEach(tpl => {
+          const opt = document.createElement('option');
+          opt.value = tpl.id;
+          opt.textContent = tpl.name;
+          opt.dataset.tariff = JSON.stringify(tpl.tariff);
+          select.appendChild(opt);
+        });
+        select.value = currentValue;
+      }
+    } catch (err) {
+      console.warn('Failed to load templates:', err);
+    }
+  }
+
+  /**
+   * Load template into wizard form
+   */
+  function wizardLoadTemplate() {
+    const select = document.getElementById('tou-wizard-template-select');
+    if (!select || !select.value) return;
+
+    const opt = select.options[select.selectedIndex];
+    if (!opt.dataset.tariff) return;
+
+    try {
+      const tariff = JSON.parse(opt.dataset.tariff);
+      const version = tariff.plan?.versions?.[0];
+      if (!version) return;
+
+      // Populate form from template
+      document.getElementById('wizard-supply-charge').value = tariff.plan?.supply_charge_c_per_day || 148.5;
+      document.getElementById('wizard-timezone').value = tariff.timezone || 'Australia/Brisbane';
+      document.getElementById('wizard-billing-length').value = tariff.plan?.billing_cycle?.length_days || 28;
+      document.getElementById('wizard-anchor-date').value = tariff.plan?.billing_cycle?.anchor_date || '2026-06-01';
+
+      // Peak band
+      const peakBand = version.import_bands?.find(b => b.descriptor === 'peak');
+      if (peakBand) {
+        document.getElementById('wizard-peak-rate').value = peakBand.rate_c_per_kwh || 55.55;
+        document.getElementById('wizard-peak-windows').value = (peakBand.windows || []).join(', ');
+      }
+
+      // Free window
+      const freeWindow = version.free_windows?.[0];
+      if (freeWindow) {
+        document.getElementById('wizard-free-name').value = freeWindow.name || 'free';
+        document.getElementById('wizard-free-cap').value = freeWindow.cap_kwh_per_day || 50;
+        document.getElementById('wizard-free-windows').value = (freeWindow.windows || []).join(', ');
+      }
+
+      // Off-peak band
+      const offPeakBand = version.import_bands?.find(b => b.descriptor === 'off-peak-balance');
+      if (offPeakBand) {
+        document.getElementById('wizard-offpeak-rate').value = offPeakBand.rate_c_per_kwh || 28.6;
+      }
+
+      // Shoulder band
+      const shoulderBand = version.import_bands?.find(b => b.descriptor === 'shoulder');
+      if (shoulderBand) {
+        document.getElementById('wizard-shoulder-rate').value = shoulderBand.rate_c_per_kwh || 34.1;
+      }
+
+      // FiT band
+      const fitBand = version.feed_in_bands?.find(b => b.descriptor !== 'default-fit' && b.rate_c_per_kwh > 0);
+      if (fitBand) {
+        document.getElementById('wizard-fit-rate').value = fitBand.rate_c_per_kwh || 8;
+        document.getElementById('wizard-fit-windows').value = (fitBand.windows || []).join(', ');
+      }
+    } catch (err) {
+      console.error('Failed to load template:', err);
+    }
+  }
+
+  /**
+   * Assemble wizard input into a complete plan and validate/load it
+   */
+  async function wizardFinish() {
+    const feedback = document.getElementById('tou-wizard-feedback');
+    const finishBtn = document.getElementById('tou-wizard-finish-btn');
+    const form = document.getElementById('tou-wizard-form');
+
+    // Collect wizard values
+    const supplyCharge = parseFloat(document.getElementById('wizard-supply-charge').value) || 148.5;
+    const timezone = document.getElementById('wizard-timezone').value || 'Australia/Brisbane';
+    const billingLength = parseInt(document.getElementById('wizard-billing-length').value) || 28;
+    const anchorDate = document.getElementById('wizard-anchor-date').value || '2026-06-01';
+
+    const peakRate = parseFloat(document.getElementById('wizard-peak-rate').value) || 55.55;
+    const peakWindows = document.getElementById('wizard-peak-windows').value.split(',').map(s => s.trim()).filter(s => s);
+
+    const freeName = document.getElementById('wizard-free-name').value || 'free';
+    const freeCap = parseFloat(document.getElementById('wizard-free-cap').value) || 50;
+    const freeWindows = document.getElementById('wizard-free-windows').value.split(',').map(s => s.trim()).filter(s => s);
+    const offPeakRate = parseFloat(document.getElementById('wizard-offpeak-rate').value) || 28.6;
+
+    const shoulderRate = parseFloat(document.getElementById('wizard-shoulder-rate').value) || 34.1;
+
+    const fitRate = parseFloat(document.getElementById('wizard-fit-rate').value) || 8;
+    const fitWindows = document.getElementById('wizard-fit-windows').value.split(',').map(s => s.trim()).filter(s => s);
+
+    // Build plan object
+    const newPlan = {
+      type: 'tou',
+      timezone,
+      grid_charge_policy: 'free_window_and_solar_only',
+      plan: {
+        supply_charge_c_per_day: supplyCharge,
+        billing_cycle: {
+          length_days: billingLength,
+          anchor_date: anchorDate,
+        },
+        vpp: { enabled: false },
+        versions: [
+          {
+            valid_from: anchorDate,
+            valid_until: null,
+            import_bands: [
+              { descriptor: 'peak', windows: peakWindows, rate_c_per_kwh: peakRate },
+              { descriptor: 'off-peak-balance', windows: freeWindows, rate_c_per_kwh: offPeakRate },
+              { descriptor: 'shoulder', windows: [], rate_c_per_kwh: shoulderRate },
+            ],
+            free_windows: [
+              {
+                name: freeName,
+                windows: freeWindows,
+                rate_c_per_kwh: 0.0,
+                cap_kwh_per_day: freeCap,
+                applies_to_channel: 'general',
+                over_cap_falls_back_to: 'off-peak-balance',
+              },
+            ],
+            feed_in_bands: [
+              { name: 'fit', windows: fitWindows, rate_c_per_kwh: fitRate },
+              { name: 'default-fit', windows: [], rate_c_per_kwh: 0 },
+            ],
+            credits: [],
+          },
+        ],
+      },
+    };
+
+    // Validate via POST /settings/tariff/resolve
+    finishBtn.disabled = true;
+    feedback.textContent = 'Validating...';
+    feedback.style.color = 'var(--text-muted)';
+
+    try {
+      const res = await fetch('/settings/tariff/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newPlan),
+      });
+
+      const data = await res.json();
+
+      if (!data.ok) {
+        feedback.textContent = 'Error: ' + (data.errors?.[0] || data.error || 'Invalid tariff config');
+        feedback.style.color = 'var(--accent-red)';
+        finishBtn.disabled = false;
+        return;
+      }
+
+      // Load plan into editor
+      plan = newPlan;
+      savedPlan = JSON.parse(JSON.stringify(plan));
+      updateFormFromPlan();
+      debounceResolve();
+
+      feedback.textContent = 'Plan loaded! Review and save.';
+      feedback.style.color = 'var(--accent-green)';
+
+      setTimeout(() => {
+        closeWizardModal();
+      }, 500);
+    } catch (err) {
+      feedback.textContent = 'Network error: ' + err.message;
+      feedback.style.color = 'var(--accent-red)';
+      finishBtn.disabled = false;
+    }
+  }
+
+  /**
+   * Export current plan as JSON
+   */
+  function exportPlan() {
+    updatePlanFromForm();
+    const json = JSON.stringify(plan, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'tariff-plan.json';
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
 })();

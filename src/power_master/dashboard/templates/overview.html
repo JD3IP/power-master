@@ -168,7 +168,7 @@
     <!-- ── TOU Tariff Status (visible only for TOU providers) ──── -->
     {% if tou_context %}
     <div class="dash-panel dash-panel--compact">
-        <div class="dash-panel-title">TOU Status</div>
+        <div class="dash-panel-title">TOU Status <a href="/settings?tab=tariff" style="float: right; font-size: 12px; color: var(--text-muted); text-decoration: none; margin-right: 4px;">⚙ Edit</a></div>
         <div class="dash-panel-body">
             <!-- Active Band / Rate -->
             {% if tou_context.active_descriptor %}
