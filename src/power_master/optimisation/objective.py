@@ -52,6 +52,7 @@ def build_objective(
     export_tier_vars: list[list[pulp.LpVariable]] | None = None,
     tier_structs: list[any] | None = None,
     weights: ObjectiveWeights | None = None,
+    incumbent_export_bias_cents: float = 0.0,
     credit_missed_vars: dict | None = None,
     credit_windows: list[any] | None = None,
     credit_slack: list[pulp.LpVariable] | None = None,
@@ -147,5 +148,12 @@ def build_objective(
         # Large penalty for violating hard constraints (similar to safety_slack)
         for cs in credit_slack:
             cost_terms.append(w.safety_violation * cs)
+
+    # Status-quo tie-break (hysteresis): bias slot-0 export toward incumbent mode.
+    # Positive bias discourages exporting (hold SELF_USE); negative bias encourages exporting (hold FORCE_DISCHARGE).
+    # Only applied when incumbent is set and hysteresis is enabled; default 0.0 keeps behaviour unchanged.
+    if incumbent_export_bias_cents != 0.0 and n_slots > 0:
+        kwh_slot0 = slot_hours / 1000
+        cost_terms.append(incumbent_export_bias_cents * grid_export[0] * kwh_slot0)
 
     prob += pulp.lpSum(cost_terms), "MinimiseNetCost"

@@ -219,6 +219,10 @@ class SolverInputs:
     # Per-slot credit window info for low-import evening credits (e.g., ZEROHERO).
     credit_windows: list[CreditWindowInfo] | None = None
 
+    # Hysteresis: the mode of the current slot in the incumbent plan (status-quo tie-break)
+    # If None, no incumbent exists; if set, carries the current slot's mode for mode-switch hysteresis.
+    incumbent_mode: SlotMode | None = None
+
     @property
     def n_slots(self) -> int:
         return len(self.solar_forecast_w)
@@ -449,6 +453,25 @@ def solve(
                 prob += import_sum <= threshold_kwh + BIG_M * missed_var, \
                     f"credit_soft_threshold_{credit_name}_{local_date}"
 
+    # ── Hysteresis bias for slot-0 mode stability (status-quo tie-break) ──
+    # If incumbent_mode is set and hysteresis is enabled, compute a signed bias to reward
+    # staying in the current mode when export price is marginal.
+    incumbent_export_bias_cents = 0.0
+    hyst = config.planning.mode_switch_hysteresis_cents
+    if hyst > 0 and inputs.incumbent_mode is not None:
+        incumbent_mode = inputs.incumbent_mode
+        # Normalise string -> enum if needed (robustness)
+        if isinstance(incumbent_mode, str):
+            incumbent_mode = SlotMode[incumbent_mode.upper()]
+
+        if incumbent_mode == SlotMode.FORCE_DISCHARGE:
+            # Currently discharging to grid: penalise switching away (negative bias rewards export)
+            incumbent_export_bias_cents = -hyst
+        elif incumbent_mode == SlotMode.SELF_USE:
+            # Currently self-using: penalise switching to export (positive bias penalises export)
+            incumbent_export_bias_cents = hyst
+        # else: FORCE_CHARGE incumbent or other modes → no bias (only discharge/self-use drive export)
+
     # ── Objective ── (uses dampened import prices to avoid overreaction to spikes)
     build_objective(
         prob, n, slot_hours,
@@ -457,6 +480,7 @@ def solve(
         grid_import, grid_export, self_consumed,
         safety_slack, storm_slack, evening_slack, morning_slack, daytime_slack,
         export_tier_vars, inputs.export_tier_structures,
+        incumbent_export_bias_cents=incumbent_export_bias_cents,
         credit_missed_vars=credit_missed_vars,
         credit_windows=inputs.credit_windows,
         credit_slack=credit_slack,

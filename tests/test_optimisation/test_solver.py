@@ -1281,3 +1281,209 @@ class TestProviderAwareArbitrageGate:
         assert (
             len(force_discharge_slots) > 0
         ), f"Spot gate with profitable {export_rate}c > {gate_threshold}c should allow export; got {len(force_discharge_slots)} FORCE_DISCHARGE slots (expected > 0)"
+
+
+class TestModeHysteresis:
+    """Test status-quo tie-break (mode-switch hysteresis) for evening flip-flop suppression.
+
+    When slot-0's export price is marginal (near-tie between discharge/self-use),
+    hysteresis should hold the incumbent mode instead of flipping. Scenario:
+    - Moderate SOC (~50%), peak import (~30c), modest FiT (~8c)
+    - Without hysteresis: solver may oscillate as tiny price perturbations flip the export decision
+    - With hysteresis: incumbent mode is held unless clear winner emerges
+    """
+
+    def test_hysteresis_holds_incumbent_force_discharge(self) -> None:
+        """With incumbent=FORCE_DISCHARGE and marginal export, should hold FORCE_DISCHARGE."""
+        config = AppConfig()
+        config.planning.mode_switch_hysteresis_cents = 3.0
+        config.arbitrage.break_even_delta_cents = 1  # Very low threshold to allow marginal arbitrage
+
+        # Near-tie scenario: high SOC, moderate load, modest FiT (8c export)
+        # Battery wants to discharge; question is whether to export (FORCE_DISCHARGE) or self-use.
+        # With high SOC and low load, surplus discharge can go to grid (marginal export decision).
+        start = datetime(2026, 6, 16, 10, 0, tzinfo=timezone.utc)
+        inputs = _make_inputs(
+            n_slots=4,
+            solar=500.0,       # Moderate solar
+            load=800.0,        # Moderate load (leaves room for export)
+            import_price=28.0,
+            export_price=8.0,   # Modest FiT (marginal arbitrage vs self-use)
+            soc=0.80,          # High SOC (battery wants to discharge)
+            wacb=6.0,          # Low cost basis (export > WACB)
+            start=start,
+        )
+        # Incumbent: FORCE_DISCHARGE (currently exporting)
+        inputs.incumbent_mode = SlotMode.FORCE_DISCHARGE
+
+        plan = solve(config, inputs)
+        # Hysteresis should hold FORCE_DISCHARGE despite marginal economics
+        assert plan.slots[0].mode == SlotMode.FORCE_DISCHARGE, (
+            f"Hysteresis should hold incumbent FORCE_DISCHARGE on marginal export. "
+            f"Got slot-0 mode: {plan.slots[0].mode}"
+        )
+
+    def test_hysteresis_holds_incumbent_self_use(self) -> None:
+        """With incumbent=SELF_USE and marginal export, should hold SELF_USE."""
+        config = AppConfig()
+        config.planning.mode_switch_hysteresis_cents = 3.0
+        config.arbitrage.break_even_delta_cents = 2
+
+        # Same scenario as above: marginal export decision
+        start = datetime(2026, 6, 16, 10, 0, tzinfo=timezone.utc)
+        inputs = _make_inputs(
+            n_slots=4,
+            solar=200.0,
+            load=2500.0,
+            import_price=28.0,
+            export_price=8.0,
+            soc=0.50,
+            wacb=6.0,
+            start=start,
+        )
+        # Incumbent: SELF_USE (currently not exporting)
+        inputs.incumbent_mode = SlotMode.SELF_USE
+
+        plan = solve(config, inputs)
+        # Hysteresis should hold SELF_USE despite marginal economics
+        assert plan.slots[0].mode == SlotMode.SELF_USE, (
+            f"Hysteresis should hold incumbent SELF_USE on marginal export. "
+            f"Got slot-0 mode: {plan.slots[0].mode}"
+        )
+
+    def test_hysteresis_broken_by_clear_winner_discharge(self) -> None:
+        """Hysteresis breaks when export is clearly better (well above break-even).
+
+        Scenario: Very high SOC (95%) that MUST discharge; expensive import (28c) but high export (25c).
+        Battery discharge naturally goes toward export (FORCE_DISCHARGE) since holding it avoids future expense.
+        Test verifies that the +3c hysteresis bias (from SELF_USE incumbent) is overcome by the clear savings.
+        """
+        config = AppConfig()
+        config.planning.mode_switch_hysteresis_cents = 3.0
+        config.arbitrage.break_even_delta_cents = 1
+
+        start = datetime(2026, 6, 16, 10, 0, tzinfo=timezone.utc)
+        inputs = _make_inputs(
+            n_slots=4,
+            solar=0.0,
+            load=100.0,       # Very low load (so discharge >> load)
+            import_price=28.0,
+            export_price=25.0,  # High export (well above break-even)
+            soc=0.95,         # Very high SOC (must dump discharge)
+            wacb=6.0,
+            start=start,
+        )
+        # Incumbent: SELF_USE, but very high SOC and profitable export should override
+        inputs.incumbent_mode = SlotMode.SELF_USE
+
+        plan = solve(config, inputs)
+        # Clear winner (export is profitable) breaks hysteresis
+        assert plan.slots[0].mode == SlotMode.FORCE_DISCHARGE, (
+            f"High export (25c) with very high SOC (95%%) should override SELF_USE incumbent. "
+            f"Got slot-0 mode: {plan.slots[0].mode}, target_power={plan.slots[0].target_power_w}"
+        )
+
+    def test_hysteresis_broken_by_clear_winner_no_export(self) -> None:
+        """Hysteresis breaks when export is clearly not profitable (~0c)."""
+        config = AppConfig()
+        config.planning.mode_switch_hysteresis_cents = 3.0
+        config.arbitrage.break_even_delta_cents = 2
+
+        start = datetime(2026, 6, 16, 10, 0, tzinfo=timezone.utc)
+        inputs = _make_inputs(
+            n_slots=4,
+            solar=200.0,
+            load=2500.0,
+            import_price=28.0,
+            export_price=0.5,  # Near-zero export (not worth exporting)
+            soc=0.60,
+            wacb=6.0,
+            start=start,
+        )
+        # Incumbent: FORCE_DISCHARGE, but export is worthless
+        inputs.incumbent_mode = SlotMode.FORCE_DISCHARGE
+
+        plan = solve(config, inputs)
+        # Clear loser (export is worthless) breaks hysteresis
+        assert plan.slots[0].mode == SlotMode.SELF_USE, (
+            f"Near-zero export (0.5c) should override FORCE_DISCHARGE incumbent. "
+            f"Got slot-0 mode: {plan.slots[0].mode}"
+        )
+
+    def test_hysteresis_disabled_when_hyst_is_zero(self) -> None:
+        """With mode_switch_hysteresis_cents=0, behaviour is unchanged (no incumbent bias)."""
+        config = AppConfig()
+        config.planning.mode_switch_hysteresis_cents = 0.0  # Off
+        config.arbitrage.break_even_delta_cents = 2
+
+        # Marginal export scenario
+        start = datetime(2026, 6, 16, 10, 0, tzinfo=timezone.utc)
+        inputs_base = _make_inputs(
+            n_slots=4,
+            solar=200.0,
+            load=2500.0,
+            import_price=28.0,
+            export_price=8.0,
+            soc=0.50,
+            wacb=6.0,
+            start=start,
+        )
+
+        # Solve with no incumbent
+        inputs_no_incumbent = SolverInputs(
+            solar_forecast_w=inputs_base.solar_forecast_w,
+            load_forecast_w=inputs_base.load_forecast_w,
+            import_rate_cents=inputs_base.import_rate_cents,
+            export_rate_cents=inputs_base.export_rate_cents,
+            is_spike=inputs_base.is_spike,
+            current_soc=inputs_base.current_soc,
+            wacb_cents=inputs_base.wacb_cents,
+            slot_start_times=inputs_base.slot_start_times,
+            incumbent_mode=None,  # No incumbent
+        )
+        plan_no_incumbent = solve(config, inputs_no_incumbent)
+
+        # Solve with FORCE_DISCHARGE incumbent (but hyst=0 so should be ignored)
+        inputs_incumbent = SolverInputs(
+            solar_forecast_w=inputs_base.solar_forecast_w,
+            load_forecast_w=inputs_base.load_forecast_w,
+            import_rate_cents=inputs_base.import_rate_cents,
+            export_rate_cents=inputs_base.export_rate_cents,
+            is_spike=inputs_base.is_spike,
+            current_soc=inputs_base.current_soc,
+            wacb_cents=inputs_base.wacb_cents,
+            slot_start_times=inputs_base.slot_start_times,
+            incumbent_mode=SlotMode.FORCE_DISCHARGE,  # Incumbent present
+        )
+        plan_incumbent = solve(config, inputs_incumbent)
+
+        # With hyst=0, both should produce identical results
+        assert plan_no_incumbent.slots[0].mode == plan_incumbent.slots[0].mode, (
+            f"With hysteresis=0, incumbent should be ignored. "
+            f"No incumbent result: {plan_no_incumbent.slots[0].mode}, "
+            f"incumbent result: {plan_incumbent.slots[0].mode}"
+        )
+
+    def test_hysteresis_none_incumbent_produces_no_bias(self) -> None:
+        """With incumbent_mode=None (no prior plan), hysteresis term is absent."""
+        config = AppConfig()
+        config.planning.mode_switch_hysteresis_cents = 3.0
+
+        start = datetime(2026, 6, 16, 10, 0, tzinfo=timezone.utc)
+        inputs = _make_inputs(
+            n_slots=4,
+            solar=200.0,
+            load=2500.0,
+            import_price=28.0,
+            export_price=8.0,
+            soc=0.50,
+            wacb=6.0,
+            start=start,
+        )
+        # No incumbent
+        inputs.incumbent_mode = None
+
+        plan = solve(config, inputs)
+        # Should solve normally with no bias (may be FORCE_DISCHARGE or SELF_USE depending on solver)
+        assert plan.solver_status == "Optimal"
+        assert plan.slots[0].mode in (SlotMode.FORCE_DISCHARGE, SlotMode.SELF_USE)

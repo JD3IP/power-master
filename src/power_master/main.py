@@ -2108,6 +2108,13 @@ class Application:
         else:
             logger.info("Solver starting SOC=%.1f%% (from telemetry)", current_soc * 100)
 
+        # Extract incumbent slot-0 mode from current plan for hysteresis (mode-switch stability)
+        incumbent_mode = None
+        if control_loop.state.current_plan:
+            current_slot = control_loop.state.current_plan.get_current_slot()
+            if current_slot:
+                incumbent_mode = current_slot.mode
+
         inputs = SolverInputs(
             solar_forecast_w=solar_forecast_w,
             load_forecast_w=load_forecast_w,
@@ -2121,6 +2128,7 @@ class Application:
             slot_start_times=slot_start_times,
             export_tier_structures=export_tier_structures,
             credit_windows=credit_windows,
+            incumbent_mode=incumbent_mode,
         )
 
         # Run solver in thread pool to avoid blocking
