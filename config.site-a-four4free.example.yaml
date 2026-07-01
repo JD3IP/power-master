@@ -43,8 +43,11 @@ planning:
   solver_timeout_seconds: 25
 
 battery_targets:
-  evening_soc_target: 0.90       # Charge to 90% by 4pm (free window ends at 2pm + solar buffer)
+  evening_soc_target: 0.90       # Charge to 90% by 4pm (evening peak reserve)
   evening_target_hour: 16
+  free_window_soc_target: 1.0    # Fill the battery to the hard SOC ceiling during the
+                                 # free window (free energy is worth grabbing). Clamped to
+                                 # battery.soc_max_hard. Set to 0 to cap at evening_soc_target.
   morning_soc_minimum: 0.20      # Allow discharge overnight (shoulder/peak rates discourage grid import anyway)
   morning_minimum_hour: 6
   daytime_reserve_soc_target: 0.50

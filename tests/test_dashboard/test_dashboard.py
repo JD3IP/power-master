@@ -735,3 +735,78 @@ class TestLoadDetailAndOverride:
         assert data["timeout_s"] == 3600  # capped at 60 minutes
 
 
+
+
+class TestInverterFirmwareApi:
+    """Firmware-settings panel API: curated settings + generic register access."""
+
+    def _adapter(self):
+        from unittest.mock import AsyncMock
+        adapter = AsyncMock()
+        adapter.firmware = {"master": "1.60"}
+        adapter.read_device_settings = AsyncMock(return_value=[
+            {"key": "min_soc", "label": "Min SOC", "address": 41011, "unit": "%",
+             "value": 15, "raw": 15},
+        ])
+        adapter.write_device_setting = AsyncMock(return_value=500)
+        adapter.read_holding_register = AsyncMock(return_value=1234)
+        adapter.write_holding_register = AsyncMock(return_value=None)
+        return adapter
+
+    @pytest.mark.asyncio
+    async def test_get_settings_returns_values(self, client) -> None:
+        client._transport.app.state.adapter = self._adapter()
+        resp = await client.get("/api/inverter/settings")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["settings"][0]["key"] == "min_soc"
+        assert data["firmware"]["master"] == "1.60"
+
+    @pytest.mark.asyncio
+    async def test_get_settings_unsupported_adapter(self, client) -> None:
+        # An adapter without the method (e.g. a stub) => 501
+        client._transport.app.state.adapter = object()
+        resp = await client.get("/api/inverter/settings")
+        assert resp.status_code == 501
+
+    @pytest.mark.asyncio
+    async def test_write_setting(self, client) -> None:
+        adapter = self._adapter()
+        client._transport.app.state.adapter = adapter
+        resp = await client.post("/api/inverter/settings", json={"key": "max_charge_current", "value": 50})
+        assert resp.status_code == 200
+        adapter.write_device_setting.assert_awaited_once_with("max_charge_current", 50.0)
+
+    @pytest.mark.asyncio
+    async def test_write_setting_validation_error(self, client) -> None:
+        adapter = self._adapter()
+        adapter.write_device_setting.side_effect = ValueError("Min SOC: 150 above maximum 100%")
+        client._transport.app.state.adapter = adapter
+        resp = await client.post("/api/inverter/settings", json={"key": "min_soc", "value": 150})
+        assert resp.status_code == 400
+        assert "above maximum" in resp.json()["error"]
+
+    @pytest.mark.asyncio
+    async def test_generic_read_hex_address(self, client) -> None:
+        adapter = self._adapter()
+        client._transport.app.state.adapter = adapter
+        resp = await client.post("/api/inverter/register/read", json={"address": "0xA033"})
+        assert resp.status_code == 200
+        adapter.read_holding_register.assert_awaited_once_with(0xA033)
+        assert resp.json()["hex"] == "0x04D2"  # 1234
+
+    @pytest.mark.asyncio
+    async def test_generic_write(self, client) -> None:
+        adapter = self._adapter()
+        client._transport.app.state.adapter = adapter
+        resp = await client.post("/api/inverter/register/write", json={"address": "41011", "value": "20"})
+        assert resp.status_code == 200
+        adapter.write_holding_register.assert_awaited_once_with(41011, 20)
+
+    @pytest.mark.asyncio
+    async def test_generic_write_rejects_bad_value(self, client) -> None:
+        adapter = self._adapter()
+        client._transport.app.state.adapter = adapter
+        resp = await client.post("/api/inverter/register/write", json={"address": "41011", "value": "notanumber"})
+        assert resp.status_code == 400
+        adapter.write_holding_register.assert_not_called()

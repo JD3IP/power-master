@@ -88,6 +88,71 @@ KH_WORK_MODES = {
     4: "Force Discharge",
 }
 
+
+@dataclass(frozen=True)
+class DeviceSetting:
+    """A curated, human-facing inverter holding-register setting.
+
+    ``scale`` maps the register's raw integer to the displayed value:
+        display_value = raw * scale     (e.g. raw 500, scale 0.1 → 50.0 A)
+        raw = round(display_value / scale)
+    ``min_value``/``max_value`` bound the DISPLAYED value (post-scale).
+    ``options`` (raw_value → label) marks an enum setting for the UI.
+    """
+
+    key: str
+    label: str
+    address: int
+    scale: float = 1.0
+    unit: str = ""
+    min_value: float | None = None
+    max_value: float | None = None
+    description: str = ""
+    options: dict[int, str] | None = None
+
+
+# Curated, named settings exposed in the firmware-settings panel. These map to
+# well-understood KH holding registers with safe bounds and scaling. Anything
+# not listed here (e.g. CT/meter offset registers that vary by firmware) is
+# reachable through the generic register read/write tool.
+DEVICE_SETTINGS: tuple[DeviceSetting, ...] = (
+    DeviceSetting(
+        key="work_mode", label="Work mode", address=Registers.WORK_MODE,
+        description="Base inverter work mode when not under remote control.",
+        options={0: "Self-Use", 1: "Feed-in First", 2: "Backup"},
+    ),
+    DeviceSetting(
+        key="min_soc", label="Min SOC", address=Registers.MIN_SOC,
+        unit="%", min_value=0, max_value=100,
+        description="Battery will not discharge below this state of charge.",
+    ),
+    DeviceSetting(
+        key="max_charge_current", label="Max charge current",
+        address=Registers.MAX_CHARGE_CURRENT, scale=0.1, unit="A",
+        min_value=0, max_value=100,
+        description="Maximum battery charge current.",
+    ),
+    DeviceSetting(
+        key="max_discharge_current", label="Max discharge current",
+        address=Registers.MAX_DISCHARGE_CURRENT, scale=0.1, unit="A",
+        min_value=0, max_value=100,
+        description="Maximum battery discharge current.",
+    ),
+    DeviceSetting(
+        key="export_limit", label="Export limit", address=Registers.EXPORT_LIMIT,
+        unit="W", min_value=0, max_value=60000,
+        description="Grid export power cap (0 = no export).",
+    ),
+)
+
+DEVICE_SETTINGS_BY_KEY: dict[str, DeviceSetting] = {s.key: s for s in DEVICE_SETTINGS}
+
+# Guard rails for the generic register tool: only holding registers in the
+# inverter's writable configuration range may be poked, never the live remote
+# power-control block (44000-44002) which the control loop owns.
+_GENERIC_MIN_ADDRESS = 41000
+_GENERIC_MAX_ADDRESS = 41999
+
 # Our OperatingMode → KH work mode register value
 MODE_TO_KH: dict[OperatingMode, int] = {
     OperatingMode.SELF_USE: 0,
@@ -588,6 +653,107 @@ class FoxESSAdapter:
             logger.warning("Failed to read firmware versions: %s", e)
             self.firmware = {"master": "unknown", "slave": "unknown", "manager": "unknown"}
         return self.firmware
+
+    # ── Device settings (firmware panel) ────────────────
+
+    async def read_device_settings(self) -> list[dict]:
+        """Read all curated named settings from the inverter.
+
+        Returns a list of dicts describing each setting and its current value
+        (already scaled to display units), suitable for rendering in the UI.
+        Individual read failures are reported per-setting rather than aborting.
+        """
+        results: list[dict] = []
+        async with self._lock:
+            for setting in DEVICE_SETTINGS:
+                entry: dict = {
+                    "key": setting.key,
+                    "label": setting.label,
+                    "address": setting.address,
+                    "unit": setting.unit,
+                    "description": setting.description,
+                    "min_value": setting.min_value,
+                    "max_value": setting.max_value,
+                    "options": setting.options,
+                }
+                try:
+                    raw = await self._read_uint16(setting.address)
+                    entry["raw"] = raw
+                    entry["value"] = round(raw * setting.scale, 3)
+                    if setting.options is not None:
+                        entry["value_label"] = setting.options.get(raw, f"Unknown ({raw})")
+                except Exception as e:  # noqa: BLE001 — surface per-setting, keep others
+                    entry["error"] = str(e)
+                results.append(entry)
+        return results
+
+    async def write_device_setting(self, key: str, value: float) -> int:
+        """Write a curated named setting, applying scaling and bounds checks.
+
+        Args:
+            key: DeviceSetting key (e.g. 'min_soc').
+            value: Displayed value (post-scale); for enum settings the raw code.
+
+        Returns:
+            The raw register value written.
+
+        Raises:
+            ValueError: unknown key or out-of-bounds value.
+        """
+        setting = DEVICE_SETTINGS_BY_KEY.get(key)
+        if setting is None:
+            raise ValueError(f"Unknown device setting '{key}'")
+
+        if setting.options is not None:
+            raw = int(round(value))
+            if raw not in setting.options:
+                allowed = ", ".join(str(k) for k in setting.options)
+                raise ValueError(
+                    f"{setting.label}: {raw} is not a valid option (allowed: {allowed})"
+                )
+        else:
+            if setting.min_value is not None and value < setting.min_value:
+                raise ValueError(
+                    f"{setting.label}: {value} below minimum {setting.min_value}{setting.unit}"
+                )
+            if setting.max_value is not None and value > setting.max_value:
+                raise ValueError(
+                    f"{setting.label}: {value} above maximum {setting.max_value}{setting.unit}"
+                )
+            raw = int(round(value / setting.scale))
+
+        if not (0 <= raw <= 0xFFFF):
+            raise ValueError(f"{setting.label}: encoded value {raw} out of register range")
+
+        async with self._lock:
+            await self._write_register(setting.address, raw)
+        logger.info("Device setting written: %s=%s (raw=%d)", key, value, raw)
+        return raw
+
+    async def read_holding_register(self, address: int) -> int:
+        """Read a single holding register (generic tool). Returns the raw uint16."""
+        async with self._lock:
+            return await self._read_uint16(address)
+
+    async def write_holding_register(self, address: int, value: int) -> None:
+        """Write a raw uint16 to a holding register (generic advanced tool).
+
+        Restricted to the writable configuration register range (41000-41999);
+        the remote power-control block (44000-44002) is owned by the control
+        loop and is deliberately off-limits here.
+        """
+        if not (_GENERIC_MIN_ADDRESS <= address <= _GENERIC_MAX_ADDRESS):
+            raise ValueError(
+                f"Register {address} is outside the writable settings range "
+                f"({_GENERIC_MIN_ADDRESS}-{_GENERIC_MAX_ADDRESS}). The remote "
+                f"power-control registers are managed by the control loop and "
+                f"cannot be written here."
+            )
+        if not (0 <= value <= 0xFFFF):
+            raise ValueError(f"Value {value} out of uint16 range (0-65535)")
+        async with self._lock:
+            await self._write_register(address, value)
+        logger.info("Generic register write: addr=%d value=%d", address, value)
 
     def _check_firmware_version(self, master_raw: int, manager_raw: int) -> None:
         """Warn or raise if firmware is too old for remote control registers."""

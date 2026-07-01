@@ -85,15 +85,23 @@ def _check_safety(
                 priority=1,
             )
 
-    # SOC too high — stop charging
+    # SOC too high — stop pushing charge, but HOLD rather than discharge.
+    # We keep the inverter in FORCE_CHARGE at 0 W instead of switching to
+    # SELF_USE: at 0 W there is no charge current (safe at max SOC), while the
+    # battery is prevented from discharging to serve loads.  This matters during
+    # free/0c import windows, where loads should be pulled from the free grid and
+    # the (full) battery held — SELF_USE would immediately start discharging it.
     if soc >= soc_max:
         if command.mode == OperatingMode.FORCE_CHARGE:
-            logger.warning("SAFETY: SOC %.1f%% at maximum, overriding to self-use", soc * 100)
+            logger.warning(
+                "SAFETY: SOC %.1f%% at maximum, holding force-charge at 0W (no discharge)",
+                soc * 100,
+            )
             return ControlCommand(
-                mode=OperatingMode.SELF_USE,
+                mode=OperatingMode.FORCE_CHARGE,
                 power_w=0,
                 source="safety",
-                reason=f"soc_at_maximum_{soc:.2f}",
+                reason=f"soc_at_maximum_hold_{soc:.2f}",
                 priority=1,
             )
 
