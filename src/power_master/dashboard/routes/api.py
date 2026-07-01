@@ -201,8 +201,11 @@ async def get_mode(request: Request) -> dict:
     state = control_loop.state
     override_active = manual_override.is_active if manual_override else False
 
+    current_source = getattr(state, "current_source", "default")
     if override_active:
         source = "manual"
+    elif current_source == "schedule":
+        source = "schedule"
     elif state.current_plan:
         source = "plan"
     else:

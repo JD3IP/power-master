@@ -465,6 +465,7 @@ class TestControlLoop:
         cmd = await loop.tick_once()
         assert cmd is not None
         assert cmd.mode == OperatingMode.FEED_IN_FIRST  # schedule beats the plan
+        assert loop.state.current_source == "schedule"  # tracked for the status UI
 
     @pytest.mark.asyncio
     async def test_manual_override_beats_schedule(self) -> None:

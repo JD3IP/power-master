@@ -485,6 +485,7 @@ body.app {
 
 .mode-source.override { color: var(--accent-orange); }
 .mode-source.plan { color: var(--accent-green); }
+.mode-source.schedule { color: #a371f7; font-weight: 600; }
 
 .form-hint {
     display: block;

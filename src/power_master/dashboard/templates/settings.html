@@ -180,7 +180,7 @@
         </div>
         <div class="form-group" style="margin:0;">
             <label for="fw-scan-count">Count (1–128)</label>
-            <input type="number" id="fw-scan-count" value="24" min="1" max="128" style="width:100px;">
+            <input type="number" id="fw-scan-count" value="13" min="1" max="128" style="width:100px;">
         </div>
         <button type="button" class="btn btn-sm" onclick="scanInverterRegisters()" {{ 'disabled' if is_read_only }}>Scan</button>
     </div>
@@ -320,7 +320,13 @@
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({start, count}),
                 });
-                const data = await r.json();
+                let data;
+                try { data = await r.json(); }
+                catch (_) {
+                    status.style.color = '#f85149';
+                    status.textContent = 'Scan failed: server returned a non-JSON response (HTTP ' + r.status + ') — the read may have timed out; try a smaller range.';
+                    return;
+                }
                 if (!r.ok) { status.style.color = '#f85149'; status.textContent = data.error || 'Scan failed'; return; }
                 tb.innerHTML = '';
                 for (const row of data.registers) {

@@ -353,32 +353,42 @@ async def scan_inverter_registers(request: Request) -> JSONResponse:
     if adapter is None or not hasattr(adapter, "scan_holding_registers"):
         return JSONResponse({"error": "Inverter register access not supported"}, status_code=501)
 
-    body = await request.json()
     try:
+        body = await request.json()
         start = _parse_int(body.get("start"))
         count = _parse_int(body.get("count"))
     except (TypeError, ValueError):
         return JSONResponse({"error": "Invalid start or count (use decimal or 0x hex)"}, status_code=400)
+    except Exception:  # noqa: BLE001 — malformed body must not 500 as non-JSON
+        return JSONResponse({"error": "Invalid request body"}, status_code=400)
     try:
         rows = await adapter.scan_holding_registers(start, count)
+        registers = []
+        for row in rows:
+            entry = {"address": row["address"]}
+            if "error" in row:
+                entry["error"] = row["error"]
+            else:
+                v = row["value"]
+                entry["value"] = v
+                entry["signed"] = v - 0x10000 if v >= 0x8000 else v
+                entry["hex"] = f"0x{v:04X}"
+            registers.append(entry)
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 — always return JSON, never a bare 500
         logger.warning("Register scan failed at start=%s count=%s: %s", start, count, e)
         return JSONResponse({"error": str(e)}, status_code=502)
-
-    registers = []
-    for row in rows:
-        entry = {"address": row["address"]}
-        if "error" in row:
-            entry["error"] = row["error"]
-        else:
-            v = row["value"]
-            entry["value"] = v
-            entry["signed"] = v - 0x10000 if v >= 0x8000 else v
-            entry["hex"] = f"0x{v:04X}"
-        registers.append(entry)
     return JSONResponse({"ok": True, "registers": registers})
+
+
+@router.get("/api/mode-schedule")
+async def get_mode_schedule(request: Request) -> JSONResponse:
+    """Return the current inverter mode schedule (for the dashboard chart overlay)."""
+    config = getattr(request.app.state, "config", None)
+    if config is None:
+        return JSONResponse({"enabled": False, "rules": []})
+    return JSONResponse(config.mode_schedule.model_dump(mode="json"))
 
 
 @router.post("/api/mode-schedule")
