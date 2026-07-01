@@ -39,6 +39,10 @@ class ControlCommand:
     source: str = "optimiser"  # optimiser, manual, safety, storm
     reason: str = ""
     priority: int = 5  # 1=highest (safety), 5=lowest (opportunistic)
+    # Free-window force-charge: when True, the safety hierarchy will NOT cut
+    # charging at max SOC — keep pushing max charge current (BMS limits actual
+    # absorption) to soak up all available free energy.
+    allow_charge_at_max_soc: bool = False
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def get_source_type(self) -> CommandSourceType:
@@ -61,6 +65,7 @@ def command_from_slot(slot: PlanSlot, source: str = "optimiser") -> ControlComma
         source=source,
         reason=f"plan_slot_{slot.index}",
         priority=5,
+        allow_charge_at_max_soc=slot.allow_charge_at_max_soc,
     )
 
 

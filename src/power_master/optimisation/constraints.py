@@ -149,6 +149,23 @@ def add_evening_soc_target(
     prob += soc >= target_soc - slack, f"evening_soc_{t}"
 
 
+def add_free_window_soc_target(
+    prob: pulp.LpProblem,
+    t: int,
+    soc: pulp.LpVariable,
+    target_soc: float,
+    slack: pulp.LpVariable,
+) -> None:
+    """Soft target: fill the battery toward target_soc by the end of a free window.
+
+    Applied at the last slot of each contiguous free (0c) import block so the
+    solver grabs free energy and tops the battery up instead of stopping at the
+    evening target. Uses a slack variable penalised in the objective; the hard
+    SOC ceiling (soc_max_hard) still bounds the actual charge.
+    """
+    prob += soc >= target_soc - slack, f"free_window_soc_{t}"
+
+
 def add_morning_soc_minimum(
     prob: pulp.LpProblem,
     t: int,

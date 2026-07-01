@@ -18,6 +18,7 @@ from power_master.optimisation.constraints import (
     add_daytime_soc_minimum,
     add_energy_balance,
     add_evening_soc_target,
+    add_free_window_soc_target,
     add_grid_charge_policy,
     add_morning_soc_minimum,
     add_power_limits,
@@ -31,6 +32,11 @@ from power_master.optimisation.plan import OptimisationPlan, PlanSlot, SlotMode
 from power_master.timezone_utils import resolve_timezone
 
 logger = logging.getLogger(__name__)
+
+# Import rate (c/kWh) at or below which a slot is treated as a free/0c window
+# for grid-charging purposes.  Matches the free_rate_threshold used by the
+# grid-charge policy so free-window detection stays consistent.
+FREE_RATE_THRESHOLD_CENTS = 1.0
 
 
 def _add_export_tier_constraints(
@@ -330,9 +336,30 @@ def solve(
     safety_slack = [pulp.LpVariable(f"safety_slack_{t}", 0) for t in range(n)]
     storm_slack = []
     evening_slack = []
+    free_window_slack = []
     morning_slack = []
     daytime_slack = []
     credit_slack = []  # Hard-enforcement credit slack vars
+
+    # ── Free-window fill target ──
+    # During free (0c) import windows, top the battery up toward
+    # battery_targets.free_window_soc_target (clamped to the hard SOC ceiling)
+    # instead of stopping at the evening target.  We apply the soft target at the
+    # last slot of each contiguous free block so the solver charges through the
+    # whole window (including its final slot) rather than coasting once the
+    # evening target is met.
+    free_window_target = min(
+        config.battery_targets.free_window_soc_target,
+        config.battery.soc_max_hard,
+    )
+    is_free_slot = [
+        float(inputs.import_rate_cents[t]) <= FREE_RATE_THRESHOLD_CENTS
+        for t in range(n)
+    ]
+    free_block_end = [
+        is_free_slot[t] and (t == n - 1 or not is_free_slot[t + 1])
+        for t in range(n)
+    ]
 
     # Taper zone binary variables (1 = SOC is above taper threshold)
     taper_start = config.battery.taper_start_soc
@@ -393,6 +420,12 @@ def solve(
 
         # Spike constraints
         add_spike_constraints(prob, t, charge[t], inputs.is_spike[t])
+
+        # Free-window fill: aim for a high SOC by the end of each free block
+        if free_window_target > 0 and free_block_end[t]:
+            fws = pulp.LpVariable(f"free_window_slack_{t}", 0)
+            free_window_slack.append(fws)
+            add_free_window_soc_target(prob, t, soc[t], free_window_target, fws)
 
         # Storm reserve
         if inputs.storm_active:
@@ -478,7 +511,7 @@ def solve(
         dampened_import, inputs.export_rate_cents,
         config.fixed_costs.hedging_per_kwh_cents,
         grid_import, grid_export, self_consumed,
-        safety_slack, storm_slack, evening_slack, morning_slack, daytime_slack,
+        safety_slack, storm_slack, evening_slack, free_window_slack, morning_slack, daytime_slack,
         export_tier_vars, inputs.export_tier_structures,
         incumbent_export_bias_cents=incumbent_export_bias_cents,
         credit_missed_vars=credit_missed_vars,
@@ -543,6 +576,22 @@ def solve(
 
             if allow_force_charge:
                 mode = SlotMode.FORCE_CHARGE
+
+        # Free-window force-charge: keep FORCE_CHARGE for the whole free window,
+        # even once the battery looks full.  In SELF_USE the inverter serves loads
+        # from the battery (discharging it); during a free/0c window we instead
+        # want max charge current from the free grid so we soak up all available
+        # free energy and never discharge.  We only override the otherwise-idle
+        # SELF_USE mode — genuine arbitrage exports (FORCE_DISCHARGE) are kept.
+        force_charge_free_window = (
+            free_window_target > 0
+            and is_free_slot[t]
+            and not inputs.is_spike[t]
+            and mode in (SlotMode.SELF_USE, SlotMode.FORCE_CHARGE)
+        )
+        if force_charge_free_window:
+            mode = SlotMode.FORCE_CHARGE
+
         power = _determine_target_power(
             mode=mode,
             discharge_w=discharge_val,
@@ -572,6 +621,7 @@ def solve(
             solar_forecast_w=inputs.solar_forecast_w[t],
             load_forecast_w=inputs.load_forecast_w[t],
             constraint_flags=flags if flags else None,
+            allow_charge_at_max_soc=force_charge_free_window,
         ))
 
     objective_val = pulp.value(prob.objective) or 0.0

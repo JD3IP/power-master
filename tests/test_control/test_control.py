@@ -130,6 +130,18 @@ class TestHierarchy:
         assert result.overridden is True
         assert result.command.mode == OperatingMode.SELF_USE
 
+    def test_free_window_charge_not_cut_at_max_soc(self) -> None:
+        # Free-window force-charge keeps max charge current at max SOC (the BMS
+        # limits actual absorption); safety must not override it to self-use.
+        cmd = ControlCommand(
+            mode=OperatingMode.FORCE_CHARGE, power_w=5000, source="optimiser",
+            priority=5, allow_charge_at_max_soc=True,
+        )
+        result = evaluate_hierarchy(cmd, current_soc=0.99, soc_min_hard=0.05, soc_max_hard=0.95)
+        assert result.command.mode == OperatingMode.FORCE_CHARGE
+        assert result.command.power_w == 5000
+        assert result.overridden is False
+
     def test_safety_forces_self_use_when_grid_lost(self) -> None:
         cmd = ControlCommand(mode=OperatingMode.FORCE_CHARGE, source="optimiser", priority=5)
         result = evaluate_hierarchy(
@@ -401,6 +413,51 @@ class TestControlLoop:
         assert loop.state.tick_count == 1
         assert loop.state.last_telemetry is not None
         assert loop.state.current_mode == OperatingMode.SELF_USE
+
+    @pytest.mark.asyncio
+    async def test_refresh_suppresses_rapid_mode_flip(self) -> None:
+        """A plan rebuild flipping the mode between ticks must not flip the
+        inverter within the anti-oscillation dwell window."""
+        config = AppConfig()
+        config.anti_oscillation.min_command_duration_seconds = 300
+        adapter = _make_adapter()
+        loop = ControlLoop(config, adapter)
+        loop.update_live_telemetry(_make_telemetry(soc=0.6))
+
+        # Establish force-discharge as the active command (goes through the guard).
+        loop.set_plan(_make_plan(mode=SlotMode.FORCE_DISCHARGE))
+        await loop.tick_once()
+        assert loop.state.current_mode == OperatingMode.FORCE_DISCHARGE
+
+        # A rebuild flips the current slot to self-use almost immediately.
+        loop.set_plan(_make_plan(mode=SlotMode.SELF_USE))
+        adapter.send_command.reset_mock()
+
+        cmd = await loop._refresh_once()
+
+        # The refresh must hold force-discharge (self-use isn't a remote mode, so
+        # nothing new is dispatched) rather than flipping the inverter.
+        assert loop.state.current_mode == OperatingMode.FORCE_DISCHARGE
+        if cmd is not None:
+            assert cmd.mode == OperatingMode.FORCE_DISCHARGE
+
+    @pytest.mark.asyncio
+    async def test_refresh_resends_same_mode(self) -> None:
+        """Refreshing the same mode always re-sends to feed the remote watchdog."""
+        config = AppConfig()
+        adapter = _make_adapter()
+        loop = ControlLoop(config, adapter)
+        loop.update_live_telemetry(_make_telemetry(soc=0.6))
+
+        loop.set_plan(_make_plan(mode=SlotMode.FORCE_CHARGE))
+        await loop.tick_once()
+        adapter.send_command.reset_mock()
+
+        cmd = await loop._refresh_once()
+
+        assert cmd is not None
+        assert cmd.mode == OperatingMode.FORCE_CHARGE
+        adapter.send_command.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_stop(self) -> None:

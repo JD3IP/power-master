@@ -90,6 +90,12 @@ class PlanningConfig(BaseModel):
 class BatteryTargetsConfig(BaseModel):
     evening_soc_target: float = Field(0.90, ge=0.0, le=1.0)
     evening_target_hour: int = Field(16, ge=0, le=23)
+    # Free-window fill: during 0c/free import windows the battery should top up
+    # as full as the hardware allows (free energy is worth grabbing), rather than
+    # stopping at evening_soc_target. This is the SOC the solver aims for by the
+    # end of each free window; it is clamped to battery.soc_max_hard. Set to 0 to
+    # disable free-window fill and let the evening target cap charging as before.
+    free_window_soc_target: float = Field(1.0, ge=0.0, le=1.0)
     morning_soc_minimum: float = Field(0.20, ge=0.0, le=1.0)
     morning_minimum_hour: int = Field(6, ge=0, le=23)
     daytime_reserve_soc_target: float = Field(0.50, ge=0.0, le=1.0)

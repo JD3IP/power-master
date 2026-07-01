@@ -310,8 +310,10 @@ class ControlLoop:
         force discharge are maintained between the slower control ticks (300s).
 
         Only refreshes for modes that use remote power control; SELF_USE modes
-        don't need refresh since remote control is disabled for those.
-        Bypasses anti-oscillation since this is a refresh, not a mode change.
+        don't need refresh since remote control is disabled for those.  Mode
+        CHANGES seen between ticks are gated by the anti-oscillation dwell so
+        plan rebuilds can't flip force charge/discharge on and off; refreshing
+        the SAME mode always proceeds.
         """
         interval: int = self._config.hardware.foxess.remote_refresh_interval_seconds
         logger.info("Command refresh loop starting (interval: %ds)", interval)
@@ -323,39 +325,77 @@ class ControlLoop:
             except asyncio.TimeoutError:
                 pass  # Normal — interval elapsed
 
-            # Re-evaluate the current desired command from override/plan so
-            # the refresh always reflects the latest state (e.g. override still
-            # active, plan slot changed).  Falls back to last-dispatched if
-            # telemetry is unavailable.
-            telemetry = self._state.last_telemetry
-            cmd = self._determine_command(telemetry) if telemetry else self._last_dispatched_command
-            if cmd is None:
-                continue
-
-            # Skip refresh if optimiser disabled and not a manual command
-            if not self._config.planning.optimiser_enabled and cmd.source != "manual":
-                continue
-
-            if cmd.mode not in self._REMOTE_MODES:
-                continue
-
             try:
-                result = await dispatch_command(self._adapter, cmd)
-                if result.success:
-                    self._last_dispatched_command = cmd
-                    logger.debug(
-                        "Command refresh: mode=%s power=%dW source=%s latency=%dms",
-                        cmd.mode.name, cmd.power_w, cmd.source, result.latency_ms,
-                    )
-                else:
-                    logger.warning(
-                        "Command refresh failed: mode=%s error=%s",
-                        cmd.mode.name, result.message,
-                    )
+                await self._refresh_once()
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.exception("Command refresh error")
+
+    async def _refresh_once(self) -> ControlCommand | None:
+        """Run a single command-refresh iteration.
+
+        Re-derives the desired command from override/plan, gates genuine mode
+        changes through the anti-oscillation guard, and re-sends the resulting
+        command for remote-control modes.  Returns the dispatched command, or
+        None if nothing was sent.  Extracted from the refresh loop so the
+        gating behaviour is unit-testable.
+        """
+        # Re-evaluate the current desired command from override/plan so
+        # the refresh always reflects the latest state (e.g. override still
+        # active, plan slot changed).  Falls back to last-dispatched if
+        # telemetry is unavailable.
+        telemetry = self._state.last_telemetry
+        cmd = self._determine_command(telemetry) if telemetry else self._last_dispatched_command
+        if cmd is None:
+            return None
+
+        # Skip refresh if optimiser disabled and not a manual command
+        if not self._config.planning.optimiser_enabled and cmd.source != "manual":
+            return None
+
+        # Guard mode CHANGES with the anti-oscillation dwell.  Plan rebuilds
+        # (SOC deviation, forecast/price deltas) can flip the current slot's
+        # mode between the slower control ticks; without this guard the refresh
+        # loop would enact every flip within ~20s, causing force-discharge to
+        # start and stop repeatedly.  Refreshing the SAME mode always proceeds
+        # (keeps the inverter's remote watchdog fed); switching to a DIFFERENT
+        # mode must satisfy the guard, otherwise we hold the previous command.
+        last = self._last_dispatched_command
+        changed_mode = last is not None and cmd.mode != last.mode
+        if changed_mode and not self._anti_oscillation.should_allow(
+            cmd, telemetry.soc if telemetry else None
+        ):
+            logger.debug(
+                "Command refresh: mode change %s→%s suppressed by anti-oscillation; "
+                "holding previous command",
+                last.mode.name, cmd.mode.name,
+            )
+            cmd = last
+            changed_mode = False
+
+        if cmd.mode not in self._REMOTE_MODES:
+            return None
+
+        result = await dispatch_command(self._adapter, cmd)
+        if result.success:
+            # Record genuine mode changes so the dwell timer restarts and the
+            # guard tracks the switch for subsequent oscillation checks.
+            if changed_mode:
+                self._anti_oscillation.record_command(cmd)
+                self._state.current_mode = cmd.mode
+            self._last_dispatched_command = cmd
+            logger.debug(
+                "Command refresh: mode=%s power=%dW source=%s latency=%dms",
+                cmd.mode.name, cmd.power_w, cmd.source, result.latency_ms,
+            )
+            return cmd
+
+        logger.warning(
+            "Command refresh failed: mode=%s error=%s",
+            cmd.mode.name, result.message,
+        )
+        return None
 
     def _determine_command(self, telemetry: Telemetry) -> ControlCommand | None:
         """Determine the command to execute.

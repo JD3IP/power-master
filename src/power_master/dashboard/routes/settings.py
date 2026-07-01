@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import ValidationError
 
 from power_master.dashboard.auth import require_admin
@@ -77,6 +77,7 @@ PERCENTAGE_FIELDS = {
     "battery.soc_max_soft",
     "battery.round_trip_efficiency",
     "battery_targets.evening_soc_target",
+    "battery_targets.free_window_soc_target",
     "battery_targets.morning_soc_minimum",
     "battery_targets.daytime_reserve_soc_target",
     "planning.soc_deviation_tolerance",
@@ -223,3 +224,126 @@ async def save_settings(request: Request) -> RedirectResponse:
 
     logger.info("Settings saved: changed=%s", list(updates.keys()))
     return RedirectResponse("/settings?saved=1", status_code=303)
+
+
+# ── Inverter firmware settings panel (curated + generic registers) ──────────
+#
+# These endpoints read/write the inverter's own holding registers live over
+# Modbus — they do NOT touch config.yaml. Used by the "Inverter firmware
+# settings" panel to expose parameters not otherwise available in the UI
+# (e.g. CT/meter offset via the generic register tool).
+
+
+def _inverter_adapter(request: Request):
+    """Return the inverter adapter if it supports the firmware-settings API."""
+    adapter = getattr(request.app.state, "adapter", None)
+    if adapter is None or not hasattr(adapter, "read_device_settings"):
+        return None
+    return adapter
+
+
+@router.get("/api/inverter/settings")
+async def get_inverter_settings(request: Request) -> JSONResponse:
+    """Read the curated named inverter settings live from the device."""
+    adapter = _inverter_adapter(request)
+    if adapter is None:
+        return JSONResponse(
+            {"error": "Inverter register access not supported by this adapter"},
+            status_code=501,
+        )
+    try:
+        settings = await adapter.read_device_settings()
+    except Exception as e:  # noqa: BLE001 — surface as JSON error
+        logger.warning("Failed to read inverter settings: %s", e)
+        return JSONResponse({"error": str(e)}, status_code=502)
+    return JSONResponse({"settings": settings, "firmware": getattr(adapter, "firmware", {})})
+
+
+@router.post("/api/inverter/settings")
+async def write_inverter_setting(request: Request) -> JSONResponse:
+    """Write a single curated named setting to the inverter (admin only)."""
+    denied = require_admin(request)
+    if denied:
+        return denied
+    adapter = _inverter_adapter(request)
+    if adapter is None:
+        return JSONResponse({"error": "Inverter register access not supported"}, status_code=501)
+
+    body = await request.json()
+    key = body.get("key")
+    value = body.get("value")
+    if not key or value is None:
+        return JSONResponse({"error": "Both 'key' and 'value' are required"}, status_code=400)
+    try:
+        raw = await adapter.write_device_setting(str(key), float(value))
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:  # noqa: BLE001 — device/IO failure
+        logger.exception("Failed to write inverter setting %s", key)
+        return JSONResponse({"error": str(e)}, status_code=502)
+    logger.info("Inverter setting written via UI: %s=%s (raw=%d)", key, value, raw)
+    return JSONResponse({"ok": True, "key": key, "value": value, "raw": raw})
+
+
+@router.post("/api/inverter/register/read")
+async def read_inverter_register(request: Request) -> JSONResponse:
+    """Read an arbitrary holding register (generic advanced tool, admin only)."""
+    denied = require_admin(request)
+    if denied:
+        return denied
+    adapter = _inverter_adapter(request)
+    if adapter is None or not hasattr(adapter, "read_holding_register"):
+        return JSONResponse({"error": "Inverter register access not supported"}, status_code=501)
+
+    body = await request.json()
+    try:
+        address = _parse_int(body.get("address"))
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "Invalid register address"}, status_code=400)
+    try:
+        raw = await adapter.read_holding_register(address)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Generic register read failed at %s: %s", body.get("address"), e)
+        return JSONResponse({"error": str(e)}, status_code=502)
+    return JSONResponse({"ok": True, "address": address, "value": raw, "hex": f"0x{raw:04X}"})
+
+
+@router.post("/api/inverter/register/write")
+async def write_inverter_register(request: Request) -> JSONResponse:
+    """Write an arbitrary holding register (generic advanced tool, admin only)."""
+    denied = require_admin(request)
+    if denied:
+        return denied
+    adapter = _inverter_adapter(request)
+    if adapter is None or not hasattr(adapter, "write_holding_register"):
+        return JSONResponse({"error": "Inverter register access not supported"}, status_code=501)
+
+    body = await request.json()
+    try:
+        address = _parse_int(body.get("address"))
+        value = _parse_int(body.get("value"))
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "Invalid address or value (use decimal or 0x hex)"}, status_code=400)
+    try:
+        await adapter.write_holding_register(address, value)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Generic register write failed at %s", address)
+        return JSONResponse({"error": str(e)}, status_code=502)
+    logger.info("Generic register written via UI: addr=%d value=%d", address, value)
+    return JSONResponse({"ok": True, "address": address, "value": value})
+
+
+def _parse_int(raw) -> int:
+    """Parse a decimal or 0x-hex integer from JSON (int or string)."""
+    if isinstance(raw, bool):  # bool is an int subclass — reject explicitly
+        raise ValueError("boolean not allowed")
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, str):
+        s = raw.strip()
+        if not s:
+            raise ValueError("empty")
+        return int(s, 16) if s.lower().startswith("0x") else int(s, 10)
+    raise TypeError(f"cannot parse int from {type(raw)}")

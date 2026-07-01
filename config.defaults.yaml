@@ -35,6 +35,8 @@ planning:
 battery_targets:
   evening_soc_target: 0.90              # Charging goal — planner aims for this SOC by evening_target_hour (soft)
   evening_target_hour: 16               # Hour to check evening target (4pm)
+  free_window_soc_target: 1.0           # >0: during free (0c) windows force-charge at MAX current even at 100% SOC (BMS limits absorption), stopping only for the grid-import limit or when the daily free cap is spent. 0 = cap at evening target
+
   morning_soc_minimum: 0.20             # Minimum SOC to hold overnight
   morning_minimum_hour: 6               # Hour to check morning minimum (6am)
   daytime_reserve_soc_target: 0.50      # Minimum SOC floor during daytime window for backup readiness (NOT a charging target)

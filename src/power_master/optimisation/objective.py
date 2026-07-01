@@ -25,6 +25,11 @@ class ObjectiveWeights:
     load_miss: float = 1e1
     # Soft target penalties (cents per unit SOC shortfall)
     evening_soc_shortfall: float = 500.0
+    # Free-window fill reward: pull SOC up to the free-window target while import
+    # is free. Weaker than the evening target and safety/storm so it never
+    # overrides them, but strong enough to overcome the round-trip-efficiency
+    # disincentive to holding extra charge.
+    free_window_soc_shortfall: float = 200.0
     morning_soc_shortfall: float = 300.0
     daytime_soc_shortfall: float = 20.0  # Applied per-slot across many hours → strong cumulative effect
     # Small reward for self-consumption (cents/kWh equivalent)
@@ -47,6 +52,7 @@ def build_objective(
     safety_slack: list[pulp.LpVariable],
     storm_slack: list[pulp.LpVariable],
     evening_soc_slack: list[pulp.LpVariable],
+    free_window_soc_slack: list[pulp.LpVariable],
     morning_soc_slack: list[pulp.LpVariable],
     daytime_soc_slack: list[pulp.LpVariable],
     export_tier_vars: list[list[pulp.LpVariable]] | None = None,
@@ -117,6 +123,9 @@ def build_objective(
 
     for t in range(len(evening_soc_slack)):
         cost_terms.append(w.evening_soc_shortfall * evening_soc_slack[t])
+
+    for t in range(len(free_window_soc_slack)):
+        cost_terms.append(w.free_window_soc_shortfall * free_window_soc_slack[t])
 
     for t in range(len(morning_soc_slack)):
         cost_terms.append(w.morning_soc_shortfall * morning_soc_slack[t])

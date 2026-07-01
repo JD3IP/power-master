@@ -514,6 +514,16 @@ class Application:
 
                                 await free_window_cap_tracker.increment(import_kwh)
 
+                                is_exhausted = free_window_cap_tracker.is_cap_exhausted()
+
+                                # Free period effectively over on the cap
+                                # transition: prompt a pricing refresh + rebuild so
+                                # charging stops and the plan reverts to self-use.
+                                # Done independent of the event emitter so the
+                                # behaviour holds even when notifications are off.
+                                if not was_exhausted and is_exhausted:
+                                    self._cap_exhausted_rebuild_needed.set()
+
                                 # Emit cap consumption event
                                 if tariff_event_emitter:
                                     consumed = free_window_cap_tracker.get_consumed_today()
@@ -526,7 +536,6 @@ class Application:
 
                                     # Check threshold transitions
                                     is_approaching = free_window_cap_tracker.is_cap_approaching(0.80)
-                                    is_exhausted = free_window_cap_tracker.is_cap_exhausted()
 
                                     if not was_approaching and is_approaching:
                                         tariff_event_emitter.emit_free_window_cap_approaching(
@@ -740,6 +749,11 @@ class Application:
 
         # SOC deviation fast-check: flag the forecast loop when SOC drifts
         self._soc_rebuild_needed = asyncio.Event()
+
+        # Free-window cap exhaustion: flag the forecast loop to refresh pricing
+        # and rebuild so charging stops and the plan reverts to self-use — the
+        # free period has effectively ended once the daily cap is spent.
+        self._cap_exhausted_rebuild_needed = asyncio.Event()
 
         async def on_telemetry_soc_check(telemetry):
             """Check SOC deviation on every control tick for faster response."""
@@ -1609,6 +1623,21 @@ class Application:
                             )
                             self._spike_correlation_id = None
                             self._spike_deferred_loads = []
+
+                # Free-window cap just exhausted: refresh pricing (so the free
+                # window reads as paid) and rebuild immediately so charging stops
+                # and the plan reverts to self-use for the rest of the day.
+                if self._cap_exhausted_rebuild_needed.is_set():
+                    self._cap_exhausted_rebuild_needed.clear()
+                    try:
+                        await asyncio.wait_for(aggregator.update_tariff(), timeout=10.0)
+                    except Exception:
+                        logger.exception("Tariff refresh after free-window cap exhaustion failed")
+                    await self._run_solver(
+                        aggregator, storm_monitor, accounting,
+                        rebuild_evaluator, control_loop, repo,
+                        trigger="free_window_cap_exhausted", load_manager=load_manager,
+                    )
 
                 # Check if control loop flagged urgent SOC deviation
                 if self._soc_rebuild_needed.is_set():

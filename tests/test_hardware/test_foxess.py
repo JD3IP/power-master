@@ -307,3 +307,103 @@ class TestRemoteEnableRetry:
         )
         # Write should NOT have been called (no retry)
         adapter._client.write_register.assert_not_called()
+
+
+class TestDeviceSettings:
+    """Curated named settings and generic register read/write (firmware panel)."""
+
+    def _ok(self, value: int) -> MagicMock:
+        m = MagicMock()
+        m.isError.return_value = False
+        m.registers = [value]
+        return m
+
+    def _ok_write(self) -> MagicMock:
+        m = MagicMock()
+        m.isError.return_value = False
+        return m
+
+    @pytest.mark.asyncio
+    async def test_read_device_settings_scales_and_labels(self) -> None:
+        adapter = _make_adapter()
+        # work_mode=0, min_soc=15, max_charge_current raw=500 (=50.0A),
+        # max_discharge raw=400 (=40.0A), export_limit=5000
+        adapter._client.read_holding_registers.side_effect = [
+            self._ok(0), self._ok(15), self._ok(500), self._ok(400), self._ok(5000),
+        ]
+        settings = await adapter.read_device_settings()
+        by_key = {s["key"]: s for s in settings}
+
+        assert by_key["work_mode"]["value_label"] == "Self-Use"
+        assert by_key["min_soc"]["value"] == 15
+        assert by_key["max_charge_current"]["value"] == 50.0
+        assert by_key["max_discharge_current"]["value"] == 40.0
+        assert by_key["export_limit"]["value"] == 5000
+
+    @pytest.mark.asyncio
+    async def test_read_device_settings_reports_per_setting_error(self) -> None:
+        adapter = _make_adapter()
+        # First read raises; the rest succeed — error is per-row, not fatal.
+        err = MagicMock()
+        err.isError.return_value = True
+        adapter._client.read_holding_registers.side_effect = [
+            err, self._ok(20), self._ok(500), self._ok(500), self._ok(0),
+        ]
+        settings = await adapter.read_device_settings()
+        assert "error" in settings[0]
+        assert settings[1]["value"] == 20
+
+    @pytest.mark.asyncio
+    async def test_write_device_setting_applies_scale(self) -> None:
+        adapter = _make_adapter()
+        adapter._client.write_register.return_value = self._ok_write()
+
+        raw = await adapter.write_device_setting("max_charge_current", 50.0)
+
+        assert raw == 500  # 50.0 A / 0.1 scale
+        addr, val = adapter._client.write_register.call_args.args[:2]
+        assert addr == Registers.MAX_CHARGE_CURRENT
+        assert val == 500
+
+    @pytest.mark.asyncio
+    async def test_write_device_setting_rejects_out_of_bounds(self) -> None:
+        adapter = _make_adapter()
+        with pytest.raises(ValueError, match="above maximum"):
+            await adapter.write_device_setting("min_soc", 150)
+        adapter._client.write_register.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_write_device_setting_rejects_bad_enum(self) -> None:
+        adapter = _make_adapter()
+        with pytest.raises(ValueError, match="not a valid option"):
+            await adapter.write_device_setting("work_mode", 9)
+
+    @pytest.mark.asyncio
+    async def test_write_device_setting_unknown_key(self) -> None:
+        adapter = _make_adapter()
+        with pytest.raises(ValueError, match="Unknown device setting"):
+            await adapter.write_device_setting("nope", 1)
+
+    @pytest.mark.asyncio
+    async def test_generic_write_rejects_out_of_range_address(self) -> None:
+        adapter = _make_adapter()
+        # 44002 is the remote power-control block — off-limits to the generic tool.
+        with pytest.raises(ValueError, match="outside the writable settings range"):
+            await adapter.write_holding_register(44002, 100)
+        adapter._client.write_register.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_generic_write_within_range(self) -> None:
+        adapter = _make_adapter()
+        adapter._client.write_register.return_value = self._ok_write()
+        await adapter.write_holding_register(41011, 20)
+        addr, val = adapter._client.write_register.call_args.args[:2]
+        assert addr == 41011
+        assert val == 20
+
+    @pytest.mark.asyncio
+    async def test_generic_read(self) -> None:
+        adapter = _make_adapter()
+        adapter._client.read_holding_registers.return_value = self._ok(1234)
+        value = await adapter.read_holding_register(41000)
+        assert value == 1234

@@ -127,6 +127,164 @@
     </div>
     {% endif %}
 
+    <!-- ═══ Inverter firmware settings (live Modbus writes; NOT config.yaml) ═══ -->
+    <h2>Firmware Settings
+        <button type="button" class="btn btn-sm" id="fw-refresh-btn" onclick="loadInverterSettings()" style="margin-left: 12px;">Read from inverter</button>
+    </h2>
+    <p style="font-size: 12px; color: #8b949e; margin-top: 0;">
+        These write directly to the inverter's holding registers over Modbus (not saved to config).
+        {% if is_read_only %}<strong>Read-only — admin access required to change values.</strong>{% endif %}
+    </p>
+    <div id="fw-status" class="diag-status" style="display:none;"></div>
+    <table class="data-table" id="fw-settings-table" style="margin-bottom: 20px;">
+        <thead>
+            <tr><th>Setting</th><th>Current</th><th>New value</th><th></th></tr>
+        </thead>
+        <tbody id="fw-settings-tbody">
+            <tr><td colspan="4" style="text-align:center;color:#6e7681;">Click "Read from inverter" to load current values.</td></tr>
+        </tbody>
+    </table>
+
+    <h3 style="margin-bottom: 4px;">Advanced: raw register access</h3>
+    <p style="font-size: 12px; color: #8b949e; margin-top: 0;">
+        Read or write any writable holding register (41000–41999). Use for parameters not listed above,
+        e.g. a CT / meter offset register for your firmware. Address and value accept decimal or 0x hex.
+        <strong>Changes take effect immediately — double-check the register map for your firmware.</strong>
+    </p>
+    <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-bottom:8px;">
+        <div class="form-group" style="margin:0;">
+            <label for="fw-reg-address">Register address</label>
+            <input type="text" id="fw-reg-address" placeholder="e.g. 41011 or 0xA033" style="width:160px;">
+        </div>
+        <button type="button" class="btn btn-sm" onclick="readInverterRegister()" {{ 'disabled' if is_read_only }}>Read</button>
+        <div class="form-group" style="margin:0;">
+            <label for="fw-reg-value">Value to write (0–65535)</label>
+            <input type="text" id="fw-reg-value" placeholder="decimal or 0x hex" style="width:160px;">
+        </div>
+        <button type="button" class="btn btn-sm btn-danger" onclick="writeInverterRegister()" {{ 'disabled' if is_read_only }}>Write register</button>
+    </div>
+    <div id="fw-reg-result" style="font-size:13px; color:#8b949e;"></div>
+
+    <script>
+    (function () {
+        const READ_ONLY = {{ 'true' if is_read_only else 'false' }};
+        function fwStatus(msg, ok) {
+            const el = document.getElementById('fw-status');
+            if (!el) return;
+            el.style.display = 'block';
+            el.textContent = msg;
+            el.style.color = ok === false ? '#f85149' : (ok ? '#3fb950' : '#8b949e');
+        }
+        window.loadInverterSettings = async function () {
+            fwStatus('Reading…', null);
+            try {
+                const r = await fetch('/api/inverter/settings');
+                const data = await r.json();
+                if (!r.ok) { fwStatus(data.error || 'Read failed', false); return; }
+                renderSettings(data.settings || []);
+                fwStatus('Read OK', true);
+            } catch (e) { fwStatus('Read failed: ' + e, false); }
+        };
+        function renderSettings(settings) {
+            const tb = document.getElementById('fw-settings-tbody');
+            tb.innerHTML = '';
+            if (!settings.length) {
+                tb.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#6e7681;">No curated settings available.</td></tr>';
+                return;
+            }
+            for (const s of settings) {
+                const tr = document.createElement('tr');
+                const nameTd = document.createElement('td');
+                nameTd.innerHTML = '<strong>' + s.label + '</strong>' +
+                    (s.description ? '<br><span style="font-size:11px;color:#8b949e;">' + s.description + '</span>' : '');
+                const curTd = document.createElement('td');
+                if (s.error) { curTd.innerHTML = '<span style="color:#f85149;">err: ' + s.error + '</span>'; }
+                else if (s.value_label !== undefined) { curTd.textContent = s.value_label; }
+                else { curTd.textContent = s.value + (s.unit || ''); }
+
+                const inTd = document.createElement('td');
+                let input;
+                if (s.options) {
+                    input = document.createElement('select');
+                    for (const [raw, label] of Object.entries(s.options)) {
+                        const opt = document.createElement('option');
+                        opt.value = raw; opt.textContent = label;
+                        if (s.raw !== undefined && String(s.raw) === String(raw)) opt.selected = true;
+                        input.appendChild(opt);
+                    }
+                } else {
+                    input = document.createElement('input');
+                    input.type = 'number';
+                    if (s.value !== undefined) input.value = s.value;
+                    if (s.min_value !== null && s.min_value !== undefined) input.min = s.min_value;
+                    if (s.max_value !== null && s.max_value !== undefined) input.max = s.max_value;
+                    input.step = 'any';
+                }
+                input.style.width = '120px';
+                input.disabled = READ_ONLY;
+                inTd.appendChild(input);
+
+                const btnTd = document.createElement('td');
+                const btn = document.createElement('button');
+                btn.type = 'button'; btn.className = 'btn btn-sm'; btn.textContent = 'Save';
+                btn.disabled = READ_ONLY;
+                btn.onclick = () => saveSetting(s.key, input.value);
+                btnTd.appendChild(btn);
+
+                tr.append(nameTd, curTd, inTd, btnTd);
+                tb.appendChild(tr);
+            }
+        }
+        async function saveSetting(key, value) {
+            fwStatus('Writing ' + key + '…', null);
+            try {
+                const r = await fetch('/api/inverter/settings', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({key, value}),
+                });
+                const data = await r.json();
+                if (!r.ok) { fwStatus(data.error || 'Write failed', false); return; }
+                fwStatus('Saved ' + key + ' (raw ' + data.raw + '). Re-reading…', true);
+                loadInverterSettings();
+            } catch (e) { fwStatus('Write failed: ' + e, false); }
+        }
+        window.readInverterRegister = async function () {
+            const address = document.getElementById('fw-reg-address').value;
+            const out = document.getElementById('fw-reg-result');
+            out.textContent = 'Reading…';
+            try {
+                const r = await fetch('/api/inverter/register/read', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({address}),
+                });
+                const data = await r.json();
+                out.style.color = r.ok ? '#3fb950' : '#f85149';
+                out.textContent = r.ok
+                    ? ('Register ' + data.address + ' = ' + data.value + ' (' + data.hex + ')')
+                    : (data.error || 'Read failed');
+            } catch (e) { out.style.color = '#f85149'; out.textContent = 'Read failed: ' + e; }
+        };
+        window.writeInverterRegister = async function () {
+            const address = document.getElementById('fw-reg-address').value;
+            const value = document.getElementById('fw-reg-value').value;
+            const out = document.getElementById('fw-reg-result');
+            if (!confirm('Write ' + value + ' to inverter register ' + address + '? This applies immediately.')) return;
+            out.textContent = 'Writing…';
+            try {
+                const r = await fetch('/api/inverter/register/write', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({address, value}),
+                });
+                const data = await r.json();
+                out.style.color = r.ok ? '#3fb950' : '#f85149';
+                out.textContent = r.ok
+                    ? ('Wrote ' + data.value + ' to register ' + data.address)
+                    : (data.error || 'Write failed');
+            } catch (e) { out.style.color = '#f85149'; out.textContent = 'Write failed: ' + e; }
+        };
+    })();
+    </script>
+
     <h2>Live Diagnostics
         <button type="button" class="btn btn-sm" id="diag-refresh-btn" onclick="refreshDiagnostics()" style="margin-left: 12px;">Refresh Now</button>
         <label style="margin-left: 12px; font-size: 0.8em; font-weight: normal;">
@@ -220,6 +378,14 @@
             <span class="unit-label">%</span>
         </div>
         <small class="form-hint">Charging goal: the planner aims to reach this SOC by Evening Target Hour, pulling from cheap daytime slots (grid or solar) as needed.</small>
+    </div>
+    <div class="form-group">
+        <label for="battery_targets.free_window_soc_target">Free-Window Charging</label>
+        <div class="input-unit">
+            <input type="number" id="battery_targets.free_window_soc_target" name="battery_targets.free_window_soc_target" step="1" value="{{ (config.battery_targets.free_window_soc_target * 100)|round(0)|int }}" min="0" max="100">
+            <span class="unit-label">%</span>
+        </div>
+        <small class="form-hint">While a free (0c) import window is active, the battery stays in Force-Charge at maximum charge current — even at a displayed 100% SOC (the BMS limits actual absorption) — to capture all available free energy and avoid discharging. Charge current is only reduced to keep total grid import under the configured limit, and stops (reverts to self-use) once the daily free cap is reached. Any value above 0 enables this; 0 disables it and caps charging at the evening target.</small>
     </div>
     <div class="form-group">
         <label for="battery_targets.evening_target_hour">Evening Target Hour (0-23)</label>

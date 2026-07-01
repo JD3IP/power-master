@@ -32,6 +32,9 @@ class PlanSlot:
     load_forecast_w: float = 0.0
     scheduled_loads: list[str] | None = None
     constraint_flags: list[str] | None = None
+    # Free-window force-charge: keep max charge current even at max SOC
+    # (the safety hierarchy will not cut charging for these slots).
+    allow_charge_at_max_soc: bool = False
 
 
 @dataclass
