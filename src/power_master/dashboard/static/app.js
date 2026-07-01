@@ -223,6 +223,10 @@ function updateModeDisplay(data) {
             var mins = Math.ceil(remaining / 60);
             indicator.textContent = 'Manual Override: ' + mins + 'm remaining';
             indicator.className = 'mode-source override';
+        } else if (source === 'schedule') {
+            var schedName = (data.mode_name || 'SELF_USE').replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+            indicator.textContent = 'Schedule: ' + schedName;
+            indicator.className = 'mode-source schedule';
         } else if (source === 'plan') {
             var optimiserName = data.optimiser_mode_name || data.mode_name || 'SELF_USE';
             // Format the mode name nicely
@@ -353,7 +357,7 @@ function initRollingChart() {
     var ctx = canvas.getContext('2d');
     rollingChart = new Chart(ctx, {
         type: 'line',
-        plugins: [rollingNowMarkerPlugin],
+        plugins: [scheduleBandsPlugin, rollingNowMarkerPlugin],
         data: {
             labels: [],
             datasets: [
@@ -607,6 +611,7 @@ function modeColor(mode) {
     if (mode === 4) return '#f85149';
     if (mode === 2) return '#d29922';
     if (mode === 5) return '#58a6ff';
+    if (mode === 6) return '#a371f7';
     return 'rgba(139, 148, 158, 0.9)';
 }
 
@@ -615,6 +620,7 @@ function modeName(mode) {
     if (mode === 4) return 'Force Discharge';
     if (mode === 2) return 'Zero Export';
     if (mode === 5) return 'Charge No Import';
+    if (mode === 6) return 'Feed-in First';
     if (mode === 1) return 'Self-Use';
     return 'Unknown';
 }
@@ -625,6 +631,7 @@ function parseModeValue(value) {
     if (Number.isFinite(n)) return n;
 
     var s = String(value).toUpperCase();
+    if (s.indexOf('FEED') >= 0) return 6;
     if (s.indexOf('DISCHARGE') >= 0) return 4;
     if (s.indexOf('CHARGE NO IMPORT') >= 0 || s.indexOf('NO IMPORT') >= 0) return 5;
     if (s.indexOf('CHARGE') >= 0) return 3;
@@ -696,10 +703,95 @@ var rollingNowMarkerPlugin = {
     }
 };
 
+// ── Schedule window overlay ──────────────────────────
+var scheduleBands = [];
+
+function modeBandFill(mode) {
+    if (mode === 6) return 'rgba(163, 113, 247, 0.14)';
+    if (mode === 4) return 'rgba(248, 81, 73, 0.12)';
+    if (mode === 3) return 'rgba(63, 185, 80, 0.12)';
+    if (mode === 2) return 'rgba(210, 153, 34, 0.12)';
+    if (mode === 5) return 'rgba(88, 166, 255, 0.12)';
+    return 'rgba(139, 148, 158, 0.12)';
+}
+
+// Expand the (recurring, local-time) schedule rules into concrete bands that
+// fall within the chart's timeline, as fractional index positions.
+function computeScheduleBands(timeline, schedule) {
+    var bands = [];
+    if (!timeline || !schedule || !schedule.enabled || !Array.isArray(schedule.rules)) return bands;
+    var dayMs = 24 * 3600 * 1000;
+    var startDay = new Date(timeline.startMs); startDay.setHours(0, 0, 0, 0);
+    for (var d = startDay.getTime() - dayMs; d <= timeline.endMs; d += dayMs) {
+        var base = new Date(d);
+        var dowMon = (base.getDay() + 6) % 7;  // JS 0=Sun..6=Sat → 0=Mon..6=Sun
+        schedule.rules.forEach(function(rule) {
+            if (rule.enabled === false) return;
+            if (Array.isArray(rule.days) && rule.days.length && rule.days.indexOf(dowMon) < 0) return;
+            var modeVal = parseModeValue(rule.mode);
+            (rule.windows || []).forEach(function(w) {
+                var m = /^(\d{2}):(\d{2})-(\d{2}):(\d{2})$/.exec(String(w).trim());
+                if (!m) return;
+                var s = new Date(base); s.setHours(+m[1], +m[2], 0, 0);
+                var e = new Date(base); e.setHours(+m[3], +m[4], 0, 0);
+                var sMs = s.getTime(), eMs = e.getTime();
+                if (eMs <= sMs) eMs += dayMs;  // midnight-crossing
+                var cs = Math.max(sMs, timeline.startMs);
+                var ce = Math.min(eMs, timeline.endMs);
+                if (ce <= cs) return;
+                bands.push({
+                    startIdx: (cs - timeline.startMs) / timeline.stepMs,
+                    endIdx: (ce - timeline.startMs) / timeline.stepMs,
+                    fill: modeBandFill(modeVal),
+                    color: modeColor(modeVal),
+                    label: rule.name || modeName(modeVal),
+                });
+            });
+        });
+    }
+    return bands;
+}
+
+var scheduleBandsPlugin = {
+    id: 'scheduleBands',
+    beforeDatasetsDraw: function(chart) {
+        if (!scheduleBands.length || !chart.chartArea || !chart.scales.x) return;
+        var xScale = chart.scales.x;
+        var top = chart.chartArea.top, bottom = chart.chartArea.bottom;
+        var ctx = chart.ctx;
+        ctx.save();
+        scheduleBands.forEach(function(b) {
+            var x1 = xScale.getPixelForValue(b.startIdx);
+            var x2 = xScale.getPixelForValue(b.endIdx);
+            if (!Number.isFinite(x1) || !Number.isFinite(x2)) return;
+            ctx.fillStyle = b.fill;
+            ctx.fillRect(x1, top, Math.max(1, x2 - x1), bottom - top);
+            if (x2 - x1 > 34) {
+                ctx.fillStyle = b.color;
+                ctx.font = '10px sans-serif';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'top';
+                ctx.fillText('⏱ ' + b.label, x1 + 4, top + 4);
+            }
+        });
+        ctx.restore();
+    }
+};
+
+function refreshScheduleBands() {
+    fetch('/api/mode-schedule').then(function(r) { return r.json(); })
+        .then(function(schedule) {
+            scheduleBands = computeScheduleBands(rollingTimeline, schedule);
+            if (rollingChart) rollingChart.update('none');
+        })
+        .catch(function() { scheduleBands = []; });
+}
+
 function loadRollingChartData() {
     if (!rollingChart) return;
     rollingTimeline = buildRollingTimeline();
     var N = rollingTimeline.points.length;
+    refreshScheduleBands();
 
     var soc = new Array(N).fill(null);
     var solar = new Array(N).fill(null);

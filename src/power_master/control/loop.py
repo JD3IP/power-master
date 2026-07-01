@@ -37,6 +37,7 @@ class LoopState:
     last_telemetry: Telemetry | None = None
     current_plan: OptimisationPlan | None = None
     current_mode: OperatingMode = OperatingMode.SELF_USE
+    current_source: str = "default"  # source of the last dispatched command (schedule/manual/optimiser/...)
     last_command_result: str = ""
     is_running: bool = False
     free_window_battery_setpoint_w: int | None = None  # Throttled battery setpoint from free-window orchestrator
@@ -273,6 +274,7 @@ class ControlLoop:
         if result.success:
             self._anti_oscillation.record_command(final_command)
             self._state.current_mode = final_command.mode
+            self._state.current_source = final_command.source
             self._last_dispatched_command = final_command
         self._state.last_command_result = "ok" if result.success else f"error: {result.message}"
 
@@ -413,6 +415,7 @@ class ControlLoop:
             if changed_mode:
                 self._anti_oscillation.record_command(cmd)
                 self._state.current_mode = cmd.mode
+                self._state.current_source = cmd.source
             self._last_dispatched_command = cmd
             logger.debug(
                 "Command refresh: mode=%s power=%dW source=%s latency=%dms",

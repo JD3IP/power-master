@@ -381,6 +381,15 @@ async def scan_inverter_registers(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "registers": registers})
 
 
+@router.get("/api/mode-schedule")
+async def get_mode_schedule(request: Request) -> JSONResponse:
+    """Return the current inverter mode schedule (for the dashboard chart overlay)."""
+    config = getattr(request.app.state, "config", None)
+    if config is None:
+        return JSONResponse({"enabled": False, "rules": []})
+    return JSONResponse(config.mode_schedule.model_dump(mode="json"))
+
+
 @router.post("/api/mode-schedule")
 async def save_mode_schedule(request: Request) -> JSONResponse:
     """Validate and apply the inverter mode schedule, hot-reloaded (no restart)."""

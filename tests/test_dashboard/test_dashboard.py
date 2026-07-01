@@ -878,3 +878,39 @@ class TestModeScheduleApi:
         r = await client.get("/settings")
         assert r.status_code == 200
         assert "Inverter Mode Schedule" in r.text
+
+
+class TestModeStatusAndScheduleGet:
+    """Mode status reflects the schedule source; schedule GET feeds the chart."""
+
+    @pytest.mark.asyncio
+    async def test_get_mode_schedule_returns_config(self, client) -> None:
+        # Seed a schedule via the save endpoint, then read it back.
+        await client.post("/api/mode-schedule", json={
+            "enabled": True,
+            "rules": [{"mode": "feed_in_first", "windows": ["16:00-22:00"], "export_limit_w": 500}],
+        })
+        r = await client.get("/api/mode-schedule")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["enabled"] is True
+        assert data["rules"][0]["mode"] == "feed_in_first"
+
+    @pytest.mark.asyncio
+    async def test_mode_status_shows_schedule_source(self, client) -> None:
+        from power_master.hardware.base import OperatingMode
+
+        class _State:
+            current_source = "schedule"
+            current_plan = None
+            current_mode = OperatingMode.FEED_IN_FIRST
+
+        class _Loop:
+            state = _State()
+
+        client._transport.app.state.control_loop = _Loop()
+        r = await client.get("/api/mode")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["source"] == "schedule"
+        assert data["mode_name"] == "FEED_IN_FIRST"
