@@ -61,6 +61,21 @@ anti_oscillation:
   rate_limit_window_seconds: 900        # 15 minute window
   max_commands_per_window: 3
 
+# Manual inverter-mode schedule — overrides the optimiser while a rule is active
+# (still below the safety/storm/SOC-floor hierarchy). Useful for experiments like
+# export-priority during the evening peak. Rules are evaluated top-down; the first
+# enabled rule whose day + window matches wins. Local time (load_profile.timezone).
+mode_schedule:
+  enabled: false
+  rules: []
+    # - name: "peak export"
+    #   enabled: true
+    #   mode: "feed_in_first"        # self_use | self_use_zero_export | feed_in_first | force_charge | force_discharge
+    #   windows: ["16:00-22:00"]     # HH:MM-HH:MM local; midnight-crossing allowed
+    #   days: [0,1,2,3,4,5,6]        # 0=Mon … 6=Sun; omit for every day
+    #   export_limit_w: 500          # export cap for feed_in_first / zero-export
+    #   # power_w: 3000              # target power for force_charge / force_discharge
+
 storm:
   enabled: true
   reserve_soc_target: 0.80             # Min SOC when storm active

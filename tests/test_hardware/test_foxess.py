@@ -456,3 +456,34 @@ class TestDeviceSettings:
         with pytest.raises(IOError):
             await adapter.scan_holding_registers(41000, 4)
         assert adapter._connected is False
+
+
+class TestFeedInFirst:
+    """Export-priority (Feed-in First) mode drives work mode 1 + export limit."""
+
+    @pytest.mark.asyncio
+    async def test_feed_in_first_sets_work_mode_and_export_limit(self) -> None:
+        adapter = _make_adapter()
+        ok = MagicMock()
+        ok.isError.return_value = False
+        adapter._client.write_register.return_value = ok
+
+        res = await adapter.send_command(
+            InverterCommand(mode=OperatingMode.FEED_IN_FIRST, export_limit_w=500)
+        )
+        assert res.success
+        writes = [(c.args[0], c.args[1]) for c in adapter._client.write_register.call_args_list]
+        assert (Registers.REMOTE_ENABLE, 0) in writes    # autonomous, no remote power control
+        assert (Registers.WORK_MODE, 1) in writes         # Feed-in First
+        assert (Registers.EXPORT_LIMIT, 500) in writes    # export cap
+
+    @pytest.mark.asyncio
+    async def test_feed_in_first_defaults_export_limit_to_max(self) -> None:
+        adapter = _make_adapter()  # max_export defaults to 10000
+        ok = MagicMock()
+        ok.isError.return_value = False
+        adapter._client.write_register.return_value = ok
+
+        await adapter.send_command(InverterCommand(mode=OperatingMode.FEED_IN_FIRST))
+        writes = dict((c.args[0], c.args[1]) for c in adapter._client.write_register.call_args_list)
+        assert writes[Registers.EXPORT_LIMIT] == adapter._max_export_w

@@ -20,6 +20,7 @@ from power_master.control.constants import (
 )
 from power_master.control.hierarchy import evaluate_hierarchy
 from power_master.control.manual_override import ManualOverride
+from power_master.control.mode_schedule import ModeScheduler
 from power_master.hardware.base import InverterAdapter, OperatingMode
 from power_master.hardware.telemetry import Telemetry
 from power_master.optimisation.plan import OptimisationPlan
@@ -73,8 +74,12 @@ class ControlLoop:
         self._adapter: InverterAdapter = adapter
         self._manual_override: ManualOverride = manual_override or ManualOverride()
         self._anti_oscillation: AntiOscillationGuard = anti_oscillation or AntiOscillationGuard(config.anti_oscillation)
+        self._mode_scheduler: ModeScheduler = ModeScheduler(
+            config.mode_schedule, getattr(config.load_profile, "timezone", "UTC"),
+        )
         self._state: LoopState = LoopState()
         self._stop_event: asyncio.Event = asyncio.Event()
+        self._wake_event: asyncio.Event = asyncio.Event()  # request an immediate re-tick
         self._repo: Any = repo
 
         # External state for hierarchy evaluation (updated by main app)
@@ -127,11 +132,13 @@ class ControlLoop:
         try:
             while not self._stop_event.is_set():
                 await self._tick()
-                try:
-                    await asyncio.wait_for(self._stop_event.wait(), timeout=interval)
+                # Sleep until the interval elapses, a stop is requested, or an
+                # immediate re-tick is requested (e.g. a schedule change saved
+                # from the UI so it applies without waiting for the next tick).
+                # Re-read the interval each loop so config changes take effect.
+                interval = self._config.planning.evaluation_interval_seconds
+                if await self._wait_for_next_tick(interval):
                     break  # stop_event was set
-                except asyncio.TimeoutError:
-                    pass  # Normal — just means interval elapsed
         except asyncio.CancelledError:
             raise
         finally:
@@ -142,6 +149,28 @@ class ControlLoop:
                 pass
             self._state.is_running = False
             logger.info("Control loop stopped after %d ticks", self._state.tick_count)
+
+    async def _wait_for_next_tick(self, timeout: float) -> bool:
+        """Wait until timeout, a stop, or a wake request. Returns True if stopped."""
+        stop_task = asyncio.ensure_future(self._stop_event.wait())
+        wake_task = asyncio.ensure_future(self._wake_event.wait())
+        try:
+            await asyncio.wait(
+                {stop_task, wake_task}, timeout=timeout,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        finally:
+            for t in (stop_task, wake_task):
+                if not t.done():
+                    t.cancel()
+        if self._wake_event.is_set():
+            self._wake_event.clear()
+        return self._stop_event.is_set()
+
+    def request_tick(self) -> None:
+        """Wake the control loop to re-evaluate immediately (e.g. after a
+        schedule change), instead of waiting for the next interval."""
+        self._wake_event.set()
 
     def stop(self) -> None:
         """Signal the loop to stop."""
@@ -397,15 +426,31 @@ class ControlLoop:
         )
         return None
 
+    def update_config(self, config: AppConfig) -> None:
+        """Refresh config after a hot-reload (e.g. mode-schedule edits)."""
+        self._config = config
+        self._mode_scheduler.update_config(
+            config.mode_schedule, getattr(config.load_profile, "timezone", "UTC"),
+        )
+
     def _determine_command(self, telemetry: Telemetry) -> ControlCommand | None:
         """Determine the command to execute.
 
-        Priority: manual override > plan slot > default self-use.
+        Priority: manual override > mode schedule > plan slot > default self-use.
+        The scheduled command still passes through the safety/storm hierarchy in
+        `_tick`, so it can never override safety or drain past reserves.
         """
-        # Manual override
+        # Manual override (explicit user action) wins outright.
         override_cmd: ControlCommand | None = self._manual_override.get_command()
         if override_cmd is not None:
             return override_cmd
+
+        # User-defined mode schedule overrides the optimiser plan while active.
+        sched_cmd: ControlCommand | None = self._mode_scheduler.get_command(
+            datetime.now(timezone.utc)
+        )
+        if sched_cmd is not None:
+            return sched_cmd
 
         # Plan slot
         plan: OptimisationPlan | None = self._state.current_plan

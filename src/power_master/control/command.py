@@ -43,6 +43,10 @@ class ControlCommand:
     # charging at max SOC — keep pushing max charge current (BMS limits actual
     # absorption) to soak up all available free energy.
     allow_charge_at_max_soc: bool = False
+    # Optional grid export cap (W) to apply with this command. Used by
+    # FEED_IN_FIRST / zero-export modes; None leaves the inverter's export limit
+    # at its default (max).
+    export_limit_w: int | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def get_source_type(self) -> CommandSourceType:
@@ -74,10 +78,19 @@ async def dispatch_command(
     command: ControlCommand,
 ) -> CommandResult:
     """Send a control command to the inverter adapter."""
+    # Resolve the export limit to apply: explicit command value wins; zero-export
+    # mode forces 0; otherwise leave it to the adapter's default.
+    if command.export_limit_w is not None:
+        export_limit_w = command.export_limit_w
+    elif command.mode == OperatingMode.SELF_USE_ZERO_EXPORT:
+        export_limit_w = 0
+    else:
+        export_limit_w = None
+
     inverter_cmd = InverterCommand(
         mode=command.mode,
         power_w=command.power_w,
-        export_limit_w=0 if command.mode == OperatingMode.SELF_USE_ZERO_EXPORT else None,
+        export_limit_w=export_limit_w,
     )
 
     logger.info(

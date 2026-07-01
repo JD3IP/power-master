@@ -839,3 +839,42 @@ class TestInverterFirmwareApi:
         resp = await client.post("/api/inverter/register/scan", json={"start": "49248", "count": "1"})
         assert resp.status_code == 200
         assert resp.json()["registers"][0]["signed"] == -30
+
+
+class TestModeScheduleApi:
+    """Mode-schedule editor: validate + apply (hot-reload) via JSON."""
+
+    @pytest.mark.asyncio
+    async def test_save_valid_schedule(self, client) -> None:
+        payload = {"enabled": True, "rules": [
+            {"name": "peak", "enabled": True, "mode": "feed_in_first",
+             "windows": ["16:00-22:00"], "days": None, "export_limit_w": 500, "power_w": None},
+        ]}
+        r = await client.post("/api/mode-schedule", json=payload)
+        assert r.status_code == 200
+        data = r.json()
+        assert data["ok"] and data["rules"] == 1 and data["enabled"] is True
+        cfg = client._transport.app.state.config
+        assert cfg.mode_schedule.enabled is True
+        assert cfg.mode_schedule.rules[0].mode == "feed_in_first"
+        assert cfg.mode_schedule.rules[0].export_limit_w == 500
+
+    @pytest.mark.asyncio
+    async def test_save_invalid_mode_rejected(self, client) -> None:
+        r = await client.post("/api/mode-schedule", json={
+            "enabled": True, "rules": [{"mode": "banana", "windows": ["16:00-22:00"]}],
+        })
+        assert r.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_save_invalid_window_rejected(self, client) -> None:
+        r = await client.post("/api/mode-schedule", json={
+            "enabled": True, "rules": [{"mode": "self_use", "windows": ["25:00-99:00"]}],
+        })
+        assert r.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_settings_page_renders_schedule_tab(self, client) -> None:
+        r = await client.get("/settings")
+        assert r.status_code == 200
+        assert "Inverter Mode Schedule" in r.text

@@ -72,9 +72,13 @@ def _check_safety(
     grid_available: bool,
 ) -> ControlCommand | None:
     """Level 1: Safety overrides."""
-    # SOC too low — stop discharging, force charge if grid available
+    # SOC too low — stop discharging/exporting, force charge if grid available
     if soc <= soc_min:
-        if command.mode in (OperatingMode.FORCE_DISCHARGE, OperatingMode.SELF_USE):
+        if command.mode in (
+            OperatingMode.FORCE_DISCHARGE,
+            OperatingMode.FEED_IN_FIRST,
+            OperatingMode.SELF_USE,
+        ):
             mode = OperatingMode.FORCE_CHARGE if grid_available else OperatingMode.SELF_USE
             logger.warning("SAFETY: SOC %.1f%% at minimum, overriding to %s", soc * 100, mode.name)
             return ControlCommand(
@@ -106,7 +110,11 @@ def _check_safety(
 
     # Grid lost — go to self-use (battery supplies load)
     if not grid_available:
-        if command.mode in (OperatingMode.FORCE_CHARGE, OperatingMode.FORCE_DISCHARGE):
+        if command.mode in (
+            OperatingMode.FORCE_CHARGE,
+            OperatingMode.FORCE_DISCHARGE,
+            OperatingMode.FEED_IN_FIRST,
+        ):
             logger.warning("SAFETY: Grid unavailable, overriding to self-use")
             return ControlCommand(
                 mode=OperatingMode.SELF_USE,
@@ -125,7 +133,10 @@ def _check_storm_reserve(
     reserve_soc: float,
 ) -> ControlCommand | None:
     """Level 2: Storm reserve — prevent discharge below reserve."""
-    if soc <= reserve_soc and command.mode in (OperatingMode.FORCE_DISCHARGE,):
+    if soc <= reserve_soc and command.mode in (
+        OperatingMode.FORCE_DISCHARGE,
+        OperatingMode.FEED_IN_FIRST,
+    ):
         logger.info(
             "STORM RESERVE: SOC %.1f%% at reserve target %.1f%%, blocking discharge",
             soc * 100, reserve_soc * 100,

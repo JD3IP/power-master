@@ -77,6 +77,19 @@ anti_oscillation:
   rate_limit_window_seconds: 900
   max_commands_per_window: 3
 
+# Experiment: force export-priority (Feed-in First) with a small export cap
+# during the evening peak, so the battery exports ~500W on top of covering load.
+# Flip enabled to true to activate. Safety/storm/SOC-floor still take precedence,
+# so it won't drain below your reserves. Times are Brisbane local.
+mode_schedule:
+  enabled: false
+  rules:
+    - name: "peak export priority"
+      enabled: true
+      mode: "feed_in_first"
+      windows: ["16:00-22:00"]
+      export_limit_w: 500
+
 storm:
   enabled: true
   reserve_soc_target: 0.80

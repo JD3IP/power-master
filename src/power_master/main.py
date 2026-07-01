@@ -1067,6 +1067,11 @@ class Application:
             if nm is not None:
                 nm.reload(new_config.notifications)
 
+        # Refresh the control loop's config view (mode schedule, limits, etc.)
+        control_loop = getattr(app.state, "control_loop", None)
+        if control_loop is not None and hasattr(control_loop, "update_config"):
+            control_loop.update_config(new_config)
+
         logger.info("Config reloaded: changed=%s", list(changed_sections))
 
     async def _reload_providers(self, old_config, new_config, app) -> None:

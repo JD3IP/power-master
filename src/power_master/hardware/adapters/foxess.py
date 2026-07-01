@@ -175,6 +175,7 @@ _GENERIC_MAX_ADDRESS = 41999
 MODE_TO_KH: dict[OperatingMode, int] = {
     OperatingMode.SELF_USE: 0,
     OperatingMode.SELF_USE_ZERO_EXPORT: 0,  # Self-Use + export limit = 0W
+    OperatingMode.FEED_IN_FIRST: 1,  # Export-priority + export limit cap
     OperatingMode.FORCE_CHARGE: 3,
     OperatingMode.FORCE_DISCHARGE: 4,
 }
@@ -472,6 +473,24 @@ class FoxESSAdapter:
                     await self._write_register(Registers.WORK_MODE, 0)
                     await self._write_register(Registers.EXPORT_LIMIT, 0)
                     logger.info("ZERO_EXPORT: remote=off, work_mode=0, export_limit=0W")
+
+                elif command.mode == OperatingMode.FEED_IN_FIRST:
+                    # Export-priority: run the inverter autonomously in Feed-in
+                    # First (work mode 1) with a grid export cap. No remote power
+                    # control — the inverter self-manages, exporting up to the cap
+                    # on top of covering the load.
+                    export_w = (
+                        command.export_limit_w
+                        if command.export_limit_w is not None
+                        else self._max_export_w
+                    )
+                    export_w = max(0, min(int(export_w), self._MAX_REASONABLE_POWER_W))
+                    await self._write_register(Registers.REMOTE_ENABLE, 0)
+                    await self._write_register(Registers.WORK_MODE, 1)
+                    await self._write_register(Registers.EXPORT_LIMIT, export_w)
+                    logger.info(
+                        "FEED_IN_FIRST: remote=off, work_mode=1, export_limit=%dW", export_w
+                    )
 
                 elif command.mode == OperatingMode.FORCE_CHARGE:
                     charge_w = abs(command.power_w)

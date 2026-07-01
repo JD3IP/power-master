@@ -31,6 +31,7 @@
     <button type="button" class="tab" data-tab="loads" onclick="switchTab('loads', this)">Loads</button>
     <button type="button" class="tab" data-tab="mqtt" onclick="switchTab('mqtt', this)">MQTT</button>
     <button type="button" class="tab" data-tab="oscillation" onclick="switchTab('oscillation', this)">Anti-Oscillation</button>
+    <button type="button" class="tab" data-tab="schedule" onclick="switchTab('schedule', this)">Schedule</button>
     <button type="button" class="tab" data-tab="storm" onclick="switchTab('storm', this)">Storm</button>
     <button type="button" class="tab" data-tab="resilience" onclick="switchTab('resilience', this)">Resilience</button>
     <button type="button" class="tab" data-tab="notifications" onclick="switchTab('notifications', this)">Notifications</button>
@@ -54,6 +55,7 @@
         <option value="loads">Loads</option>
         <option value="mqtt">MQTT</option>
         <option value="oscillation">Anti-Oscillation</option>
+        <option value="schedule">Schedule</option>
         <option value="storm">Storm</option>
         <option value="resilience">Resilience</option>
         <option value="notifications">Notifications</option>
@@ -1092,6 +1094,132 @@
         <label for="anti_oscillation.max_commands_per_window">Max Commands Per Window</label>
         <input type="number" id="anti_oscillation.max_commands_per_window" name="anti_oscillation.max_commands_per_window" value="{{ config.anti_oscillation.max_commands_per_window }}">
     </div>
+</section>
+
+<!-- ═══ SCHEDULE TAB ═══ -->
+<section id="tab-schedule" class="tab-content">
+    <h2>Inverter Mode Schedule</h2>
+    <p style="font-size: 12px; color: #8b949e; margin-top: 0;">
+        Force a specific inverter mode during time windows (local time), overriding the optimiser
+        while active. Safety, storm reserve and the SOC floor still take precedence, so a rule can't
+        drain the battery past your reserves. Rules are evaluated top-down — the first enabled rule
+        whose day and window match wins. <strong>Saving applies immediately — no restart.</strong>
+        {% if is_read_only %}<br><strong>Read-only — admin access required to edit.</strong>{% endif %}
+    </p>
+    <div class="form-group">
+        <label>
+            <input type="checkbox" id="sched-enabled" {{ 'disabled' if is_read_only }}>
+            Enable the mode schedule
+        </label>
+    </div>
+    <table class="data-table" id="sched-table">
+        <thead>
+            <tr>
+                <th>On</th><th>Name</th><th>Mode</th><th>Windows</th>
+                <th>Days</th><th>Export W</th><th>Power W</th><th></th>
+            </tr>
+        </thead>
+        <tbody id="sched-tbody"></tbody>
+    </table>
+    <div style="margin-top: 8px; display:flex; gap:8px; align-items:center;">
+        <button type="button" class="btn btn-sm" onclick="addScheduleRule()" {{ 'disabled' if is_read_only }}>+ Add rule</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="saveModeSchedule()" {{ 'disabled' if is_read_only }}>Save schedule</button>
+        <span id="sched-status" style="font-size:13px;"></span>
+    </div>
+    <p style="font-size: 11px; color: #6e7681; margin-top: 10px;">
+        <strong>Windows:</strong> comma-separated <code>HH:MM-HH:MM</code> (e.g. <code>16:00-22:00</code>; midnight-crossing allowed).
+        <strong>Days:</strong> comma-separated 0–6 (0=Mon … 6=Sun); blank = every day.
+        <strong>Export W</strong> applies to Feed-in First / Zero-Export; <strong>Power W</strong> to Force Charge / Discharge.
+    </p>
+
+    <script>
+    (function () {
+        const RO = {{ 'true' if is_read_only else 'false' }};
+        const MODES = [
+            ["feed_in_first", "Feed-in First (export priority)"],
+            ["self_use", "Self-Use"],
+            ["self_use_zero_export", "Self-Use (zero export)"],
+            ["force_charge", "Force Charge"],
+            ["force_discharge", "Force Discharge"],
+        ];
+        let SCHED = {};
+        try { SCHED = JSON.parse('{{ mode_schedule_json | safe }}'); } catch (e) { SCHED = {enabled:false, rules:[]}; }
+
+        function cell(child) { const td = document.createElement('td'); td.appendChild(child); return td; }
+        function input(type, value, width) {
+            const i = document.createElement('input'); i.type = type;
+            if (value !== undefined && value !== null) i.value = value;
+            if (width) i.style.width = width;
+            i.disabled = RO; return i;
+        }
+        function addRow(rule) {
+            rule = rule || {enabled: true, name: "", mode: "feed_in_first", windows: [], days: null, export_limit_w: null, power_w: null};
+            const tr = document.createElement('tr');
+
+            const on = input('checkbox'); on.checked = rule.enabled !== false; on.className = 'r-on';
+            const name = input('text', rule.name, '110px'); name.className = 'r-name';
+            const mode = document.createElement('select'); mode.className = 'r-mode'; mode.disabled = RO;
+            for (const [v, label] of MODES) {
+                const o = document.createElement('option'); o.value = v; o.textContent = label;
+                if (v === rule.mode) o.selected = true; mode.appendChild(o);
+            }
+            const windows = input('text', (rule.windows || []).join(', '), '150px'); windows.className = 'r-windows'; windows.placeholder = '16:00-22:00';
+            const days = input('text', (rule.days || []).join(','), '70px'); days.className = 'r-days'; days.placeholder = 'all';
+            const exp = input('number', rule.export_limit_w, '80px'); exp.className = 'r-export'; exp.min = 0;
+            const pow = input('number', rule.power_w, '80px'); pow.className = 'r-power'; pow.min = 0;
+            const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'btn btn-sm btn-danger';
+            rm.textContent = '✕'; rm.disabled = RO; rm.onclick = () => tr.remove();
+
+            tr.append(cell(on), cell(name), cell(mode), cell(windows), cell(days), cell(exp), cell(pow), cell(rm));
+            document.getElementById('sched-tbody').appendChild(tr);
+        }
+        window.addScheduleRule = () => addRow();
+
+        function render() {
+            document.getElementById('sched-enabled').checked = !!SCHED.enabled;
+            const tb = document.getElementById('sched-tbody'); tb.innerHTML = '';
+            (SCHED.rules || []).forEach(addRow);
+        }
+
+        function collect() {
+            const rules = [];
+            for (const tr of document.querySelectorAll('#sched-tbody tr')) {
+                const q = (c) => tr.querySelector(c);
+                const winStr = q('.r-windows').value.trim();
+                const daysStr = q('.r-days').value.trim();
+                const exp = q('.r-export').value.trim();
+                const pow = q('.r-power').value.trim();
+                rules.push({
+                    enabled: q('.r-on').checked,
+                    name: q('.r-name').value.trim(),
+                    mode: q('.r-mode').value,
+                    windows: winStr ? winStr.split(',').map(s => s.trim()).filter(Boolean) : [],
+                    days: daysStr ? daysStr.split(',').map(s => parseInt(s.trim(), 10)) : null,
+                    export_limit_w: exp !== '' ? parseInt(exp, 10) : null,
+                    power_w: pow !== '' ? parseInt(pow, 10) : null,
+                });
+            }
+            return {enabled: document.getElementById('sched-enabled').checked, rules};
+        }
+
+        window.saveModeSchedule = async function () {
+            const status = document.getElementById('sched-status');
+            status.style.color = '#8b949e'; status.textContent = 'Saving…';
+            try {
+                const r = await fetch('/api/mode-schedule', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(collect()),
+                });
+                const data = await r.json();
+                if (!r.ok) { status.style.color = '#f85149'; status.textContent = data.error || 'Save failed'; return; }
+                status.style.color = '#3fb950';
+                status.textContent = 'Saved — applied now (' + data.rules + ' rule' + (data.rules === 1 ? '' : 's') + ', ' + (data.enabled ? 'enabled' : 'disabled') + ').';
+            } catch (e) { status.style.color = '#f85149'; status.textContent = 'Save failed: ' + e; }
+        };
+
+        render();
+    })();
+    </script>
 </section>
 
 <!-- ═══ STORM TAB ═══ -->
