@@ -685,8 +685,8 @@ class TestLoadDetailAndOverride:
             "/api/loads/TestPump/override",
             json={"state": "maybe"},
         )
-        data = resp.json()
-        assert data["status"] == "error"
+        # Schema validation rejects anything but on/off before the handler runs.
+        assert resp.status_code == 422
 
     @pytest.mark.asyncio
     async def test_load_override_not_found(self, client_with_loads) -> None:
@@ -727,9 +727,10 @@ class TestLoadDetailAndOverride:
     async def test_load_override_timeout_capped(self, client_with_loads) -> None:
         """Override timeout is capped at 60 minutes."""
         ac, load_manager = client_with_loads
+        # 7200s is within the schema bound (<=86400) but above the 3600s cap.
         resp = await ac.post(
             "/api/loads/TestPump/override",
-            json={"state": "on", "timeout_s": 99999},
+            json={"state": "on", "timeout_s": 7200},
         )
         data = resp.json()
         assert data["timeout_s"] == 3600  # capped at 60 minutes
@@ -745,12 +746,16 @@ class TestInverterFirmwareApi:
         adapter = AsyncMock()
         adapter.firmware = {"master": "1.60"}
         adapter.read_device_settings = AsyncMock(return_value=[
-            {"key": "min_soc", "label": "Min SOC", "address": 41011, "unit": "%",
+            {"key": "min_soc", "label": "Min SOC", "address": 41009, "unit": "%",
              "value": 15, "raw": 15},
         ])
         adapter.write_device_setting = AsyncMock(return_value=500)
         adapter.read_holding_register = AsyncMock(return_value=1234)
         adapter.write_holding_register = AsyncMock(return_value=None)
+        adapter.scan_holding_registers = AsyncMock(return_value=[
+            {"address": 41000, "value": 5},
+            {"address": 41001, "error": "illegal address"},
+        ])
         return adapter
 
     @pytest.mark.asyncio
@@ -810,3 +815,27 @@ class TestInverterFirmwareApi:
         resp = await client.post("/api/inverter/register/write", json={"address": "41011", "value": "notanumber"})
         assert resp.status_code == 400
         adapter.write_holding_register.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_scan_range(self, client) -> None:
+        adapter = self._adapter()
+        client._transport.app.state.adapter = adapter
+        resp = await client.post("/api/inverter/register/scan", json={"start": "41000", "count": "2"})
+        assert resp.status_code == 200
+        adapter.scan_holding_registers.assert_awaited_once_with(41000, 2)
+        regs = resp.json()["registers"]
+        # Value row gets signed + hex; error row is passed through.
+        assert regs[0] == {"address": 41000, "value": 5, "signed": 5, "hex": "0x0005"}
+        assert regs[1]["error"] == "illegal address"
+
+    @pytest.mark.asyncio
+    async def test_scan_signed_negative(self, client) -> None:
+        from unittest.mock import AsyncMock
+        adapter = self._adapter()
+        adapter.scan_holding_registers = AsyncMock(
+            return_value=[{"address": 49248, "value": 65506}]
+        )
+        client._transport.app.state.adapter = adapter
+        resp = await client.post("/api/inverter/register/scan", json={"start": "49248", "count": "1"})
+        assert resp.status_code == 200
+        assert resp.json()["registers"][0]["signed"] == -30

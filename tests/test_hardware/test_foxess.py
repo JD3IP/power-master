@@ -323,19 +323,34 @@ class TestDeviceSettings:
         m.isError.return_value = False
         return m
 
+    def test_control_register_addresses(self) -> None:
+        # Locked against live register readback on a KH inverter — see
+        # KH_MODBUS_REGISTERS.md §5. Guards against the earlier off-by-two
+        # mislabelling of the current/SoC block.
+        assert Registers.MAX_CHARGE_CURRENT == 41007
+        assert Registers.MAX_DISCHARGE_CURRENT == 41008
+        assert Registers.MIN_SOC == 41009
+        assert Registers.MAX_SOC == 41010
+        assert Registers.MIN_SOC_ON_GRID == 41011
+        assert Registers.EXPORT_LIMIT == 41012
+
     @pytest.mark.asyncio
     async def test_read_device_settings_scales_and_labels(self) -> None:
         adapter = _make_adapter()
-        # work_mode=0, min_soc=15, max_charge_current raw=500 (=50.0A),
-        # max_discharge raw=400 (=40.0A), export_limit=5000
+        # Reads in DEVICE_SETTINGS order: work_mode, min_soc, max_soc,
+        # min_soc_on_grid, max_charge_current (500=50.0A), max_discharge (400=40.0A),
+        # export_limit.
         adapter._client.read_holding_registers.side_effect = [
-            self._ok(0), self._ok(15), self._ok(500), self._ok(400), self._ok(5000),
+            self._ok(0), self._ok(15), self._ok(95), self._ok(10),
+            self._ok(500), self._ok(400), self._ok(5000),
         ]
         settings = await adapter.read_device_settings()
         by_key = {s["key"]: s for s in settings}
 
         assert by_key["work_mode"]["value_label"] == "Self-Use"
         assert by_key["min_soc"]["value"] == 15
+        assert by_key["max_soc"]["value"] == 95
+        assert by_key["min_soc_on_grid"]["value"] == 10
         assert by_key["max_charge_current"]["value"] == 50.0
         assert by_key["max_discharge_current"]["value"] == 40.0
         assert by_key["export_limit"]["value"] == 5000
@@ -347,7 +362,8 @@ class TestDeviceSettings:
         err = MagicMock()
         err.isError.return_value = True
         adapter._client.read_holding_registers.side_effect = [
-            err, self._ok(20), self._ok(500), self._ok(500), self._ok(0),
+            err, self._ok(20), self._ok(95), self._ok(10),
+            self._ok(500), self._ok(500), self._ok(0),
         ]
         settings = await adapter.read_device_settings()
         assert "error" in settings[0]
@@ -407,3 +423,36 @@ class TestDeviceSettings:
         adapter._client.read_holding_registers.return_value = self._ok(1234)
         value = await adapter.read_holding_register(41000)
         assert value == 1234
+
+    @pytest.mark.asyncio
+    async def test_scan_returns_values_and_errors_per_row(self) -> None:
+        adapter = _make_adapter()
+        err = MagicMock()
+        err.isError.return_value = True
+        # 41000 ok=5, 41001 unmapped (error), 41002 ok=65506 (i.e. signed -30)
+        adapter._client.read_holding_registers.side_effect = [
+            self._ok(5), err, self._ok(65506),
+        ]
+        rows = await adapter.scan_holding_registers(41000, 3)
+
+        assert rows[0] == {"address": 41000, "value": 5}
+        assert rows[1]["address"] == 41001 and "error" in rows[1]
+        assert rows[2] == {"address": 41002, "value": 65506}
+        # A per-register Modbus error must NOT flip the connection state.
+        assert adapter._connected is True
+
+    @pytest.mark.asyncio
+    async def test_scan_rejects_bad_count(self) -> None:
+        adapter = _make_adapter()
+        with pytest.raises(ValueError):
+            await adapter.scan_holding_registers(41000, 0)
+        with pytest.raises(ValueError):
+            await adapter.scan_holding_registers(41000, 999)
+
+    @pytest.mark.asyncio
+    async def test_scan_transport_failure_marks_disconnected(self) -> None:
+        adapter = _make_adapter()
+        adapter._client.read_holding_registers.side_effect = OSError("timeout")
+        with pytest.raises(IOError):
+            await adapter.scan_holding_registers(41000, 4)
+        assert adapter._connected is False

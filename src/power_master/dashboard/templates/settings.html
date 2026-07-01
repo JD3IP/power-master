@@ -165,6 +165,29 @@
     </div>
     <div id="fw-reg-result" style="font-size:13px; color:#8b949e;"></div>
 
+    <h3 style="margin-bottom: 4px;">Scan a register range</h3>
+    <p style="font-size: 12px; color: #8b949e; margin-top: 0;">
+        Read-only. Dump a block of holding registers to locate one by its value — e.g. match against
+        what the installer app shows. A value of −N appears in the <em>Signed</em> column.
+        If a block reports errors it usually just means those addresses aren't mapped; narrow the range.
+    </p>
+    <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-bottom:8px;">
+        <div class="form-group" style="margin:0;">
+            <label for="fw-scan-start">Start address</label>
+            <input type="text" id="fw-scan-start" placeholder="e.g. 41000" value="41000" style="width:140px;">
+        </div>
+        <div class="form-group" style="margin:0;">
+            <label for="fw-scan-count">Count (1–128)</label>
+            <input type="number" id="fw-scan-count" value="24" min="1" max="128" style="width:100px;">
+        </div>
+        <button type="button" class="btn btn-sm" onclick="scanInverterRegisters()" {{ 'disabled' if is_read_only }}>Scan</button>
+    </div>
+    <div id="fw-scan-status" style="font-size:13px; color:#8b949e; margin-bottom:6px;"></div>
+    <table class="data-table" id="fw-scan-table" style="display:none;">
+        <thead><tr><th>Address</th><th>Unsigned</th><th>Signed</th><th>Hex</th></tr></thead>
+        <tbody id="fw-scan-tbody"></tbody>
+    </table>
+
     <script>
     (function () {
         const READ_ONLY = {{ 'true' if is_read_only else 'false' }};
@@ -281,6 +304,40 @@
                     ? ('Wrote ' + data.value + ' to register ' + data.address)
                     : (data.error || 'Write failed');
             } catch (e) { out.style.color = '#f85149'; out.textContent = 'Write failed: ' + e; }
+        };
+        window.scanInverterRegisters = async function () {
+            const start = document.getElementById('fw-scan-start').value;
+            const count = document.getElementById('fw-scan-count').value;
+            const status = document.getElementById('fw-scan-status');
+            const table = document.getElementById('fw-scan-table');
+            const tb = document.getElementById('fw-scan-tbody');
+            status.style.color = '#8b949e';
+            status.textContent = 'Scanning…';
+            try {
+                const r = await fetch('/api/inverter/register/scan', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({start, count}),
+                });
+                const data = await r.json();
+                if (!r.ok) { status.style.color = '#f85149'; status.textContent = data.error || 'Scan failed'; return; }
+                tb.innerHTML = '';
+                for (const row of data.registers) {
+                    const tr = document.createElement('tr');
+                    if (row.error !== undefined) {
+                        tr.innerHTML = '<td>' + row.address + '</td>' +
+                            '<td colspan="3" style="color:#6e7681;">—</td>';
+                    } else {
+                        tr.innerHTML = '<td>' + row.address + '</td>' +
+                            '<td>' + row.value + '</td>' +
+                            '<td>' + row.signed + '</td>' +
+                            '<td>' + row.hex + '</td>';
+                    }
+                    tb.appendChild(tr);
+                }
+                table.style.display = '';
+                status.style.color = '#3fb950';
+                status.textContent = 'Read ' + data.registers.length + ' registers.';
+            } catch (e) { status.style.color = '#f85149'; status.textContent = 'Scan failed: ' + e; }
         };
     })();
     </script>

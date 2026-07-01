@@ -66,11 +66,19 @@ class Registers:
     FIRMWARE_MANAGER = 30018  # U16
 
     # Holding registers — control (read_holding_registers / write_register, FC 3/6)
-    # Addresses verified against working KH firmware v1.55
+    # Addresses corrected against live register readback on a KH inverter (the
+    # earlier 41009/41010/41011 assignments were wrong — they are the SoC
+    # registers, not currents). See KH_MODBUS_REGISTERS.md §5.
+    #   41009 read back 10  -> Minimum SoC 10%     (was mislabelled MAX_CHARGE_CURRENT)
+    #   41010 read back 100 -> Maximum SoC 100%    (was mislabelled MAX_DISCHARGE_CURRENT)
+    #   41011 read back 10  -> Minimum SoC on-grid (was mislabelled MIN_SOC)
+    #   41007/41008 read back 500 -> 50.0A charge/discharge current limits
     WORK_MODE = 41000       # U16 RW: 0=Self-Use, 1=Feed-in, 2=Backup
-    MAX_CHARGE_CURRENT = 41009   # U16 RW: amps (gain 10, raw 500 = 50.0A)
-    MAX_DISCHARGE_CURRENT = 41010  # U16 RW: amps (gain 10, raw 500 = 50.0A)
-    MIN_SOC = 41011         # U16 RW, % (battery won't discharge below)
+    MAX_CHARGE_CURRENT = 41007     # U16 RW: amps (gain 10, raw 500 = 50.0A)
+    MAX_DISCHARGE_CURRENT = 41008  # U16 RW: amps (gain 10, raw 500 = 50.0A)
+    MIN_SOC = 41009         # U16 RW, % (battery won't discharge below)
+    MAX_SOC = 41010         # U16 RW, % (battery won't charge above)
+    MIN_SOC_ON_GRID = 41011  # U16 RW, % (min SoC while grid is available)
     EXPORT_LIMIT = 41012    # U16 RW, watts (grid export cap; 0 = no export)
 
     # Remote power control registers (FC 6)
@@ -125,6 +133,16 @@ DEVICE_SETTINGS: tuple[DeviceSetting, ...] = (
         key="min_soc", label="Min SOC", address=Registers.MIN_SOC,
         unit="%", min_value=0, max_value=100,
         description="Battery will not discharge below this state of charge.",
+    ),
+    DeviceSetting(
+        key="max_soc", label="Max SOC", address=Registers.MAX_SOC,
+        unit="%", min_value=0, max_value=100,
+        description="Battery will not charge above this state of charge.",
+    ),
+    DeviceSetting(
+        key="min_soc_on_grid", label="Min SOC (on-grid)",
+        address=Registers.MIN_SOC_ON_GRID, unit="%", min_value=0, max_value=100,
+        description="Minimum state of charge to hold while the grid is available.",
     ),
     DeviceSetting(
         key="max_charge_current", label="Max charge current",
@@ -754,6 +772,42 @@ class FoxESSAdapter:
         async with self._lock:
             await self._write_register(address, value)
         logger.info("Generic register write: addr=%d value=%d", address, value)
+
+    # Max registers a single scan may probe (bounds the number of Modbus reads).
+    SCAN_MAX_COUNT = 128
+
+    async def scan_holding_registers(self, start: int, count: int) -> list[dict]:
+        """Read a contiguous block of holding registers for exploration.
+
+        Read-only. Probes each register individually so an unmapped/illegal
+        address only fails that row instead of aborting the whole scan — and,
+        crucially, a per-register Modbus exception does NOT mark the adapter
+        disconnected (that would disrupt the control loop). Only a genuine
+        transport failure propagates and flips the connection state.
+
+        Returns a list of {address, value} (raw uint16) or {address, error} rows.
+        """
+        if count < 1 or count > self.SCAN_MAX_COUNT:
+            raise ValueError(f"count must be 1..{self.SCAN_MAX_COUNT}")
+        if start < 0 or start + count - 1 > 0xFFFF:
+            raise ValueError("register range out of 0-65535")
+
+        results: list[dict] = []
+        async with self._lock:
+            for address in range(start, start + count):
+                try:
+                    r = await self._client.read_holding_registers(
+                        address, count=1, device_id=self._config.unit_id
+                    )
+                except Exception as e:  # transport failure — real disconnect
+                    self._connected = False
+                    raise IOError(f"Scan aborted at register {address}: {e}") from e
+                if r.isError():
+                    # Valid response saying "no such register" — record and continue.
+                    results.append({"address": address, "error": str(r)})
+                else:
+                    results.append({"address": address, "value": r.registers[0]})
+        return results
 
     def _check_firmware_version(self, master_raw: int, manager_raw: int) -> None:
         """Warn or raise if firmware is too old for remote control registers."""

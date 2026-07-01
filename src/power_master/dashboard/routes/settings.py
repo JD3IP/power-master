@@ -335,6 +335,48 @@ async def write_inverter_register(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "address": address, "value": value})
 
 
+@router.post("/api/inverter/register/scan")
+async def scan_inverter_registers(request: Request) -> JSONResponse:
+    """Read a contiguous block of holding registers (read-only exploration).
+
+    Used to locate registers not in the curated list by matching values against
+    known settings (e.g. the installer app). Admin only.
+    """
+    denied = require_admin(request)
+    if denied:
+        return denied
+    adapter = _inverter_adapter(request)
+    if adapter is None or not hasattr(adapter, "scan_holding_registers"):
+        return JSONResponse({"error": "Inverter register access not supported"}, status_code=501)
+
+    body = await request.json()
+    try:
+        start = _parse_int(body.get("start"))
+        count = _parse_int(body.get("count"))
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "Invalid start or count (use decimal or 0x hex)"}, status_code=400)
+    try:
+        rows = await adapter.scan_holding_registers(start, count)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Register scan failed at start=%s count=%s: %s", start, count, e)
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+    registers = []
+    for row in rows:
+        entry = {"address": row["address"]}
+        if "error" in row:
+            entry["error"] = row["error"]
+        else:
+            v = row["value"]
+            entry["value"] = v
+            entry["signed"] = v - 0x10000 if v >= 0x8000 else v
+            entry["hex"] = f"0x{v:04X}"
+        registers.append(entry)
+    return JSONResponse({"ok": True, "registers": registers})
+
+
 def _parse_int(raw) -> int:
     """Parse a decimal or 0x-hex integer from JSON (int or string)."""
     if isinstance(raw, bool):  # bool is an int subclass — reject explicitly
