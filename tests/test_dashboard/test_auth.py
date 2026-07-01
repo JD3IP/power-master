@@ -121,7 +121,7 @@ async def authed_client(repo, settings_config_manager):
         settings_config_manager.config, repo, settings_config_manager, TEST_PASSWORD
     )
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with AsyncClient(transport=transport, base_url="https://test") as ac:
         yield ac
 
 
@@ -135,7 +135,7 @@ async def unauthed_client(repo, settings_config_manager):
     app = create_app(config, repo, config_manager=settings_config_manager)
     app.state.manual_override = ManualOverride()
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with AsyncClient(transport=transport, base_url="https://test") as ac:
         yield ac
 
 
@@ -221,8 +221,8 @@ class TestAuthEnabled:
 
     @pytest.mark.asyncio
     async def test_authenticated_access(self, authed_client) -> None:
-        cookies = await _login(authed_client)
-        resp = await authed_client.get("/", cookies=cookies)
+        await _login(authed_client)
+        resp = await authed_client.get("/")
         assert resp.status_code == 200
         assert "Power Master" in resp.text
 
@@ -243,9 +243,9 @@ class TestRolePermissions:
             TEST_PASSWORD, role="admin",
         )
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            cookies = await _login(client)
-            resp = await client.get("/settings", cookies=cookies)
+        async with AsyncClient(transport=transport, base_url="https://test") as client:
+            await _login(client)
+            resp = await client.get("/settings")
             assert resp.status_code == 200
 
     @pytest.mark.asyncio
@@ -255,9 +255,9 @@ class TestRolePermissions:
             TEST_PASSWORD, role="viewer",
         )
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            cookies = await _login(client)
-            resp = await client.get("/settings", cookies=cookies, follow_redirects=False)
+        async with AsyncClient(transport=transport, base_url="https://test") as client:
+            await _login(client)
+            resp = await client.get("/settings", follow_redirects=False)
             assert resp.status_code == 200
             assert b"Read Only" in resp.content
 
@@ -268,12 +268,11 @@ class TestRolePermissions:
             TEST_PASSWORD, role="viewer",
         )
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            cookies = await _login(client)
+        async with AsyncClient(transport=transport, base_url="https://test") as client:
+            await _login(client)
             resp = await client.post(
                 "/api/mode",
                 json={"mode": 1},
-                cookies=cookies,
             )
             assert resp.status_code == 403
 
@@ -284,9 +283,9 @@ class TestRolePermissions:
             TEST_PASSWORD, role="admin",
         )
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            cookies = await _login(client)
-            resp = await client.get("/api/users", cookies=cookies)
+        async with AsyncClient(transport=transport, base_url="https://test") as client:
+            await _login(client)
+            resp = await client.get("/api/users")
             assert resp.status_code == 200
             data = resp.json()
             assert len(data["users"]) == 1
@@ -300,7 +299,7 @@ class TestRolePermissions:
             TEST_PASSWORD, role="viewer",
         )
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            cookies = await _login(client)
-            resp = await client.get("/api/users", cookies=cookies)
+        async with AsyncClient(transport=transport, base_url="https://test") as client:
+            await _login(client)
+            resp = await client.get("/api/users")
             assert resp.status_code == 403

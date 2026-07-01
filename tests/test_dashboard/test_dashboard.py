@@ -685,8 +685,8 @@ class TestLoadDetailAndOverride:
             "/api/loads/TestPump/override",
             json={"state": "maybe"},
         )
-        data = resp.json()
-        assert data["status"] == "error"
+        # Schema validation rejects anything but on/off before the handler runs.
+        assert resp.status_code == 422
 
     @pytest.mark.asyncio
     async def test_load_override_not_found(self, client_with_loads) -> None:
@@ -727,9 +727,10 @@ class TestLoadDetailAndOverride:
     async def test_load_override_timeout_capped(self, client_with_loads) -> None:
         """Override timeout is capped at 60 minutes."""
         ac, load_manager = client_with_loads
+        # 7200s is within the schema bound (<=86400) but above the 3600s cap.
         resp = await ac.post(
             "/api/loads/TestPump/override",
-            json={"state": "on", "timeout_s": 99999},
+            json={"state": "on", "timeout_s": 7200},
         )
         data = resp.json()
         assert data["timeout_s"] == 3600  # capped at 60 minutes
