@@ -498,11 +498,12 @@ class TestFreeWindowFill:
             f"Final free slot should force-charge, got {last_free.mode.name}"
         )
 
-    def test_free_window_holds_force_charge_when_full(self) -> None:
-        """A full battery should stay in FORCE_CHARGE through the free window.
+    def test_free_window_holds_max_charge_when_full(self) -> None:
+        """A full battery should keep max-current FORCE_CHARGE through the window.
 
-        Loads must keep pulling from the free grid instead of discharging the
-        battery (which SELF_USE would do).
+        The inverter must keep pulling full charge current from the free grid
+        (never discharge), with allow_charge_at_max_soc set so the safety
+        hierarchy won't cut charging at max SOC.
         """
         config = AppConfig()
         config.load_profile.timezone = "UTC"
@@ -513,11 +514,14 @@ class TestFreeWindowFill:
         inputs, n_free = self._free_window_inputs(soc=config.battery.soc_max_hard)
         plan = solve(config, inputs)
 
-        free_modes = [plan.slots[i].mode for i in range(n_free)]
-        assert all(m == SlotMode.FORCE_CHARGE for m in free_modes), (
+        free_slots = [plan.slots[i] for i in range(n_free)]
+        assert all(s.mode == SlotMode.FORCE_CHARGE for s in free_slots), (
             f"Free-window slots should hold FORCE_CHARGE when full, got "
-            f"{[m.name for m in free_modes]}"
+            f"{[s.mode.name for s in free_slots]}"
         )
+        # Full charge current, flagged so safety won't clamp it at max SOC.
+        assert all(s.allow_charge_at_max_soc for s in free_slots)
+        assert all(s.target_power_w == config.battery.max_charge_rate_w for s in free_slots)
 
     def test_free_window_fill_disabled_when_target_zero(self) -> None:
         """With free_window_soc_target=0, charging stops at the evening target."""
@@ -535,6 +539,35 @@ class TestFreeWindowFill:
         assert max_soc < 0.90, (
             f"With fill disabled, SOC should not exceed the evening target much, got {max_soc:.3f}"
         )
+
+    def test_cap_exhausted_prices_stop_free_charge(self) -> None:
+        """Once the free-window cap is spent, pricing flips to paid and the
+        free-window force-charge stops (free period effectively ended)."""
+        config = AppConfig()
+        config.load_profile.timezone = "UTC"
+        config.battery_targets.free_window_soc_target = 1.0
+
+        # Simulate an exhausted cap: the "free" window is now priced at the paid
+        # over-cap fallback, so no slot qualifies as free.
+        n = 12
+        start = datetime(2026, 6, 16, 0, 0, tzinfo=timezone.utc)
+        starts = [start + timedelta(minutes=30 * i) for i in range(n)]
+        inputs = SolverInputs(
+            solar_forecast_w=[0.0] * n,
+            load_forecast_w=[600.0] * n,
+            import_rate_cents=[28.6] * n,  # paid (cap exhausted) — no free slots
+            export_rate_cents=[5.0] * n,
+            is_spike=[False] * n,
+            current_soc=0.70,
+            wacb_cents=10.0,
+            slot_start_times=starts,
+        )
+        plan = solve(config, inputs)
+
+        # No slot should force-charge from the (now paid) grid, and none should
+        # carry the max-SOC charge override.
+        assert all(s.mode != SlotMode.FORCE_CHARGE for s in plan.slots)
+        assert not any(s.allow_charge_at_max_soc for s in plan.slots)
 
 
 class TestPriceDampening:

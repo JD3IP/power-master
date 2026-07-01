@@ -577,18 +577,19 @@ def solve(
             if allow_force_charge:
                 mode = SlotMode.FORCE_CHARGE
 
-        # Free-window hold: stay in FORCE_CHARGE for the whole free window, even
-        # once the battery is full.  In SELF_USE the inverter serves loads from
-        # the battery (discharging it); during a free/0c window we instead want
-        # loads pulled from the free grid so the battery holds its charge.  We
-        # only override the otherwise-idle SELF_USE mode — genuine arbitrage
-        # exports (FORCE_DISCHARGE) in a free window are still respected.
-        if (
+        # Free-window force-charge: keep FORCE_CHARGE for the whole free window,
+        # even once the battery looks full.  In SELF_USE the inverter serves loads
+        # from the battery (discharging it); during a free/0c window we instead
+        # want max charge current from the free grid so we soak up all available
+        # free energy and never discharge.  We only override the otherwise-idle
+        # SELF_USE mode — genuine arbitrage exports (FORCE_DISCHARGE) are kept.
+        force_charge_free_window = (
             free_window_target > 0
             and is_free_slot[t]
-            and mode == SlotMode.SELF_USE
             and not inputs.is_spike[t]
-        ):
+            and mode in (SlotMode.SELF_USE, SlotMode.FORCE_CHARGE)
+        )
+        if force_charge_free_window:
             mode = SlotMode.FORCE_CHARGE
 
         power = _determine_target_power(
@@ -620,6 +621,7 @@ def solve(
             solar_forecast_w=inputs.solar_forecast_w[t],
             load_forecast_w=inputs.load_forecast_w[t],
             constraint_flags=flags if flags else None,
+            allow_charge_at_max_soc=force_charge_free_window,
         ))
 
     objective_val = pulp.value(prob.objective) or 0.0

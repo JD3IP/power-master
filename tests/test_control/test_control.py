@@ -123,16 +123,24 @@ class TestHierarchy:
         assert result.overridden is True
         assert result.command.mode == OperatingMode.FORCE_CHARGE  # Grid available, so charge
 
-    def test_safety_holds_charge_at_max_soc(self) -> None:
-        # At max SOC a force-charge is held at 0W (no charge current) rather than
-        # flipped to self-use, so a full battery doesn't discharge (e.g. during a
-        # free window loads should come from the grid, not the battery).
+    def test_safety_blocks_charge_at_max_soc(self) -> None:
         cmd = ControlCommand(mode=OperatingMode.FORCE_CHARGE, power_w=5000, source="optimiser", priority=5)
         result = evaluate_hierarchy(cmd, current_soc=0.95, soc_min_hard=0.05, soc_max_hard=0.95)
         assert result.winning_level == 1
         assert result.overridden is True
+        assert result.command.mode == OperatingMode.SELF_USE
+
+    def test_free_window_charge_not_cut_at_max_soc(self) -> None:
+        # Free-window force-charge keeps max charge current at max SOC (the BMS
+        # limits actual absorption); safety must not override it to self-use.
+        cmd = ControlCommand(
+            mode=OperatingMode.FORCE_CHARGE, power_w=5000, source="optimiser",
+            priority=5, allow_charge_at_max_soc=True,
+        )
+        result = evaluate_hierarchy(cmd, current_soc=0.99, soc_min_hard=0.05, soc_max_hard=0.95)
         assert result.command.mode == OperatingMode.FORCE_CHARGE
-        assert result.command.power_w == 0
+        assert result.command.power_w == 5000
+        assert result.overridden is False
 
     def test_safety_forces_self_use_when_grid_lost(self) -> None:
         cmd = ControlCommand(mode=OperatingMode.FORCE_CHARGE, source="optimiser", priority=5)
@@ -375,11 +383,9 @@ class TestControlLoop:
 
         cmd = await loop.tick_once()
 
-        # Safety should override the manual 5000W charge at max SOC by holding
-        # force-charge at 0W (no charge current, and no discharge).
+        # Safety should override manual charge at max SOC
         assert cmd is not None
-        assert cmd.mode == OperatingMode.FORCE_CHARGE
-        assert cmd.power_w == 0
+        assert cmd.mode == OperatingMode.SELF_USE  # Overridden by safety
 
     @pytest.mark.asyncio
     async def test_telemetry_failure_skips_tick(self) -> None:

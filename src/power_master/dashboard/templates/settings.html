@@ -380,12 +380,12 @@
         <small class="form-hint">Charging goal: the planner aims to reach this SOC by Evening Target Hour, pulling from cheap daytime slots (grid or solar) as needed.</small>
     </div>
     <div class="form-group">
-        <label for="battery_targets.free_window_soc_target">Free-Window Fill Target</label>
+        <label for="battery_targets.free_window_soc_target">Free-Window Charging</label>
         <div class="input-unit">
             <input type="number" id="battery_targets.free_window_soc_target" name="battery_targets.free_window_soc_target" step="1" value="{{ (config.battery_targets.free_window_soc_target * 100)|round(0)|int }}" min="0" max="100">
             <span class="unit-label">%</span>
         </div>
-        <small class="form-hint">During free (0c) import windows the battery fills toward this SOC (clamped to the hard SOC ceiling) and holds Force-Charge so loads draw from the free grid instead of discharging the battery. Set to 0 to cap at the evening target instead.</small>
+        <small class="form-hint">While a free (0c) import window is active, the battery stays in Force-Charge at maximum charge current — even at a displayed 100% SOC (the BMS limits actual absorption) — to capture all available free energy and avoid discharging. Charge current is only reduced to keep total grid import under the configured limit, and stops (reverts to self-use) once the daily free cap is reached. Any value above 0 enables this; 0 disables it and caps charging at the evening target.</small>
     </div>
     <div class="form-group">
         <label for="battery_targets.evening_target_hour">Evening Target Hour (0-23)</label>

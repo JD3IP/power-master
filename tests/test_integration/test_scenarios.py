@@ -248,9 +248,7 @@ class TestScenario4SafetyOverride:
         cmd = ControlCommand(mode=OperatingMode.FORCE_CHARGE, power_w=5000, priority=5)
         result = evaluate_hierarchy(cmd, current_soc=0.96, soc_min_hard=0.05, soc_max_hard=0.95)
         assert result.winning_level == 1
-        # Held at 0W (no charge current) rather than discharged via self-use.
-        assert result.command.mode == OperatingMode.FORCE_CHARGE
-        assert result.command.power_w == 0
+        assert result.command.mode == OperatingMode.SELF_USE
 
     @pytest.mark.asyncio
     async def test_control_loop_enforces_safety(self) -> None:

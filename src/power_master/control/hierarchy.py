@@ -85,23 +85,22 @@ def _check_safety(
                 priority=1,
             )
 
-    # SOC too high — stop pushing charge, but HOLD rather than discharge.
-    # We keep the inverter in FORCE_CHARGE at 0 W instead of switching to
-    # SELF_USE: at 0 W there is no charge current (safe at max SOC), while the
-    # battery is prevented from discharging to serve loads.  This matters during
-    # free/0c import windows, where loads should be pulled from the free grid and
-    # the (full) battery held — SELF_USE would immediately start discharging it.
+    # SOC too high — stop charging.
+    # Exception: free-window force-charge (allow_charge_at_max_soc) is left
+    # untouched so the inverter keeps pushing MAX charge current even at a
+    # displayed 100% SOC.  A full-looking battery can still have absorption
+    # headroom, and during a free/0c window we want to soak up as much free
+    # energy as the BMS will accept — the BMS, not this software, limits the
+    # actual charge current.  The free-window orchestrator still throttles the
+    # setpoint if total grid import would exceed the configured limit.
     if soc >= soc_max:
-        if command.mode == OperatingMode.FORCE_CHARGE:
-            logger.warning(
-                "SAFETY: SOC %.1f%% at maximum, holding force-charge at 0W (no discharge)",
-                soc * 100,
-            )
+        if command.mode == OperatingMode.FORCE_CHARGE and not command.allow_charge_at_max_soc:
+            logger.warning("SAFETY: SOC %.1f%% at maximum, overriding to self-use", soc * 100)
             return ControlCommand(
-                mode=OperatingMode.FORCE_CHARGE,
+                mode=OperatingMode.SELF_USE,
                 power_w=0,
                 source="safety",
-                reason=f"soc_at_maximum_hold_{soc:.2f}",
+                reason=f"soc_at_maximum_{soc:.2f}",
                 priority=1,
             )
 
