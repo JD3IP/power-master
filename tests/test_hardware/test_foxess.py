@@ -425,21 +425,32 @@ class TestDeviceSettings:
         assert value == 1234
 
     @pytest.mark.asyncio
-    async def test_scan_returns_values_and_errors_per_row(self) -> None:
+    async def test_scan_bulk_returns_all_values(self) -> None:
+        adapter = _make_adapter()
+        # One bulk transaction returns the whole block (65506 == signed -30).
+        block = MagicMock()
+        block.isError.return_value = False
+        block.registers = [5, 10, 65506]
+        adapter._client.read_holding_registers.return_value = block
+
+        rows = await adapter.scan_holding_registers(41000, 3)
+
+        assert rows == [
+            {"address": 41000, "value": 5},
+            {"address": 41001, "value": 10},
+            {"address": 41002, "value": 65506},
+        ]
+        # Single Modbus transaction, not 3.
+        assert adapter._client.read_holding_registers.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_scan_hole_in_block_raises(self) -> None:
         adapter = _make_adapter()
         err = MagicMock()
         err.isError.return_value = True
-        # 41000 ok=5, 41001 unmapped (error), 41002 ok=65506 (i.e. signed -30)
-        adapter._client.read_holding_registers.side_effect = [
-            self._ok(5), err, self._ok(65506),
-        ]
-        rows = await adapter.scan_holding_registers(41000, 3)
-
-        assert rows[0] == {"address": 41000, "value": 5}
-        assert rows[1]["address"] == 41001 and "error" in rows[1]
-        assert rows[2] == {"address": 41002, "value": 65506}
-        # A per-register Modbus error must NOT flip the connection state.
-        assert adapter._connected is True
+        adapter._client.read_holding_registers.return_value = err
+        with pytest.raises(IOError, match="narrower range"):
+            await adapter.scan_holding_registers(41000, 24)
 
     @pytest.mark.asyncio
     async def test_scan_rejects_bad_count(self) -> None:

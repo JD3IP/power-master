@@ -798,35 +798,36 @@ class FoxESSAdapter:
     async def scan_holding_registers(self, start: int, count: int) -> list[dict]:
         """Read a contiguous block of holding registers for exploration.
 
-        Read-only. Probes each register individually so an unmapped/illegal
-        address only fails that row instead of aborting the whole scan — and,
-        crucially, a per-register Modbus exception does NOT mark the adapter
-        disconnected (that would disrupt the control loop). Only a genuine
-        transport failure propagates and flips the connection state.
+        Read-only, and done as a SINGLE bulk Modbus transaction so it returns
+        fast — reading one register at a time hit per-register timeouts/retries
+        on real (esp. RTU) links, which stacked up past the HTTP/gateway timeout
+        and produced a non-JSON error in the UI.
 
-        Returns a list of {address, value} (raw uint16) or {address, error} rows.
+        If the block contains an unmapped/illegal address the whole read errors
+        (Modbus can't skip holes in a block read); we surface that as an error so
+        the caller can narrow the range. Returns a list of {address, value} rows.
         """
         if count < 1 or count > self.SCAN_MAX_COUNT:
             raise ValueError(f"count must be 1..{self.SCAN_MAX_COUNT}")
         if start < 0 or start + count - 1 > 0xFFFF:
             raise ValueError("register range out of 0-65535")
 
-        results: list[dict] = []
         async with self._lock:
-            for address in range(start, start + count):
-                try:
-                    r = await self._client.read_holding_registers(
-                        address, count=1, device_id=self._config.unit_id
-                    )
-                except Exception as e:  # transport failure — real disconnect
-                    self._connected = False
-                    raise IOError(f"Scan aborted at register {address}: {e}") from e
-                if r.isError():
-                    # Valid response saying "no such register" — record and continue.
-                    results.append({"address": address, "error": str(r)})
-                else:
-                    results.append({"address": address, "value": r.registers[0]})
-        return results
+            try:
+                r = await self._client.read_holding_registers(
+                    start, count=count, device_id=self._config.unit_id
+                )
+            except Exception as e:  # transport failure — real disconnect
+                self._connected = False
+                raise IOError(f"Scan read failed at {start}..{start + count - 1}: {e}") from e
+        if r.isError():
+            # A hole in the block (unmapped register) fails the whole read.
+            raise IOError(
+                f"Modbus error reading {start}..{start + count - 1} ({r}). "
+                f"The range likely includes an unmapped register — try a narrower range."
+            )
+        regs = list(r.registers)
+        return [{"address": start + i, "value": regs[i]} for i in range(len(regs))]
 
     def _check_firmware_version(self, master_raw: int, manager_raw: int) -> None:
         """Warn or raise if firmware is too old for remote control registers."""
