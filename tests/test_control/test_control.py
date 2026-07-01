@@ -179,6 +179,22 @@ class TestHierarchy:
         )
         assert result.winning_level == 1  # Safety wins
 
+    def test_feed_in_first_blocked_at_min_soc(self) -> None:
+        # Export-priority exports from the battery, so it must be cut at min SOC.
+        cmd = ControlCommand(mode=OperatingMode.FEED_IN_FIRST, source="schedule", priority=4)
+        result = evaluate_hierarchy(cmd, current_soc=0.05, soc_min_hard=0.05, soc_max_hard=0.95)
+        assert result.winning_level == 1
+        assert result.command.mode == OperatingMode.FORCE_CHARGE  # grid available → recharge
+
+    def test_feed_in_first_blocked_below_storm_reserve(self) -> None:
+        cmd = ControlCommand(mode=OperatingMode.FEED_IN_FIRST, source="schedule", priority=4)
+        result = evaluate_hierarchy(
+            cmd, current_soc=0.75, soc_min_hard=0.05, soc_max_hard=0.95,
+            storm_active=True, storm_reserve_soc=0.80,
+        )
+        assert result.winning_level == 2
+        assert result.command.mode == OperatingMode.SELF_USE
+
 
 # ── Anti-Oscillation Tests ────────────────────────────────────
 
@@ -413,6 +429,42 @@ class TestControlLoop:
         assert loop.state.tick_count == 1
         assert loop.state.last_telemetry is not None
         assert loop.state.current_mode == OperatingMode.SELF_USE
+
+    @pytest.mark.asyncio
+    async def test_schedule_overrides_plan(self) -> None:
+        config = AppConfig()
+        adapter = _make_adapter()
+        loop = ControlLoop(config, adapter)
+
+        class _StubSched:
+            def get_command(self, now):
+                return ControlCommand(
+                    mode=OperatingMode.FEED_IN_FIRST, source="schedule",
+                    export_limit_w=500, priority=4,
+                )
+        loop._mode_scheduler = _StubSched()
+        loop.set_plan(_make_plan(mode=SlotMode.FORCE_CHARGE))
+
+        cmd = await loop.tick_once()
+        assert cmd is not None
+        assert cmd.mode == OperatingMode.FEED_IN_FIRST  # schedule beats the plan
+
+    @pytest.mark.asyncio
+    async def test_manual_override_beats_schedule(self) -> None:
+        config = AppConfig()
+        adapter = _make_adapter()
+        manual = ManualOverride()
+        manual.set(OperatingMode.SELF_USE, power_w=0)
+        loop = ControlLoop(config, adapter, manual_override=manual)
+
+        class _StubSched:
+            def get_command(self, now):
+                return ControlCommand(mode=OperatingMode.FEED_IN_FIRST, source="schedule", priority=4)
+        loop._mode_scheduler = _StubSched()
+
+        cmd = await loop.tick_once()
+        assert cmd is not None
+        assert cmd.mode == OperatingMode.SELF_USE  # manual override wins
 
     @pytest.mark.asyncio
     async def test_refresh_suppresses_rapid_mode_flip(self) -> None:

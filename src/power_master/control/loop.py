@@ -20,6 +20,7 @@ from power_master.control.constants import (
 )
 from power_master.control.hierarchy import evaluate_hierarchy
 from power_master.control.manual_override import ManualOverride
+from power_master.control.mode_schedule import ModeScheduler
 from power_master.hardware.base import InverterAdapter, OperatingMode
 from power_master.hardware.telemetry import Telemetry
 from power_master.optimisation.plan import OptimisationPlan
@@ -73,6 +74,9 @@ class ControlLoop:
         self._adapter: InverterAdapter = adapter
         self._manual_override: ManualOverride = manual_override or ManualOverride()
         self._anti_oscillation: AntiOscillationGuard = anti_oscillation or AntiOscillationGuard(config.anti_oscillation)
+        self._mode_scheduler: ModeScheduler = ModeScheduler(
+            config.mode_schedule, getattr(config.load_profile, "timezone", "UTC"),
+        )
         self._state: LoopState = LoopState()
         self._stop_event: asyncio.Event = asyncio.Event()
         self._repo: Any = repo
@@ -397,15 +401,31 @@ class ControlLoop:
         )
         return None
 
+    def update_config(self, config: AppConfig) -> None:
+        """Refresh config after a hot-reload (e.g. mode-schedule edits)."""
+        self._config = config
+        self._mode_scheduler.update_config(
+            config.mode_schedule, getattr(config.load_profile, "timezone", "UTC"),
+        )
+
     def _determine_command(self, telemetry: Telemetry) -> ControlCommand | None:
         """Determine the command to execute.
 
-        Priority: manual override > plan slot > default self-use.
+        Priority: manual override > mode schedule > plan slot > default self-use.
+        The scheduled command still passes through the safety/storm hierarchy in
+        `_tick`, so it can never override safety or drain past reserves.
         """
-        # Manual override
+        # Manual override (explicit user action) wins outright.
         override_cmd: ControlCommand | None = self._manual_override.get_command()
         if override_cmd is not None:
             return override_cmd
+
+        # User-defined mode schedule overrides the optimiser plan while active.
+        sched_cmd: ControlCommand | None = self._mode_scheduler.get_command(
+            datetime.now(timezone.utc)
+        )
+        if sched_cmd is not None:
+            return sched_cmd
 
         # Plan slot
         plan: OptimisationPlan | None = self._state.current_plan

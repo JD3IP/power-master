@@ -18,6 +18,7 @@ class OperatingMode(IntEnum):
     FORCE_CHARGE = 3
     FORCE_DISCHARGE = 4
     FORCE_CHARGE_ZERO_IMPORT = 5
+    FEED_IN_FIRST = 6  # FoxESS "Feed-in First" / export-priority (work mode 1)
 
 
 @dataclass

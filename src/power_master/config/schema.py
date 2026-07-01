@@ -1150,6 +1150,83 @@ class DBConfig(BaseModel):
     path: str = "power_master.db"
 
 
+_MODE_SCHEDULE_MODES = (
+    "self_use", "self_use_zero_export", "feed_in_first",
+    "force_charge", "force_discharge",
+)
+
+
+class ModeScheduleRule(BaseModel):
+    """A time-of-day rule that forces a specific inverter mode.
+
+    Overrides the optimiser plan while active (but still sits below the safety /
+    storm / SOC-floor hierarchy). Intended for manual experiments such as
+    export-priority during the evening peak.
+    """
+
+    name: str = Field(default="", description="Label for the rule (for logs/UI).")
+    enabled: bool = True
+    mode: str = Field(
+        description="Inverter mode: self_use, self_use_zero_export, feed_in_first, "
+        "force_charge, or force_discharge."
+    )
+    windows: list[str] = Field(
+        default_factory=list,
+        description="Active time windows in HH:MM-HH:MM local time (midnight-crossing allowed).",
+    )
+    days: list[int] | None = Field(
+        default=None,
+        description="Days of week the rule applies (0=Mon … 6=Sun). None/empty = every day.",
+    )
+    export_limit_w: int | None = Field(
+        default=None, ge=0,
+        description="Grid export cap (W) for feed_in_first / zero-export modes.",
+    )
+    power_w: int | None = Field(
+        default=None, ge=0,
+        description="Target power (W) for force_charge / force_discharge modes.",
+    )
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, v: str) -> str:
+        if v not in _MODE_SCHEDULE_MODES:
+            raise ValueError(
+                f"mode must be one of {', '.join(_MODE_SCHEDULE_MODES)}, got '{v}'"
+            )
+        return v
+
+    @field_validator("windows")
+    @classmethod
+    def validate_windows(cls, v: list[str]) -> list[str]:
+        for window in v:
+            if not isinstance(window, str) or not re.match(r"^\d{2}:\d{2}-\d{2}:\d{2}$", window):
+                raise ValueError(f"Window must match HH:MM-HH:MM format, got '{window}'")
+            start_str, end_str = window.split("-")
+            sh, sm = map(int, start_str.split(":"))
+            eh, em = map(int, end_str.split(":"))
+            if not (0 <= sh <= 23 and 0 <= sm <= 59 and 0 <= eh <= 23 and 0 <= em <= 59):
+                raise ValueError(f"Invalid time in window '{window}'")
+        return v
+
+    @field_validator("days")
+    @classmethod
+    def validate_days(cls, v: list[int] | None) -> list[int] | None:
+        if v is None:
+            return v
+        for d in v:
+            if not (0 <= d <= 6):
+                raise ValueError(f"days must be 0-6 (Mon-Sun), got {d}")
+        return v
+
+
+class ModeScheduleConfig(BaseModel):
+    """User-defined inverter-mode schedule (manual override of the optimiser)."""
+
+    enabled: bool = False
+    rules: list[ModeScheduleRule] = Field(default_factory=list)
+
+
 class AppConfig(BaseModel):
     """Root configuration model containing all system settings."""
 
@@ -1162,6 +1239,7 @@ class AppConfig(BaseModel):
     arbitrage: ArbitrageConfig = ArbitrageConfig()
     fixed_costs: FixedCostsConfig = FixedCostsConfig()
     anti_oscillation: AntiOscillationConfig = AntiOscillationConfig()
+    mode_schedule: ModeScheduleConfig = ModeScheduleConfig()
     storm: StormConfig = StormConfig()
     providers: ProvidersConfig = ProvidersConfig()
     hardware: HardwareConfig = HardwareConfig()
