@@ -124,6 +124,9 @@ async def settings_page(request: Request) -> HTMLResponse:
     tariff_dict = tariff_config.model_dump(mode="json")
     tariff_config_json = json.dumps(tariff_dict)
 
+    # Serialize the mode schedule for the Schedule editor.
+    mode_schedule_json = json.dumps(config.mode_schedule.model_dump(mode="json"))
+
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -135,6 +138,7 @@ async def settings_page(request: Request) -> HTMLResponse:
             "tariff_can_edit": tariff_can_edit,
             "firmware": firmware,
             "tariff_config_json": tariff_config_json,
+            "mode_schedule_json": mode_schedule_json,
         },
     )
 
@@ -375,6 +379,60 @@ async def scan_inverter_registers(request: Request) -> JSONResponse:
             entry["hex"] = f"0x{v:04X}"
         registers.append(entry)
     return JSONResponse({"ok": True, "registers": registers})
+
+
+@router.post("/api/mode-schedule")
+async def save_mode_schedule(request: Request) -> JSONResponse:
+    """Validate and apply the inverter mode schedule, hot-reloaded (no restart)."""
+    denied = require_admin(request)
+    if denied:
+        return denied
+
+    from power_master.config.schema import ModeScheduleConfig
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+    # Validate the whole schedule via the Pydantic model.
+    try:
+        validated = ModeScheduleConfig.model_validate(body)
+    except ValidationError as e:
+        msg = str(e).replace("\n", " ")[:300]
+        return JSONResponse({"error": msg}, status_code=400)
+
+    updates = {"mode_schedule": validated.model_dump(mode="json")}
+
+    application = getattr(request.app.state, "application", None)
+    if application is not None:
+        try:
+            await application.reload_config(updates, request.app)
+        except Exception as e:
+            logger.exception("Failed to apply mode schedule")
+            return JSONResponse({"error": f"Reload failed: {e}"}, status_code=500)
+    else:
+        # Fallback for test/standalone: save directly.
+        config_manager = getattr(request.app.state, "config_manager", None)
+        if config_manager is None:
+            return JSONResponse({"error": "Config manager not available"}, status_code=500)
+        try:
+            new_config = config_manager.save_user_config(updates)
+            request.app.state.config = new_config
+        except Exception as e:
+            logger.exception("Failed to save mode schedule")
+            return JSONResponse({"error": f"Save failed: {e}"}, status_code=500)
+
+    # Nudge the control loop to re-evaluate now so the schedule change applies
+    # immediately rather than at the next tick.
+    control_loop = getattr(request.app.state, "control_loop", None)
+    if control_loop is not None and hasattr(control_loop, "request_tick"):
+        control_loop.request_tick()
+
+    logger.info(
+        "Mode schedule saved: enabled=%s, %d rule(s)", validated.enabled, len(validated.rules),
+    )
+    return JSONResponse({"ok": True, "enabled": validated.enabled, "rules": len(validated.rules)})
 
 
 def _parse_int(raw) -> int:

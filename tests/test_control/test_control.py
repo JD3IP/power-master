@@ -431,6 +431,23 @@ class TestControlLoop:
         assert loop.state.current_mode == OperatingMode.SELF_USE
 
     @pytest.mark.asyncio
+    async def test_request_tick_wakes_wait(self) -> None:
+        # A pending wake request makes the inter-tick wait return immediately
+        # (not stopped) and clears the flag — so a saved schedule applies now.
+        loop = ControlLoop(AppConfig(), _make_adapter())
+        loop.request_tick()
+        stopped = await asyncio.wait_for(loop._wait_for_next_tick(100), timeout=1.0)
+        assert stopped is False
+        assert not loop._wake_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_wait_returns_stopped(self) -> None:
+        loop = ControlLoop(AppConfig(), _make_adapter())
+        loop.stop()
+        stopped = await asyncio.wait_for(loop._wait_for_next_tick(100), timeout=1.0)
+        assert stopped is True
+
+    @pytest.mark.asyncio
     async def test_schedule_overrides_plan(self) -> None:
         config = AppConfig()
         adapter = _make_adapter()
