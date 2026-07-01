@@ -752,6 +752,10 @@ class TestInverterFirmwareApi:
         adapter.write_device_setting = AsyncMock(return_value=500)
         adapter.read_holding_register = AsyncMock(return_value=1234)
         adapter.write_holding_register = AsyncMock(return_value=None)
+        adapter.scan_holding_registers = AsyncMock(return_value=[
+            {"address": 41000, "value": 5},
+            {"address": 41001, "error": "illegal address"},
+        ])
         return adapter
 
     @pytest.mark.asyncio
@@ -811,3 +815,27 @@ class TestInverterFirmwareApi:
         resp = await client.post("/api/inverter/register/write", json={"address": "41011", "value": "notanumber"})
         assert resp.status_code == 400
         adapter.write_holding_register.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_scan_range(self, client) -> None:
+        adapter = self._adapter()
+        client._transport.app.state.adapter = adapter
+        resp = await client.post("/api/inverter/register/scan", json={"start": "41000", "count": "2"})
+        assert resp.status_code == 200
+        adapter.scan_holding_registers.assert_awaited_once_with(41000, 2)
+        regs = resp.json()["registers"]
+        # Value row gets signed + hex; error row is passed through.
+        assert regs[0] == {"address": 41000, "value": 5, "signed": 5, "hex": "0x0005"}
+        assert regs[1]["error"] == "illegal address"
+
+    @pytest.mark.asyncio
+    async def test_scan_signed_negative(self, client) -> None:
+        from unittest.mock import AsyncMock
+        adapter = self._adapter()
+        adapter.scan_holding_registers = AsyncMock(
+            return_value=[{"address": 49248, "value": 65506}]
+        )
+        client._transport.app.state.adapter = adapter
+        resp = await client.post("/api/inverter/register/scan", json={"start": "49248", "count": "1"})
+        assert resp.status_code == 200
+        assert resp.json()["registers"][0]["signed"] == -30

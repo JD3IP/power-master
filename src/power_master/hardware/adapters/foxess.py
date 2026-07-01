@@ -773,6 +773,42 @@ class FoxESSAdapter:
             await self._write_register(address, value)
         logger.info("Generic register write: addr=%d value=%d", address, value)
 
+    # Max registers a single scan may probe (bounds the number of Modbus reads).
+    SCAN_MAX_COUNT = 128
+
+    async def scan_holding_registers(self, start: int, count: int) -> list[dict]:
+        """Read a contiguous block of holding registers for exploration.
+
+        Read-only. Probes each register individually so an unmapped/illegal
+        address only fails that row instead of aborting the whole scan — and,
+        crucially, a per-register Modbus exception does NOT mark the adapter
+        disconnected (that would disrupt the control loop). Only a genuine
+        transport failure propagates and flips the connection state.
+
+        Returns a list of {address, value} (raw uint16) or {address, error} rows.
+        """
+        if count < 1 or count > self.SCAN_MAX_COUNT:
+            raise ValueError(f"count must be 1..{self.SCAN_MAX_COUNT}")
+        if start < 0 or start + count - 1 > 0xFFFF:
+            raise ValueError("register range out of 0-65535")
+
+        results: list[dict] = []
+        async with self._lock:
+            for address in range(start, start + count):
+                try:
+                    r = await self._client.read_holding_registers(
+                        address, count=1, device_id=self._config.unit_id
+                    )
+                except Exception as e:  # transport failure — real disconnect
+                    self._connected = False
+                    raise IOError(f"Scan aborted at register {address}: {e}") from e
+                if r.isError():
+                    # Valid response saying "no such register" — record and continue.
+                    results.append({"address": address, "error": str(r)})
+                else:
+                    results.append({"address": address, "value": r.registers[0]})
+        return results
+
     def _check_firmware_version(self, master_raw: int, manager_raw: int) -> None:
         """Warn or raise if firmware is too old for remote control registers."""
         issues = []

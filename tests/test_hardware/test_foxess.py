@@ -423,3 +423,36 @@ class TestDeviceSettings:
         adapter._client.read_holding_registers.return_value = self._ok(1234)
         value = await adapter.read_holding_register(41000)
         assert value == 1234
+
+    @pytest.mark.asyncio
+    async def test_scan_returns_values_and_errors_per_row(self) -> None:
+        adapter = _make_adapter()
+        err = MagicMock()
+        err.isError.return_value = True
+        # 41000 ok=5, 41001 unmapped (error), 41002 ok=65506 (i.e. signed -30)
+        adapter._client.read_holding_registers.side_effect = [
+            self._ok(5), err, self._ok(65506),
+        ]
+        rows = await adapter.scan_holding_registers(41000, 3)
+
+        assert rows[0] == {"address": 41000, "value": 5}
+        assert rows[1]["address"] == 41001 and "error" in rows[1]
+        assert rows[2] == {"address": 41002, "value": 65506}
+        # A per-register Modbus error must NOT flip the connection state.
+        assert adapter._connected is True
+
+    @pytest.mark.asyncio
+    async def test_scan_rejects_bad_count(self) -> None:
+        adapter = _make_adapter()
+        with pytest.raises(ValueError):
+            await adapter.scan_holding_registers(41000, 0)
+        with pytest.raises(ValueError):
+            await adapter.scan_holding_registers(41000, 999)
+
+    @pytest.mark.asyncio
+    async def test_scan_transport_failure_marks_disconnected(self) -> None:
+        adapter = _make_adapter()
+        adapter._client.read_holding_registers.side_effect = OSError("timeout")
+        with pytest.raises(IOError):
+            await adapter.scan_holding_registers(41000, 4)
+        assert adapter._connected is False
