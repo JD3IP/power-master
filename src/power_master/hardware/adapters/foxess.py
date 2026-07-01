@@ -66,11 +66,19 @@ class Registers:
     FIRMWARE_MANAGER = 30018  # U16
 
     # Holding registers — control (read_holding_registers / write_register, FC 3/6)
-    # Addresses verified against working KH firmware v1.55
+    # Addresses corrected against live register readback on a KH inverter (the
+    # earlier 41009/41010/41011 assignments were wrong — they are the SoC
+    # registers, not currents). See KH_MODBUS_REGISTERS.md §5.
+    #   41009 read back 10  -> Minimum SoC 10%     (was mislabelled MAX_CHARGE_CURRENT)
+    #   41010 read back 100 -> Maximum SoC 100%    (was mislabelled MAX_DISCHARGE_CURRENT)
+    #   41011 read back 10  -> Minimum SoC on-grid (was mislabelled MIN_SOC)
+    #   41007/41008 read back 500 -> 50.0A charge/discharge current limits
     WORK_MODE = 41000       # U16 RW: 0=Self-Use, 1=Feed-in, 2=Backup
-    MAX_CHARGE_CURRENT = 41009   # U16 RW: amps (gain 10, raw 500 = 50.0A)
-    MAX_DISCHARGE_CURRENT = 41010  # U16 RW: amps (gain 10, raw 500 = 50.0A)
-    MIN_SOC = 41011         # U16 RW, % (battery won't discharge below)
+    MAX_CHARGE_CURRENT = 41007     # U16 RW: amps (gain 10, raw 500 = 50.0A)
+    MAX_DISCHARGE_CURRENT = 41008  # U16 RW: amps (gain 10, raw 500 = 50.0A)
+    MIN_SOC = 41009         # U16 RW, % (battery won't discharge below)
+    MAX_SOC = 41010         # U16 RW, % (battery won't charge above)
+    MIN_SOC_ON_GRID = 41011  # U16 RW, % (min SoC while grid is available)
     EXPORT_LIMIT = 41012    # U16 RW, watts (grid export cap; 0 = no export)
 
     # Remote power control registers (FC 6)
@@ -125,6 +133,16 @@ DEVICE_SETTINGS: tuple[DeviceSetting, ...] = (
         key="min_soc", label="Min SOC", address=Registers.MIN_SOC,
         unit="%", min_value=0, max_value=100,
         description="Battery will not discharge below this state of charge.",
+    ),
+    DeviceSetting(
+        key="max_soc", label="Max SOC", address=Registers.MAX_SOC,
+        unit="%", min_value=0, max_value=100,
+        description="Battery will not charge above this state of charge.",
+    ),
+    DeviceSetting(
+        key="min_soc_on_grid", label="Min SOC (on-grid)",
+        address=Registers.MIN_SOC_ON_GRID, unit="%", min_value=0, max_value=100,
+        description="Minimum state of charge to hold while the grid is available.",
     ),
     DeviceSetting(
         key="max_charge_current", label="Max charge current",

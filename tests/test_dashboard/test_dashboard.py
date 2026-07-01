@@ -746,7 +746,7 @@ class TestInverterFirmwareApi:
         adapter = AsyncMock()
         adapter.firmware = {"master": "1.60"}
         adapter.read_device_settings = AsyncMock(return_value=[
-            {"key": "min_soc", "label": "Min SOC", "address": 41011, "unit": "%",
+            {"key": "min_soc", "label": "Min SOC", "address": 41009, "unit": "%",
              "value": 15, "raw": 15},
         ])
         adapter.write_device_setting = AsyncMock(return_value=500)

@@ -341,7 +341,14 @@ pymodbus client and inverter firmware expect.
 | `HoldingRegisters.TIME1_END_HOUR`      | 41004   | Time period 1 end hour        |
 | `HoldingRegisters.TIME1_END_MIN`       | 41005   | Time period 1 end minute      |
 | `HoldingRegisters.TIME1_CHARGE_POWER`  | 41006   | Time period 1 charge power    |
-| `HoldingRegisters.TIME1_DISCHARGE_POWER`| 41007  | Max set charge current (KH)   |
-| `HoldingRegisters.MIN_SOC`             | 41009   | Minimum SoC                   |
-| `HoldingRegisters.MIN_SOC_ON_GRID`     | 41010   | Maximum SoC (KH) / Min SoC on grid (H1) |
-| `HoldingRegisters.EXPORT_LIMIT`        | 41012   | Grid export power limit (W)   |
+| `Registers.MAX_CHARGE_CURRENT`         | 41007   | Max charge current (A ×10)    |
+| `Registers.MAX_DISCHARGE_CURRENT`      | 41008   | Max discharge current (A ×10) |
+| `Registers.MIN_SOC`                    | 41009   | Minimum SoC (%)               |
+| `Registers.MAX_SOC`                    | 41010   | Maximum SoC (%)               |
+| `Registers.MIN_SOC_ON_GRID`            | 41011   | Minimum SoC on-grid (%)       |
+| `Registers.EXPORT_LIMIT`               | 41012   | Grid export power limit (W)   |
+
+> The FoxESSAdapter `Registers` constants match §5 above. An earlier revision
+> had 41009/41010/41011 mislabelled as charge/discharge current + min SoC;
+> corrected after live register readback (41009=10% MinSoC, 41010=100% MaxSoC,
+> 41007/41008=500 → 50.0 A).

@@ -1144,6 +1144,8 @@ async def inverter_diagnostics(request: Request) -> dict:
             await read_holding_u16("Max Charge Current", Registers.MAX_CHARGE_CURRENT, "A", gain=10)
             await read_holding_u16("Max Discharge Current", Registers.MAX_DISCHARGE_CURRENT, "A", gain=10)
             await read_holding_u16("Min SOC", Registers.MIN_SOC, "%")
+            await read_holding_u16("Max SOC", Registers.MAX_SOC, "%")
+            await read_holding_u16("Min SOC (on-grid)", Registers.MIN_SOC_ON_GRID, "%")
             await read_holding_u16("Export Limit", Registers.EXPORT_LIMIT, "W")
             await read_holding_u16("Remote Enable", Registers.REMOTE_ENABLE)
             await read_holding_u16("Remote Timeout", Registers.REMOTE_TIMEOUT, "s")
